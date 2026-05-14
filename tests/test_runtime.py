@@ -186,6 +186,30 @@ def test_tool_called_outside_txn_runs_raw(conn, insert_user):
     assert _names(conn) == ["solo"]
 
 
+def test_explicit_commit_then_clean_exit_does_not_double_commit(conn, insert_user):
+    # __exit__ must see the txn is already terminal and no-op — not call
+    # commit() again and trip the double-commit guard.
+    with agent_txn({"sql": SQLiteAdapter(conn)}) as txn:
+        insert_user(name="bob")
+        txn.commit()
+    assert txn.txn.state is TxnState.COMMITTED
+    assert _names(conn) == ["bob"]
+
+
+def test_default_audit_persists_the_whole_story(conn, insert_user):
+    # audit=None means "default audit store", not "no persistence".
+    with agent_txn({"sql": SQLiteAdapter(conn)}) as txn:
+        insert_user(name="bob")
+        insert_user(name="alice")
+
+    assert txn.audit is not None
+    assert txn.audit.get_transaction(txn.txn_id)["state"] == "COMMITTED"
+    assert [e["status"] for e in txn.audit.get_effects(txn.txn_id)] == [
+        "APPLIED",
+        "APPLIED",
+    ]
+
+
 def test_unknown_resource_raises(conn):
     @tool(resource="http", injects_handle=False)
     def post_webhook(url):
