@@ -2,11 +2,13 @@
 
 from pherix.frontends.library import (
     AuditJournal,
+    FilesystemAdapter,
     Policy,
     PolicyViolation,
     ResourceAdapter,
     SnapshotHandle,
     SQLiteAdapter,
+    TransactionalResourceAdapter,
     agent_txn,
     tool,
 )
@@ -17,7 +19,9 @@ __all__ = [
     "Policy",
     "PolicyViolation",
     "SQLiteAdapter",
+    "FilesystemAdapter",
     "AuditJournal",
     "ResourceAdapter",
+    "TransactionalResourceAdapter",
     "SnapshotHandle",
 ]
