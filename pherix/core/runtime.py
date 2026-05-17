@@ -13,6 +13,7 @@ import threading
 from contextlib import contextmanager
 from typing import Any, Iterator
 
+from pherix.core.adapters.base import TransactionalResourceAdapter
 from pherix.core.audit import AuditJournal
 from pherix.core.effects import Effect, EffectStatus
 from pherix.core.policy import Policy
@@ -95,7 +96,7 @@ class TxnContext:
         self._guard_thread()
         self._guard_open()
         for adapter in _unique(self._adapters):
-            if hasattr(adapter, "commit"):
+            if isinstance(adapter, TransactionalResourceAdapter):
                 adapter.commit()
         self.txn.transition(TxnState.COMMITTED)
         self.audit.update_transaction_state(self.txn.txn_id, TxnState.COMMITTED.name)
@@ -115,7 +116,7 @@ class TxnContext:
                 effect.status = EffectStatus.COMPENSATED
                 self.audit.update_effect(effect)
         for adapter in _unique(self._adapters):
-            if hasattr(adapter, "rollback"):
+            if isinstance(adapter, TransactionalResourceAdapter):
                 adapter.rollback()
         self.txn.transition(TxnState.ROLLED_BACK)
         self.audit.update_transaction_state(
@@ -168,7 +169,7 @@ def agent_txn(
     audit = audit or AuditJournal()
 
     for adapter in _unique(adapters):
-        if hasattr(adapter, "begin"):
+        if isinstance(adapter, TransactionalResourceAdapter):
             adapter.begin()
 
     ctx = TxnContext(adapters, policy, audit)
