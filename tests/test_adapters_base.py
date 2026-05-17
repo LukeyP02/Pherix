@@ -1,4 +1,8 @@
-from pherix.core.adapters.base import ResourceAdapter, SnapshotHandle
+from pherix.core.adapters.base import (
+    ResourceAdapter,
+    SnapshotHandle,
+    TransactionalResourceAdapter,
+)
 from pherix.core.effects import Effect
 
 
@@ -43,3 +47,42 @@ def test_conforming_class_satisfies_protocol():
 
 def test_incomplete_class_fails_protocol():
     assert not isinstance(_NotAnAdapter(), ResourceAdapter)
+
+
+class _TxnConformingAdapter(_ConformingAdapter):
+    name = "txn-fake"
+
+    def begin(self) -> None:
+        pass
+
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
+
+def test_txn_adapter_subprotocol_recognises_lifecycle():
+    a = _TxnConformingAdapter()
+    assert isinstance(a, ResourceAdapter)
+    assert isinstance(a, TransactionalResourceAdapter)
+
+
+def test_txn_adapter_subprotocol_rejects_lifecycle_less_adapter():
+    # A plain ResourceAdapter (no begin/commit/rollback) must NOT satisfy the
+    # transactional sub-protocol — that's the whole point of D1: the type
+    # system reflects which adapters have a transaction-scope lifecycle.
+    assert isinstance(_ConformingAdapter(), ResourceAdapter)
+    assert not isinstance(_ConformingAdapter(), TransactionalResourceAdapter)
+
+
+def test_sqlite_adapter_is_transactional():
+    import sqlite3
+
+    from pherix.core.adapters.sql import SQLiteAdapter
+
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    try:
+        assert isinstance(SQLiteAdapter(conn), TransactionalResourceAdapter)
+    finally:
+        conn.close()

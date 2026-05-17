@@ -9,7 +9,12 @@ the staging / gating machinery in Slice 3 — there is no irreversible effect to
 approve yet, so it is deliberately not exported here.
 """
 
-from pherix.core.adapters.base import ResourceAdapter, SnapshotHandle
+from pherix.core.adapters.base import (
+    ResourceAdapter,
+    SnapshotHandle,
+    TransactionalResourceAdapter,
+)
+from pherix.core.adapters.filesystem import FilesystemAdapter
 from pherix.core.adapters.sql import SQLiteAdapter
 from pherix.core.audit import AuditJournal
 from pherix.core.policy import Policy, PolicyViolation
@@ -22,7 +27,9 @@ __all__ = [
     "Policy",
     "PolicyViolation",
     "SQLiteAdapter",
+    "FilesystemAdapter",
     "AuditJournal",
     "ResourceAdapter",
+    "TransactionalResourceAdapter",
     "SnapshotHandle",
 ]

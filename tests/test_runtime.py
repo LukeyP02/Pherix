@@ -218,3 +218,48 @@ def test_unknown_resource_raises(conn):
     with pytest.raises(RuntimeError, match="no adapter"):
         with agent_txn({"sql": SQLiteAdapter(conn)}):
             post_webhook(url="https://example.com")
+
+
+def test_non_transactional_adapter_does_not_receive_lifecycle_calls():
+    # D1 regression pin: lifecycle dispatch is by isinstance against the
+    # TransactionalResourceAdapter sub-protocol, not by hasattr. A custom
+    # adapter that only implements snapshot/apply/restore/supports_rollback
+    # must NOT be auto-driven through begin/commit/rollback — that taxonomy
+    # is reserved for adapters that explicitly opt into the sub-protocol.
+    from pherix.core.adapters.base import SnapshotHandle
+
+    calls: list[str] = []
+
+    class _NonTxnAdapter:
+        name = "memo"
+
+        def supports_rollback(self) -> bool:
+            return True
+
+        def snapshot(self, effect):
+            calls.append(f"snapshot:{effect.index}")
+            return SnapshotHandle(resource=self.name, effect_index=effect.index)
+
+        def apply(self, effect, tool_fn):
+            calls.append(f"apply:{effect.index}")
+            return tool_fn(**effect.args)
+
+        def restore(self, handle):
+            calls.append(f"restore:{handle.effect_index}")
+
+        # Looks like a lifecycle hook by name but the adapter does NOT
+        # conform to TransactionalResourceAdapter (no commit/rollback) —
+        # so the runtime must not invoke it.
+        def begin(self):
+            calls.append("LIFECYCLE-LEAK-begin")
+
+    @tool(resource="memo", injects_handle=False)
+    def remember(value):
+        return value
+
+    with agent_txn({"memo": _NonTxnAdapter()}):
+        remember(value="a")
+        remember(value="b")
+
+    assert "LIFECYCLE-LEAK-begin" not in calls
+    assert calls == ["snapshot:0", "apply:0", "snapshot:1", "apply:1"]

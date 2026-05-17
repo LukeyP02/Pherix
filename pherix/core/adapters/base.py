@@ -46,3 +46,21 @@ class ResourceAdapter(Protocol):
     def restore(self, handle: SnapshotHandle) -> None:
         """Restore the resource to the state captured by ``handle``."""
         ...
+
+
+@runtime_checkable
+class TransactionalResourceAdapter(ResourceAdapter, Protocol):
+    """Adapters that carry a transaction-scope lifecycle (D1).
+
+    Some resources need bracketing around the whole transaction — opening a
+    BEGIN, allocating a per-txn workspace, releasing it on commit/rollback.
+    Others (e.g. an irreversible HTTP adapter) have nothing to do at txn
+    boundaries; they conform only to :class:`ResourceAdapter`. The runtime
+    dispatches lifecycle calls by ``isinstance`` against this sub-protocol so
+    a typo'd ``begin`` no longer silently skips, and the type system reflects
+    the real taxonomy of resources.
+    """
+
+    def begin(self) -> None: ...
+    def commit(self) -> None: ...
+    def rollback(self) -> None: ...
