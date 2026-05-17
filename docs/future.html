@@ -1,0 +1,1488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pherix — Slices 2 → 8 — the unifying journal</title>
+<style>
+  :root {
+    --bg: #faf8f3;
+    --panel: #ffffff;
+    --panel-2: #f4f0e7;
+    --ink: #1a1a1f;
+    --ink-2: #4a4a52;
+    --ink-3: #7a7a82;
+    --rule: #e3ddd0;
+    --rule-strong: #c8bfa9;
+    --accent: #d35400;       /* burnt orange — committed */
+    --accent-2: #6b4ca0;     /* indigo — staged / irreversible */
+    --accent-3: #2a7a5a;     /* moss — isolation */
+    --accent-4: #b03060;     /* claret — gate / risk */
+    --accent-5: #2c5fa8;     /* slate-blue — replay / dryrun */
+    --warn: #b07900;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14141a;
+      --panel: #1c1c24;
+      --panel-2: #23232c;
+      --ink: #ece8df;
+      --ink-2: #b8b2a4;
+      --ink-3: #807a6c;
+      --rule: #2e2e38;
+      --rule-strong: #44444f;
+      --accent: #f08a3c;
+      --accent-2: #b59cf0;
+      --accent-3: #6cc59c;
+      --accent-4: #e87a9c;
+      --accent-5: #7aa8e0;
+      --warn: #e0b85a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .frame {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 0;
+    min-height: 100vh;
+  }
+  /* ---------------- nav ---------------- */
+  nav.toc {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    padding: 28px 20px 28px 28px;
+    border-right: 1px solid var(--rule);
+    background: var(--panel);
+    font-size: 13px;
+    overflow-y: auto;
+  }
+  nav.toc h1 {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 500;
+    font-size: 22px;
+    margin: 0 0 4px;
+    letter-spacing: 0.01em;
+  }
+  nav.toc .sub {
+    color: var(--ink-3);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 22px;
+  }
+  nav.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: tocn; }
+  nav.toc li {
+    counter-increment: tocn;
+    padding: 5px 0;
+    border-bottom: 1px dashed var(--rule);
+  }
+  nav.toc li::before {
+    content: counter(tocn, decimal-leading-zero) "  ";
+    color: var(--ink-3);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+  nav.toc a {
+    color: var(--ink-2);
+    text-decoration: none;
+  }
+  nav.toc a:hover { color: var(--accent); }
+  nav.toc .group-label {
+    margin-top: 18px;
+    margin-bottom: 6px;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* ---------------- main ---------------- */
+  main {
+    padding: 56px clamp(28px, 5vw, 96px) 96px;
+    max-width: 1180px;
+  }
+  section { margin-bottom: 80px; scroll-margin-top: 32px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+  h2 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: clamp(28px, 3vw, 40px);
+    line-height: 1.1;
+    margin: 0 0 18px;
+    letter-spacing: -0.01em;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 22px;
+    margin: 28px 0 10px;
+  }
+  h4 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin: 18px 0 8px;
+  }
+  p { margin: 0 0 14px; max-width: 70ch; color: var(--ink); }
+  p.lede {
+    font-family: var(--serif);
+    font-size: 21px;
+    line-height: 1.45;
+    color: var(--ink);
+    max-width: 36em;
+  }
+  em.term {
+    font-style: normal;
+    background: var(--panel-2);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 0.86em;
+    color: var(--ink);
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--panel-2);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  a { color: var(--accent); }
+
+  /* ---------------- hero ---------------- */
+  .hero {
+    border: 1px solid var(--rule-strong);
+    border-radius: 4px;
+    padding: 36px 40px;
+    background:
+      radial-gradient(circle at 95% 5%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 50%),
+      var(--panel);
+    margin-bottom: 56px;
+  }
+  .hero .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .hero h1 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: clamp(36px, 5vw, 56px);
+    line-height: 1;
+    margin: 14px 0 8px;
+    letter-spacing: -0.02em;
+  }
+  .hero h1 em {
+    font-style: italic;
+    color: var(--accent);
+  }
+  .hero p.sub {
+    font-family: var(--serif);
+    font-size: 19px;
+    color: var(--ink-2);
+    margin: 6px 0 0;
+    max-width: 40em;
+  }
+
+  /* ---------------- insight panel ---------------- */
+  .insight {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 28px 32px;
+    border-radius: 3px;
+  }
+  .insight .axiom {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 22px;
+    line-height: 1.35;
+    color: var(--ink);
+    margin: 0 0 18px;
+  }
+  .insight .axiom b {
+    font-style: normal;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  /* ---------------- ops table (capability ↔ operation) ---------------- */
+  .ops-wrap { overflow-x: auto; margin: 14px 0 6px; }
+  table.ops {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14px;
+    font-family: var(--sans);
+  }
+  table.ops th, table.ops td {
+    border: 1px solid var(--rule);
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.ops th {
+    background: var(--panel-2);
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+  }
+  table.ops td.cap {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 16px;
+    color: var(--ink);
+    width: 22%;
+  }
+  table.ops td.op {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink-2);
+  }
+  table.ops td .slice-pill {
+    display: inline-block;
+    margin-top: 6px;
+  }
+
+  /* ---------------- slice pills ---------------- */
+  .slice-pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    background: transparent;
+  }
+  .s1 { color: var(--ink-3); }
+  .s2 { color: var(--accent); }
+  .s3 { color: var(--accent-2); }
+  .s4 { color: var(--accent-3); }
+  .s5 { color: var(--accent-5); }
+  .s6 { color: var(--accent-4); }
+  .s7 { color: var(--accent-5); }
+  .s8 { color: var(--warn); }
+
+  /* ---------------- matrix ---------------- */
+  .matrix {
+    display: grid;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--panel);
+    margin: 20px 0 8px;
+    font-size: 13px;
+  }
+  .matrix .row { display: grid; grid-template-columns: 200px repeat(6, 1fr); }
+  .matrix .row + .row { border-top: 1px solid var(--rule); }
+  .matrix .cell, .matrix .head {
+    padding: 10px 10px;
+    border-right: 1px solid var(--rule);
+    min-height: 56px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .matrix .cell:last-child, .matrix .head:last-child { border-right: none; }
+  .matrix .head {
+    background: var(--panel-2);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    color: var(--ink-2);
+  }
+  .matrix .rowhead {
+    background: var(--panel-2);
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 16px;
+    color: var(--ink);
+  }
+  .matrix .cell.lit {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--ink);
+  }
+  .matrix .cell.lit.s2 { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  .matrix .cell.lit.s3 { background: color-mix(in srgb, var(--accent-2) 18%, transparent); }
+  .matrix .cell.lit.s4 { background: color-mix(in srgb, var(--accent-3) 18%, transparent); }
+  .matrix .cell.lit.s5 { background: color-mix(in srgb, var(--accent-5) 18%, transparent); }
+  .matrix .cell.lit.s6 { background: color-mix(in srgb, var(--accent-4) 18%, transparent); }
+  .matrix .cell.lit.s7 { background: color-mix(in srgb, var(--accent-5) 22%, transparent); }
+  .matrix .cell.lit.s8 { background: color-mix(in srgb, var(--warn) 22%, transparent); }
+  .matrix .cell .note {
+    font-size: 11px;
+    color: var(--ink-2);
+    margin-top: 4px;
+    font-family: var(--mono);
+  }
+  @media (max-width: 880px) {
+    .matrix .row { grid-template-columns: 140px repeat(6, 1fr); font-size: 11px; }
+    .matrix .head { font-size: 9.5px; }
+  }
+
+  /* ---------------- slice cards ---------------- */
+  .slices {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 22px;
+    margin-top: 18px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 24px 26px 22px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--accent);
+  }
+  .card.s2::before { background: var(--accent); }
+  .card.s3::before { background: var(--accent-2); }
+  .card.s4::before { background: var(--accent-3); }
+  .card.s5::before { background: var(--accent-5); }
+  .card.s6::before { background: var(--accent-4); }
+  .card.s7::before { background: var(--accent-5); }
+  .card.s8::before { background: var(--warn); }
+  .card .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .card .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .card h3 {
+    margin: 4px 0 12px;
+    font-size: 22px;
+  }
+  .card .tagline {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--ink-2);
+    margin: 0 0 14px;
+  }
+  .card .schematic {
+    margin: 6px 0 18px;
+    background: var(--panel-2);
+    border-radius: 3px;
+    padding: 14px 12px;
+    border: 1px dashed var(--rule);
+  }
+  .card h4 { margin-top: 8px; margin-bottom: 4px; }
+  .card p { font-size: 14.5px; line-height: 1.5; }
+  .card .fold-line {
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-2);
+    background: var(--panel-2);
+    padding: 8px 10px;
+    border-radius: 3px;
+    border-left: 2px solid currentColor;
+  }
+  .card.s2 .fold-line { color: var(--accent); }
+  .card.s3 .fold-line { color: var(--accent-2); }
+  .card.s4 .fold-line { color: var(--accent-3); }
+  .card.s5 .fold-line { color: var(--accent-5); }
+  .card.s6 .fold-line { color: var(--accent-4); }
+  .card.s7 .fold-line { color: var(--accent-5); }
+  .card.s8 .fold-line { color: var(--warn); }
+
+  /* ---------------- callout ---------------- */
+  .callout {
+    background: var(--panel);
+    border: 1px solid var(--rule-strong);
+    border-radius: 4px;
+    padding: 22px 26px;
+    margin: 20px 0;
+  }
+  .callout.warm {
+    border-left: 3px solid var(--warn);
+  }
+  .callout h3 { margin-top: 0; }
+  .callout .micro {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--warn);
+    margin-bottom: 8px;
+  }
+
+  /* ---------------- wedge viz ---------------- */
+  .wedge {
+    display: grid;
+    grid-template-columns: 220px repeat(7, 1fr);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--panel);
+    font-size: 13px;
+  }
+  .wedge .w-row { display: contents; }
+  .wedge .w-cell {
+    padding: 12px 10px;
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .wedge .w-head {
+    background: var(--panel-2);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-2);
+  }
+  .wedge .w-label {
+    background: var(--panel-2);
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--ink);
+    justify-content: flex-start;
+    text-align: left;
+    padding-left: 16px;
+  }
+  .wedge .heat-0 { background: transparent; color: var(--ink-3); }
+  .wedge .heat-1 { background: color-mix(in srgb, currentColor 10%, transparent); }
+  .wedge .heat-2 { background: color-mix(in srgb, currentColor 30%, transparent); color: var(--ink); }
+  .wedge .heat-3 { background: color-mix(in srgb, currentColor 55%, transparent); color: #fff; font-weight: 600; }
+  .wedge .w-row.row-1 .heat-1, .wedge .w-row.row-1 .heat-2, .wedge .w-row.row-1 .heat-3 { color: var(--accent); }
+  .wedge .w-row.row-2 .heat-1, .wedge .w-row.row-2 .heat-2, .wedge .w-row.row-2 .heat-3 { color: var(--accent-4); }
+  .wedge .w-row.row-3 .heat-1, .wedge .w-row.row-3 .heat-2, .wedge .w-row.row-3 .heat-3 { color: var(--accent-3); }
+  .wedge .w-row.row-1 .heat-3, .wedge .w-row.row-2 .heat-3, .wedge .w-row.row-3 .heat-3 {
+    color: #ffffff;
+  }
+
+  /* ---------------- architecture diagram ---------------- */
+  .arch-wrap {
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--panel);
+    padding: 18px;
+    margin: 20px 0 8px;
+  }
+  .arch-controls {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .arch-controls button {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 6px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--rule-strong);
+    color: var(--ink-2);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .arch-controls button:hover { color: var(--ink); border-color: var(--accent); }
+  .arch-controls button.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .arch-controls .label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    align-self: center;
+    margin-right: 6px;
+  }
+  svg.arch { width: 100%; height: auto; display: block; }
+  svg.arch .node rect, svg.arch .node path {
+    transition: opacity 0.25s, stroke-width 0.25s;
+  }
+  svg.arch .node.hidden { opacity: 0.18; }
+  svg.arch .node.new rect, svg.arch .node.new path {
+    stroke-width: 2.5;
+  }
+  svg.arch text {
+    font-family: var(--mono);
+    font-size: 11px;
+    fill: var(--ink);
+  }
+  svg.arch text.label {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 13px;
+    fill: var(--ink);
+  }
+  svg.arch text.layer {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    fill: var(--ink-3);
+  }
+  svg.arch .layer-rule {
+    stroke: var(--rule);
+    stroke-dasharray: 4 4;
+  }
+  svg.arch .conn {
+    stroke: var(--ink-3);
+    stroke-width: 1;
+    fill: none;
+    opacity: 0.5;
+  }
+  .arch-legend {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--ink-2);
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .arch-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .arch-legend i {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    border: 1px solid currentColor;
+  }
+
+  /* ---------------- comparison ---------------- */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .compare .col {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 20px 22px;
+  }
+  .compare .col h4 {
+    margin-top: 0;
+    color: var(--ink);
+  }
+  .compare .col.lib h4 { border-bottom: 2px solid var(--accent); padding-bottom: 6px; display: inline-block; }
+  .compare .col.gw  h4 { border-bottom: 2px solid var(--warn);   padding-bottom: 6px; display: inline-block; }
+  .compare ul { padding-left: 18px; margin: 8px 0; }
+  .compare li { margin-bottom: 4px; font-size: 14px; }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+
+  /* ---------------- footer / closing ---------------- */
+  .closing {
+    border-top: 1px solid var(--rule);
+    padding-top: 28px;
+    margin-top: 40px;
+    color: var(--ink-2);
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 17px;
+  }
+
+  /* ---------------- mobile collapse ---------------- */
+  @media (max-width: 760px) {
+    .frame { grid-template-columns: 1fr; }
+    nav.toc { position: relative; height: auto; border-right: none; border-bottom: 1px solid var(--rule); }
+    main { padding: 32px 22px 64px; }
+  }
+
+  /* ---------------- details ---------------- */
+  details {
+    border: 1px solid var(--rule);
+    background: var(--panel);
+    border-radius: 3px;
+    padding: 12px 18px;
+    margin: 12px 0;
+  }
+  details + details { margin-top: 8px; }
+  details summary {
+    cursor: pointer;
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 16px;
+    color: var(--ink);
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  details summary::after {
+    content: "+";
+    font-family: var(--mono);
+    color: var(--ink-3);
+    font-size: 18px;
+  }
+  details[open] summary::after { content: "−"; }
+  details[open] summary { margin-bottom: 10px; }
+
+  /* tiny journal-glyph svgs */
+  .glyph { display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <nav class="toc" aria-label="Table of contents">
+    <h1>Pherix</h1>
+    <div class="sub">Slices 2 — 8</div>
+
+    <div class="group-label">The argument</div>
+    <ol>
+      <li><a href="#insight">One engine, seven costumes</a></li>
+      <li><a href="#matrix">Capability ↔ operation matrix</a></li>
+      <li><a href="#arch">Architecture, growing</a></li>
+    </ol>
+
+    <div class="group-label">The slices</div>
+    <ol>
+      <li><a href="#s2">Filesystem adapter</a></li>
+      <li><a href="#s3">HTTP / irreversible</a></li>
+      <li><a href="#s4">Isolation</a></li>
+      <li><a href="#s5">Replay</a></li>
+      <li><a href="#s6">Real policy engine</a></li>
+      <li><a href="#s7">Speculative dry-run</a></li>
+      <li><a href="#s8">MCP gateway</a></li>
+    </ol>
+
+    <div class="group-label">The shape it becomes</div>
+    <ol>
+      <li><a href="#wedge">Wedge growth</a></li>
+      <li><a href="#frontends">Two front-ends, one core</a></li>
+      <li><a href="#close">Closing</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <header class="hero">
+      <div class="tag">Vision · Slices 2 — 8</div>
+      <h1>Seven slices, <em>one</em> idea.</h1>
+      <p class="sub">Pherix grows by traversing the same sequence in a new direction each time. Forward fold. Backward fold. Fold against fresh state. Fold against a snapshot, then discard. Diff. Walk. Six verbs over one ordered object — the journal — yield every capability the system claims.</p>
+    </header>
+
+    <!-- ===================== INSIGHT ===================== -->
+    <section id="insight">
+      <div class="eyebrow">Section 01 · The unifying axiom</div>
+      <h2>One engine, seven costumes.</h2>
+      <p class="lede">Slice&nbsp;1 built an ordered, append-only list of <em class="term">Effect</em> records — the <em class="term">journal</em> — plus a <em class="term">ResourceAdapter</em> protocol (a triple <code>(snapshot, apply, restore)</code> wrapping a real backend). The claim of this document is simple: every later slice is a different traversal of that same list.</p>
+
+      <div class="insight">
+        <p class="axiom">A <b>journal</b> is an ordered sequence <code>e<sub>1</sub>, e<sub>2</sub>, …, e<sub>n</sub></code>. Each <code>e<sub>i</sub></code> carries an inverse <code>e<sub>i</sub><sup>-1</sup></code> (via its adapter's <code>restore</code>). Once you have an associative composition and inverses, the operations you can do <i>are</i> the ones the structure permits — and that is exactly the list below.</p>
+
+        <div class="ops-wrap">
+          <table class="ops" aria-label="Capability to journal operation table">
+            <thead>
+              <tr>
+                <th style="width:20%">Capability</th>
+                <th style="width:30%">Journal operation</th>
+                <th>What you assert at the end</th>
+                <th style="width:18%">Slice</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="cap">Commit</td>
+                <td class="op">forward fold &mdash; <code>e<sub>1</sub> ∘ e<sub>2</sub> ∘ … ∘ e<sub>n</sub></code> via <code>adapter.apply</code></td>
+                <td>real backend now holds the composed effect</td>
+                <td><span class="slice-pill s1">Slice 1</span></td>
+              </tr>
+              <tr>
+                <td class="cap">Rollback</td>
+                <td class="op">backward fold &mdash; <code>e<sub>n</sub><sup>-1</sup> ∘ … ∘ e<sub>1</sub><sup>-1</sup></code> via <code>adapter.restore</code></td>
+                <td>backend identical to its pre-txn state</td>
+                <td><span class="slice-pill s1">Slice 1</span></td>
+              </tr>
+              <tr>
+                <td class="cap">Replay</td>
+                <td class="op">forward fold against fresh state</td>
+                <td>every <code>e<sub>i</sub>.result</code> equals the original</td>
+                <td><span class="slice-pill s5">Slice 5</span></td>
+              </tr>
+              <tr>
+                <td class="cap">Speculative dry-run</td>
+                <td class="op">forward fold against a snapshot, then discard</td>
+                <td>diff = the hypothetical change set</td>
+                <td><span class="slice-pill s7">Slice 7</span></td>
+              </tr>
+              <tr>
+                <td class="cap">Isolation / conflict</td>
+                <td class="op">diff of this txn's <code>read_keys</code> / <code>write_keys</code> against the committed journal</td>
+                <td>no overlap ⇒ commit; overlap ⇒ abort / retry / serialize</td>
+                <td><span class="slice-pill s4">Slice 4</span></td>
+              </tr>
+              <tr>
+                <td class="cap">Audit / observability</td>
+                <td class="op">walk &mdash; just read the journal</td>
+                <td>causal trace for free; it is already there</td>
+                <td><span class="slice-pill s1">Slice 1</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p style="margin-top:18px; color: var(--ink-2);">Five hard problems &mdash; rollback semantics, isolation, partial-failure correctness, deterministic replay, what-if simulation &mdash; reduce to <b>six verbs over one list</b>. That is the wedge. The slices below are each one verb wearing a different costume.</p>
+      </div>
+
+      <p style="margin-top:18px;">Slice&nbsp;1 is already merged and is covered in detail in <code>slice-1.html</code>. This document is the future: how the same engine extends to filesystems, irreversible side-effects, concurrent agents, deterministic replay, real policy, speculative execution, and a language-agnostic gateway &mdash; <em>without rebuilding the engine</em>.</p>
+    </section>
+
+    <!-- ===================== MATRIX ===================== -->
+    <section id="matrix">
+      <div class="eyebrow">Section 02 · The matrix</div>
+      <h2>Capabilities &times; journal operations.</h2>
+      <p>Six columns, the verbs. Six rows, the user-visible capabilities. The lit cell is the verb the capability <em>is</em> &mdash; with the slice that switches the light on.</p>
+
+      <div class="matrix" role="table" aria-label="Capabilities versus journal operations">
+        <div class="row" role="row">
+          <div class="head" role="columnheader">Capability ↓ / Operation →</div>
+          <div class="head">Forward&nbsp;fold</div>
+          <div class="head">Backward&nbsp;fold</div>
+          <div class="head">Fold vs. fresh state</div>
+          <div class="head">Fold vs. snapshot, discard</div>
+          <div class="head">Diff (read/write&nbsp;sets)</div>
+          <div class="head">Walk (read-only)</div>
+        </div>
+
+        <div class="row" role="row">
+          <div class="cell rowhead">Commit a transaction</div>
+          <div class="cell lit s2"><span class="slice-pill s2">S2</span><div class="note">also applies to FS, HTTP, ...</div></div>
+          <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+        </div>
+
+        <div class="row" role="row">
+          <div class="cell rowhead">Roll back a transaction</div>
+          <div class="cell"></div>
+          <div class="cell lit s2"><span class="slice-pill s2">S2</span><div class="note">FS restore = copy-back</div></div>
+          <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+        </div>
+
+        <div class="row" role="row">
+          <div class="cell rowhead">Stage &amp; gate irreversible</div>
+          <div class="cell lit s3"><span class="slice-pill s3">S3</span><div class="note">only at commit, after approval</div></div>
+          <div class="cell lit s3"><span class="slice-pill s3">S3</span><div class="note">via compensator</div></div>
+          <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+        </div>
+
+        <div class="row" role="row">
+          <div class="cell rowhead">Detect concurrent conflict</div>
+          <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+          <div class="cell lit s4"><span class="slice-pill s4">S4</span><div class="note">read versions vs. committed writes</div></div>
+          <div class="cell"></div>
+        </div>
+
+        <div class="row" role="row">
+          <div class="cell rowhead">Replay a past run</div>
+          <div class="cell"></div><div class="cell"></div>
+          <div class="cell lit s5"><span class="slice-pill s5">S5</span><div class="note">assert same results</div></div>
+          <div class="cell"></div><div class="cell"></div><div class="cell"></div>
+        </div>
+
+        <div class="row" role="row">
+          <div class="cell rowhead">Enforce live policy</div>
+          <div class="cell lit s6"><span class="slice-pill s6">S6</span><div class="note">re-eval at commit (TOCTOU)</div></div>
+          <div class="cell"></div><div class="cell"></div><div class="cell"></div>
+          <div class="cell lit s6"><span class="slice-pill s6">S6</span><div class="note">spend caps = diff of usage set</div></div>
+          <div class="cell"></div>
+        </div>
+
+        <div class="row" role="row">
+          <div class="cell rowhead">Speculative "what if"</div>
+          <div class="cell"></div><div class="cell"></div><div class="cell"></div>
+          <div class="cell lit s7"><span class="slice-pill s7">S7</span><div class="note">snapshot, run, throw away</div></div>
+          <div class="cell"></div><div class="cell"></div>
+        </div>
+
+        <div class="row" role="row">
+          <div class="cell rowhead">Audit / observability</div>
+          <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+          <div class="cell lit s1"><span class="slice-pill s1">S1</span><div class="note">the journal IS the log</div></div>
+        </div>
+      </div>
+
+      <p style="margin-top:18px; color: var(--ink-2); font-size:14px;">The lit cells &mdash; together &mdash; are Pherix. <em>That is the whole product.</em></p>
+    </section>
+
+    <!-- ===================== ARCHITECTURE ===================== -->
+    <section id="arch">
+      <div class="eyebrow">Section 03 · The system, growing</div>
+      <h2>Architecture, one slice at a time.</h2>
+      <p>The same skeleton through every slice. The frontends (how the runtime is driven), the core (the journal &amp; the runtime), the adapters (one per resource family), the real resources. Click the slice buttons to see what gets added.</p>
+
+      <div class="arch-wrap">
+        <div class="arch-controls" id="archControls">
+          <span class="label">View:</span>
+          <button data-slice="1" class="active">Slice 1</button>
+          <button data-slice="2">+ Slice 2</button>
+          <button data-slice="3">+ Slice 3</button>
+          <button data-slice="4">+ Slice 4</button>
+          <button data-slice="5">+ Slice 5</button>
+          <button data-slice="6">+ Slice 6</button>
+          <button data-slice="7">+ Slice 7</button>
+          <button data-slice="8">+ Slice 8</button>
+        </div>
+
+        <svg class="arch" viewBox="0 0 880 540" preserveAspectRatio="xMidYMid meet" id="archSvg" aria-label="Pherix architecture by slice">
+          <!-- layer labels -->
+          <text class="layer" x="14" y="60">FRONT-ENDS</text>
+          <text class="layer" x="14" y="180">CORE</text>
+          <text class="layer" x="14" y="320">ADAPTERS</text>
+          <text class="layer" x="14" y="450">REAL RESOURCES</text>
+
+          <!-- dotted layer separators -->
+          <line class="layer-rule" x1="120" y1="92"  x2="870" y2="92"  />
+          <line class="layer-rule" x1="120" y1="240" x2="870" y2="240" />
+          <line class="layer-rule" x1="120" y1="380" x2="870" y2="380" />
+
+          <!-- ============ FRONT-ENDS LAYER ============ -->
+          <g class="node n-lib" data-slices="1,2,3,4,5,6,7,8" data-new="1">
+            <rect x="160" y="32" width="200" height="50" rx="4"
+                  fill="color-mix(in srgb, var(--accent) 12%, transparent)"
+                  stroke="var(--accent)" />
+            <text class="label" x="260" y="55" text-anchor="middle">frontends/library.py</text>
+            <text x="260" y="72" text-anchor="middle">in-process Python</text>
+          </g>
+          <g class="node n-gateway" data-slices="8" data-new="8">
+            <rect x="500" y="32" width="220" height="50" rx="4"
+                  fill="color-mix(in srgb, var(--warn) 12%, transparent)"
+                  stroke="var(--warn)" />
+            <text class="label" x="610" y="55" text-anchor="middle">frontends/proxy/ (MCP)</text>
+            <text x="610" y="72" text-anchor="middle">language-agnostic gateway</text>
+          </g>
+
+          <!-- ============ CORE LAYER ============ -->
+          <g class="node n-runtime" data-slices="1,2,3,4,5,6,7,8" data-new="1">
+            <rect x="160" y="110" width="180" height="50" rx="4"
+                  fill="var(--panel-2)" stroke="var(--ink-3)" />
+            <text class="label" x="250" y="133" text-anchor="middle">runtime.py</text>
+            <text x="250" y="150" text-anchor="middle">agent_txn() · interception</text>
+          </g>
+          <g class="node n-journal" data-slices="1,2,3,4,5,6,7,8" data-new="1">
+            <rect x="360" y="110" width="180" height="50" rx="4"
+                  fill="var(--panel-2)" stroke="var(--ink-3)" />
+            <text class="label" x="450" y="133" text-anchor="middle">transaction · effects</text>
+            <text x="450" y="150" text-anchor="middle">the journal · audit</text>
+          </g>
+          <g class="node n-policy" data-slices="1,2,3,4,5,6,7,8" data-new="6">
+            <rect x="560" y="110" width="140" height="50" rx="4"
+                  fill="color-mix(in srgb, var(--accent-4) 8%, transparent)"
+                  stroke="var(--accent-4)" />
+            <text class="label" x="630" y="133" text-anchor="middle">policy.py</text>
+            <text x="630" y="150" text-anchor="middle">stage + commit</text>
+          </g>
+          <g class="node n-isolation" data-slices="4,5,6,7,8" data-new="4">
+            <rect x="720" y="110" width="140" height="50" rx="4"
+                  fill="color-mix(in srgb, var(--accent-3) 12%, transparent)"
+                  stroke="var(--accent-3)" />
+            <text class="label" x="790" y="133" text-anchor="middle">isolation.py</text>
+            <text x="790" y="150" text-anchor="middle">conflict diff</text>
+          </g>
+          <g class="node n-replay" data-slices="5,6,7,8" data-new="5">
+            <rect x="160" y="180" width="180" height="40" rx="4"
+                  fill="color-mix(in srgb, var(--accent-5) 12%, transparent)"
+                  stroke="var(--accent-5)" />
+            <text class="label" x="250" y="205" text-anchor="middle">replay (fold v. fresh)</text>
+          </g>
+          <g class="node n-dryrun" data-slices="7,8" data-new="7">
+            <rect x="360" y="180" width="180" height="40" rx="4"
+                  fill="color-mix(in srgb, var(--accent-5) 18%, transparent)"
+                  stroke="var(--accent-5)" />
+            <text class="label" x="450" y="205" text-anchor="middle">dry-run (fold + discard)</text>
+          </g>
+          <g class="node n-staging" data-slices="3,4,5,6,7,8" data-new="3">
+            <rect x="560" y="180" width="300" height="40" rx="4"
+                  fill="color-mix(in srgb, var(--accent-2) 12%, transparent)"
+                  stroke="var(--accent-2)" />
+            <text class="label" x="710" y="205" text-anchor="middle">staging · gate · compensators · idempotency</text>
+          </g>
+
+          <!-- ============ ADAPTERS LAYER ============ -->
+          <g class="node n-sql" data-slices="1,2,3,4,5,6,7,8" data-new="1">
+            <rect x="160" y="260" width="160" height="60" rx="4"
+                  fill="var(--panel-2)" stroke="var(--ink-3)" />
+            <text class="label" x="240" y="283" text-anchor="middle">SQLiteAdapter</text>
+            <text x="240" y="299" text-anchor="middle">SAVEPOINT / ROLLBACK</text>
+            <text x="240" y="313" text-anchor="middle">supports_rollback=True</text>
+          </g>
+          <g class="node n-fs" data-slices="2,3,4,5,6,7,8" data-new="2">
+            <rect x="340" y="260" width="160" height="60" rx="4"
+                  fill="color-mix(in srgb, var(--accent) 12%, transparent)"
+                  stroke="var(--accent)" />
+            <text class="label" x="420" y="283" text-anchor="middle">FilesystemAdapter</text>
+            <text x="420" y="299" text-anchor="middle">copy-on-write</text>
+            <text x="420" y="313" text-anchor="middle">supports_rollback=True</text>
+          </g>
+          <g class="node n-http" data-slices="3,4,5,6,7,8" data-new="3">
+            <rect x="520" y="260" width="160" height="60" rx="4"
+                  fill="color-mix(in srgb, var(--accent-2) 12%, transparent)"
+                  stroke="var(--accent-2)" />
+            <text class="label" x="600" y="283" text-anchor="middle">HTTPAdapter</text>
+            <text x="600" y="299" text-anchor="middle">staged · idempotent</text>
+            <text x="600" y="313" text-anchor="middle">supports_rollback=False</text>
+          </g>
+          <g class="node n-extra" data-slices="4,5,6,7,8" data-new="4">
+            <rect x="700" y="260" width="160" height="60" rx="4"
+                  fill="var(--panel-2)" stroke="var(--ink-3)"
+                  stroke-dasharray="5 4" />
+            <text class="label" x="780" y="283" text-anchor="middle">your adapter…</text>
+            <text x="780" y="299" text-anchor="middle">Redis / SQS / S3 / …</text>
+            <text x="780" y="313" text-anchor="middle">conforms to protocol</text>
+          </g>
+
+          <!-- ============ RESOURCES LAYER ============ -->
+          <g class="node n-db" data-slices="1,2,3,4,5,6,7,8" data-new="1">
+            <ellipse cx="240" cy="430" rx="80" ry="22" fill="var(--panel-2)" stroke="var(--ink-3)" />
+            <text x="240" y="434" text-anchor="middle">SQLite / Postgres</text>
+          </g>
+          <g class="node n-fsdisk" data-slices="2,3,4,5,6,7,8" data-new="2">
+            <ellipse cx="420" cy="430" rx="80" ry="22" fill="color-mix(in srgb, var(--accent) 8%, transparent)" stroke="var(--accent)" />
+            <text x="420" y="434" text-anchor="middle">disk · object store</text>
+          </g>
+          <g class="node n-net" data-slices="3,4,5,6,7,8" data-new="3">
+            <ellipse cx="600" cy="430" rx="80" ry="22" fill="color-mix(in srgb, var(--accent-2) 8%, transparent)" stroke="var(--accent-2)" />
+            <text x="600" y="434" text-anchor="middle">external APIs</text>
+          </g>
+          <g class="node n-other" data-slices="4,5,6,7,8" data-new="4">
+            <ellipse cx="780" cy="430" rx="80" ry="22" fill="var(--panel-2)" stroke="var(--ink-3)" stroke-dasharray="5 4" />
+            <text x="780" y="434" text-anchor="middle">anything reversible</text>
+          </g>
+
+          <!-- agent box -->
+          <g class="node n-agent" data-slices="1,2,3,4,5,6,7,8" data-new="1">
+            <rect x="40" y="32" width="100" height="50" rx="4"
+                  fill="var(--bg)" stroke="var(--ink-3)" stroke-dasharray="3 3" />
+            <text x="90" y="55" text-anchor="middle">your agent</text>
+            <text x="90" y="72" text-anchor="middle">(unchanged)</text>
+          </g>
+
+          <!-- connectors: agent → frontends -->
+          <path class="conn" d="M140 57 L160 57" />
+          <!-- frontends → runtime -->
+          <path class="conn" d="M260 82 L260 110" />
+          <path class="conn" d="M610 82 C610 96, 340 96, 340 110" />
+          <!-- runtime → journal/policy/isolation -->
+          <path class="conn" d="M340 135 L360 135" />
+          <path class="conn" d="M540 135 L560 135" />
+          <path class="conn" d="M700 135 L720 135" />
+          <!-- journal → staging/replay/dryrun -->
+          <path class="conn" d="M450 160 L450 180" />
+          <path class="conn" d="M250 160 L250 180" />
+          <path class="conn" d="M650 160 L710 180" />
+          <!-- core → adapters -->
+          <path class="conn" d="M250 160 L240 260" />
+          <path class="conn" d="M450 160 L420 260" />
+          <path class="conn" d="M650 160 L600 260" />
+          <path class="conn" d="M790 160 L780 260" />
+          <!-- adapters → resources -->
+          <path class="conn" d="M240 320 L240 408" />
+          <path class="conn" d="M420 320 L420 408" />
+          <path class="conn" d="M600 320 L600 408" />
+          <path class="conn" d="M780 320 L780 408" />
+        </svg>
+
+        <div class="arch-legend">
+          <span><i style="background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: var(--accent);"></i>Slice 2 (filesystem)</span>
+          <span><i style="background: color-mix(in srgb, var(--accent-2) 14%, transparent); border-color: var(--accent-2);"></i>Slice 3 (irreversible / HTTP)</span>
+          <span><i style="background: color-mix(in srgb, var(--accent-3) 14%, transparent); border-color: var(--accent-3);"></i>Slice 4 (isolation)</span>
+          <span><i style="background: color-mix(in srgb, var(--accent-5) 14%, transparent); border-color: var(--accent-5);"></i>Slice 5 &amp; 7 (replay, dry-run)</span>
+          <span><i style="background: color-mix(in srgb, var(--accent-4) 14%, transparent); border-color: var(--accent-4);"></i>Slice 6 (real policy)</span>
+          <span><i style="background: color-mix(in srgb, var(--warn) 14%, transparent); border-color: var(--warn);"></i>Slice 8 (MCP gateway)</span>
+        </div>
+      </div>
+
+      <p style="margin-top:14px; font-size: 14px; color: var(--ink-2);">Notice what <em>doesn't</em> change. The runtime, the journal, the audit, the <code>ResourceAdapter</code> protocol &mdash; built once in Slice 1, untouched by anything to its right. New slices either plug in beside (a new adapter) or reach into the journal with a new verb. That is the abstraction earning its keep.</p>
+    </section>
+
+    <!-- ===================== SLICE CARDS ===================== -->
+    <section>
+      <div class="eyebrow">Section 04 · The slices in turn</div>
+      <h2>Each slice, the same verb in a new costume.</h2>
+      <p>For each slice: what it adds, what it unlocks for the operator running an agent under Pherix, and the operation it performs over the journal. The third line is the load-bearing one &mdash; it is what makes the slice cheap.</p>
+
+      <div class="slices">
+
+        <!-- ============ SLICE 2 ============ -->
+        <article class="card s2" id="s2">
+          <div class="top"><span class="num">Slice · 02</span><span class="slice-pill s2">filesystem</span></div>
+          <h3>The filesystem adapter</h3>
+          <p class="tagline">A structurally <em>different</em> resource &mdash; same protocol.</p>
+
+          <div class="schematic">
+            <svg viewBox="0 0 360 92" class="glyph" aria-label="snapshot, write, restore over a file">
+              <defs>
+                <marker id="ar-s2" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 z" fill="var(--accent)"/>
+                </marker>
+              </defs>
+              <!-- pre file -->
+              <rect x="10" y="22" width="78" height="46" rx="3" fill="var(--panel-2)" stroke="var(--accent)" />
+              <text x="49" y="46" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink)">/x.txt</text>
+              <text x="49" y="60" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="var(--ink-2)">"pre"</text>
+              <text x="49" y="14" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="var(--ink-3)">snapshot</text>
+              <!-- arrow -->
+              <line x1="93" y1="45" x2="125" y2="45" stroke="var(--accent)" marker-end="url(#ar-s2)" />
+              <text x="109" y="38" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="var(--ink-2)">apply</text>
+              <!-- mid file (modified) -->
+              <rect x="132" y="22" width="78" height="46" rx="3" fill="color-mix(in srgb, var(--accent) 18%, transparent)" stroke="var(--accent)" />
+              <text x="171" y="46" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink)">/x.txt</text>
+              <text x="171" y="60" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="var(--ink-2)">"new"</text>
+              <!-- arrow back -->
+              <line x1="215" y1="45" x2="247" y2="45" stroke="var(--accent)" marker-end="url(#ar-s2)" stroke-dasharray="3 3" />
+              <text x="231" y="38" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="var(--ink-2)">restore</text>
+              <!-- after file -->
+              <rect x="254" y="22" width="96" height="46" rx="3" fill="var(--panel-2)" stroke="var(--accent)" />
+              <text x="302" y="46" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink)">/x.txt</text>
+              <text x="302" y="60" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="var(--ink-2)">"pre" (copy-back)</text>
+            </svg>
+          </div>
+
+          <h4>What it adds</h4>
+          <p>A <code>FilesystemAdapter(root)</code> that snapshots files via a per-transaction tempdir backup, applies tool writes through an <code>FsHandle</code>, and restores by copying backups back into place (or deleting paths that did not exist before the effect). A new sub-protocol <code>TransactionalResourceAdapter</code> formalises the <code>begin / commit / rollback</code> lifecycle that SQLite quietly had via duck-typing &mdash; the type system now reflects the real taxonomy of resources.</p>
+
+          <h4>What it unlocks</h4>
+          <p>The acceptance bar is a <em>mixed-resource transaction</em>: one <code>agent_txn</code> writes to the database <em>and</em> the filesystem, you call <code>rollback()</code>, and both are wiped. The operator stops thinking about Pherix as a SQL thing &mdash; it is a transaction <em>over arbitrary resources</em>, with the second resource as the existence proof.</p>
+
+          <h4>How it traverses the journal</h4>
+          <div class="fold-line"><b>Same</b> forward fold for commit, <b>same</b> backward fold for rollback &mdash; just a new adapter under the hood. Heterogeneous effects compose in journal order because <code>apply</code> and <code>restore</code> are independent per-effect. The journal does not know &mdash; or need to know &mdash; that two adjacent effects touch different kinds of resource.</p>
+        </article>
+
+        <!-- ============ SLICE 3 ============ -->
+        <article class="card s3" id="s3">
+          <div class="top"><span class="num">Slice · 03</span><span class="slice-pill s3">irreversible</span></div>
+          <h3>HTTP &amp; the irreversible path</h3>
+          <p class="tagline">Honesty about what cannot be undone.</p>
+
+          <div class="schematic">
+            <svg viewBox="0 0 360 100" class="glyph" aria-label="staged effects fire at commit">
+              <defs>
+                <marker id="ar-s3" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 z" fill="var(--accent-2)"/>
+                </marker>
+              </defs>
+              <!-- journal slots -->
+              <rect x="10"  y="28" width="44" height="36" rx="3" fill="var(--panel-2)" stroke="var(--accent-2)" stroke-dasharray="3 3"/>
+              <text x="32" y="50" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="var(--ink-2)">STAGED</text>
+              <rect x="60"  y="28" width="44" height="36" rx="3" fill="var(--panel-2)" stroke="var(--accent-2)" stroke-dasharray="3 3"/>
+              <text x="82" y="50" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="var(--ink-2)">STAGED</text>
+              <rect x="110" y="28" width="44" height="36" rx="3" fill="var(--panel-2)" stroke="var(--accent-2)" stroke-dasharray="3 3"/>
+              <text x="132" y="50" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="var(--ink-2)">STAGED</text>
+              <text x="80" y="80" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-3)">in-flight: nothing has hit the network</text>
+              <!-- arrow -->
+              <line x1="160" y1="46" x2="200" y2="46" stroke="var(--accent-2)" marker-end="url(#ar-s3)" />
+              <text x="180" y="38" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--accent-2)">commit()</text>
+              <!-- after -->
+              <rect x="206" y="28" width="44" height="36" rx="3" fill="color-mix(in srgb, var(--accent-2) 24%, transparent)" stroke="var(--accent-2)"/>
+              <text x="228" y="50" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="#fff">APPLIED</text>
+              <rect x="256" y="28" width="44" height="36" rx="3" fill="color-mix(in srgb, var(--accent-2) 24%, transparent)" stroke="var(--accent-2)"/>
+              <text x="278" y="50" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="#fff">APPLIED</text>
+              <rect x="306" y="28" width="44" height="36" rx="3" fill="color-mix(in srgb, var(--accent-4) 18%, transparent)" stroke="var(--accent-4)"/>
+              <text x="328" y="50" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="var(--accent-4)">GATED</text>
+              <text x="278" y="84" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-3)">fired in order; last one needs human approval</text>
+            </svg>
+          </div>
+
+          <h4>What it adds</h4>
+          <p>An <code>HTTPAdapter</code> whose <code>supports_rollback()</code> is <code>False</code> &mdash; honest, not pretend. The runtime routes such effects down the irreversible lane: instead of executing live, they become <code>StagedResult</code> placeholders. At <code>commit()</code>, staged effects fire in journal order. Each may have a registered <em class="term">compensator</em> (an inverse tool that runs on rollback after the fact &mdash; e.g. issue a refund); without one, the effect <em class="term">gates</em> and <code>commit()</code> blocks until <code>approve_irreversible()</code> is called by a human or higher-trust policy. Every staged effect carries an <em class="term">idempotency key</em> = <code>hash(txn_id + index + tool + args)</code>, so a re-fire after a partial crash hits the API at most once.</p>
+
+          <h4>What it unlocks</h4>
+          <p>The agent can <em>plan</em> with calls to "send the email", "charge the card", "post to Slack" without any of them happening yet. <code>rollback()</code> before commit means those calls simply never occurred. <code>commit()</code> with gating means a human can vet the planned irreversible set as a batch &mdash; the same review surface as a DB transaction, applied to the rest of the world.</p>
+
+          <h4>How it traverses the journal</h4>
+          <div class="fold-line">Forward fold delayed to <code>commit()</code>: staged entries are inert until then. The "backward fold" for an already-applied irreversible effect is not free &mdash; it is the registered compensator, which is itself a new effect appended to the journal. Inverses are still there, but as <em>declared</em> rather than <em>structural</em>.</p>
+        </article>
+
+        <!-- ============ SLICE 4 ============ -->
+        <article class="card s4" id="s4">
+          <div class="top"><span class="num">Slice · 04</span><span class="slice-pill s4">isolation</span></div>
+          <h3>Isolation between concurrent agents</h3>
+          <p class="tagline">A diff, not a lock.</p>
+
+          <div class="schematic">
+            <svg viewBox="0 0 360 110" class="glyph" aria-label="two journals overlap; intersection is the conflict">
+              <!-- two journals -->
+              <rect x="20"  y="14" width="160" height="32" rx="3" fill="var(--panel-2)" stroke="var(--accent-3)" />
+              <text x="100" y="34" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-2)">Txn A · writes {row 42, row 51}</text>
+              <rect x="180" y="62" width="160" height="32" rx="3" fill="var(--panel-2)" stroke="var(--accent-3)" />
+              <text x="260" y="82" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-2)">Txn B · reads {row 42 @ v3}</text>
+              <!-- conflict marker -->
+              <ellipse cx="180" cy="55" rx="16" ry="10" fill="color-mix(in srgb, var(--accent-4) 35%, transparent)" stroke="var(--accent-4)" />
+              <text x="180" y="58" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="#fff">∩</text>
+              <text x="180" y="106" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--accent-4)">intersection ≠ ∅ ⇒ conflict</text>
+            </svg>
+          </div>
+
+          <h4>What it adds</h4>
+          <p>Every <code>Effect</code> already carries <code>read_keys</code> (<code>(resource, key, version)</code> triples it observed) and <code>write_keys</code> (<code>(resource, key)</code> pairs it intends to alter) &mdash; those slots are baked in from Slice 1 precisely so isolation is never a retrofit. Slice 4 turns those slots from inert metadata into the basis of <em class="term">MVCC</em> (multi-version concurrency control &mdash; the database technique where each row carries a version and conflicts are detected by version mismatch, not pessimistic locks). A resolution policy &mdash; <em>abort</em>, <em>retry</em>, or <em>serialize</em> &mdash; decides the outcome.</p>
+
+          <h4>What it unlocks</h4>
+          <p>Two agents acting on the same resources stop stepping on each other. The losing transaction is told <em>why</em> it lost &mdash; "you read row 42 at version 3, but version 4 was committed by txn B" &mdash; and the resolution policy gives it a path: redo, abandon, or wait its turn. No global mutex. No "just hope".</p>
+
+          <h4>How it traverses the journal</h4>
+          <div class="fold-line">Set diff. <code>read_keys(self) ∩ write_keys(committed_journal_after_my_snapshot)</code>. Empty ⇒ commit. Non-empty ⇒ apply the resolution policy. Conflict detection is structurally a <em>relation</em> on two journals, not a procedure.</p>
+        </article>
+
+        <!-- ============ SLICE 5 ============ -->
+        <article class="card s5" id="s5">
+          <div class="top"><span class="num">Slice · 05</span><span class="slice-pill s5">replay</span></div>
+          <h3>Replay from the journal</h3>
+          <p class="tagline">Nearly free &mdash; the journal already exists.</p>
+
+          <div class="schematic">
+            <svg viewBox="0 0 360 100" class="glyph" aria-label="forward fold of journal against fresh state">
+              <defs>
+                <marker id="ar-s5" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 z" fill="var(--accent-5)"/>
+                </marker>
+              </defs>
+              <!-- past journal -->
+              <text x="56"  y="20" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-3)" text-anchor="middle">stored journal</text>
+              <g>
+                <rect x="14"  y="28" width="28" height="24" rx="2" fill="color-mix(in srgb, var(--accent-5) 22%, transparent)" stroke="var(--accent-5)" />
+                <rect x="46"  y="28" width="28" height="24" rx="2" fill="color-mix(in srgb, var(--accent-5) 22%, transparent)" stroke="var(--accent-5)" />
+                <rect x="78"  y="28" width="28" height="24" rx="2" fill="color-mix(in srgb, var(--accent-5) 22%, transparent)" stroke="var(--accent-5)" />
+              </g>
+              <line x1="115" y1="40" x2="155" y2="40" stroke="var(--accent-5)" marker-end="url(#ar-s5)" />
+              <text x="135" y="58" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--accent-5)">fold →</text>
+              <!-- fresh state -->
+              <ellipse cx="200" cy="40" rx="36" ry="20" fill="var(--panel-2)" stroke="var(--ink-3)" stroke-dasharray="3 3" />
+              <text x="200" y="44" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-2)">fresh DB</text>
+              <line x1="240" y1="40" x2="280" y2="40" stroke="var(--accent-5)" marker-end="url(#ar-s5)" />
+              <!-- assertion -->
+              <text x="320" y="36" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--accent-5)">assert</text>
+              <text x="320" y="52" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--accent-5)">≡ original</text>
+              <text x="180" y="92" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-3)">determinism check / disaster recovery / debug</text>
+            </svg>
+          </div>
+
+          <h4>What it adds</h4>
+          <p>A <code>replay(txn_id)</code> entrypoint: load the recorded journal from the audit, instantiate a fresh resource of each type at a known good state, and fold the journal forward through the adapters &mdash; asserting at each step that the new <code>result</code> equals the recorded one.</p>
+
+          <h4>What it unlocks</h4>
+          <p>Determinism checks. Disaster recovery (rebuild end-state from logs). Debugging: rerun a problematic txn with breakpoints. Compliance: prove that a sequence of agent actions reconstructs to a specific state byte-for-byte. The journal becomes <em>truth</em>, not just a trace.</p>
+
+          <h4>How it traverses the journal</h4>
+          <div class="fold-line">Forward fold, second time around. Same direction as commit; the difference is the substrate &mdash; not the live backend, a fresh one. If the agent and adapters are deterministic, the result is identical. If it isn't, replay <em>finds you the non-determinism</em>.</p>
+        </article>
+
+        <!-- ============ SLICE 6 ============ -->
+        <article class="card s6" id="s6">
+          <div class="top"><span class="num">Slice · 06</span><span class="slice-pill s6">policy</span></div>
+          <h3>The real policy engine</h3>
+          <p class="tagline">Evaluated twice. State changes; permission must too.</p>
+
+          <div class="schematic">
+            <svg viewBox="0 0 360 100" class="glyph" aria-label="policy gate at stage and commit">
+              <!-- two eval points along a journal -->
+              <line x1="20" y1="50" x2="340" y2="50" stroke="var(--ink-3)" stroke-dasharray="3 3" />
+              <g>
+                <rect x="14" y="38" width="28" height="24" rx="2" fill="var(--panel-2)" stroke="var(--accent-4)" />
+                <rect x="46" y="38" width="28" height="24" rx="2" fill="var(--panel-2)" stroke="var(--accent-4)" />
+                <rect x="78" y="38" width="28" height="24" rx="2" fill="var(--panel-2)" stroke="var(--accent-4)" />
+                <rect x="110" y="38" width="28" height="24" rx="2" fill="var(--panel-2)" stroke="var(--accent-4)" />
+                <rect x="142" y="38" width="28" height="24" rx="2" fill="var(--panel-2)" stroke="var(--accent-4)" />
+              </g>
+              <!-- gate icons -->
+              <g>
+                <circle cx="28" cy="20" r="9" fill="var(--accent-4)" />
+                <text x="28" y="23" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="#fff">P?</text>
+                <line x1="28" y1="29" x2="28" y2="38" stroke="var(--accent-4)" />
+              </g>
+              <g>
+                <circle cx="156" cy="20" r="9" fill="var(--accent-4)" />
+                <text x="156" y="23" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" fill="#fff">P?</text>
+                <line x1="156" y1="29" x2="156" y2="38" stroke="var(--accent-4)" />
+              </g>
+              <text x="28" y="82" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-2)">stage-time</text>
+              <text x="156" y="82" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-2)">commit-time</text>
+              <text x="260" y="50" text-anchor="middle" font-family="ui-monospace, monospace" font-size="11" fill="var(--accent-4)">re-eval the whole set</text>
+            </svg>
+          </div>
+
+          <h4>What it adds</h4>
+          <p>Replaces the Slice 1 allow-list with capability grants ("this agent may write to <code>orders.*</code>"), spend caps ("at most $5 across all <code>charge</code> calls this txn"), and content-aware rules ("never email anything containing <code>password</code>"). Evaluated at <em>stage-time</em> (fail fast, before any work) and again at <em>commit-time</em> (state may have changed in between &mdash; classic TOCTOU defence: time-of-check vs. time-of-use). A grant that was true when an effect was staged might be false by the time the whole transaction is ready to land.</p>
+
+          <h4>What it unlocks</h4>
+          <p>The operator can hand an agent a budget and a permission set and trust them. Tools and arguments are inspected; the policy decides per-effect <em>and</em> per-transaction. Capability enforcement becomes a first-class commit-time primitive &mdash; one of the three wedges that nobody else has.</p>
+
+          <h4>How it traverses the journal</h4>
+          <div class="fold-line">Walk + diff. Walk the journal to compute aggregates ("total spend so far", "domains contacted"); diff each effect's request against the policy's grant set. Same operations, new predicate &mdash; that is why it bolts onto Slice 1 without a rewrite.</p>
+        </article>
+
+        <!-- ============ SLICE 7 ============ -->
+        <article class="card s7" id="s7">
+          <div class="top"><span class="num">Slice · 07</span><span class="slice-pill s7">dry-run</span></div>
+          <h3>Speculative dry-run</h3>
+          <p class="tagline">Run it &mdash; then throw the world away.</p>
+
+          <div class="schematic">
+            <svg viewBox="0 0 360 100" class="glyph" aria-label="snapshot, fold, discard, diff">
+              <defs>
+                <marker id="ar-s7" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 z" fill="var(--accent-5)"/>
+                </marker>
+              </defs>
+              <!-- pre snapshot -->
+              <ellipse cx="44" cy="46" rx="32" ry="20" fill="var(--panel-2)" stroke="var(--accent-5)" />
+              <text x="44" y="50" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-2)">snapshot</text>
+              <line x1="78" y1="46" x2="110" y2="46" stroke="var(--accent-5)" marker-end="url(#ar-s7)" />
+              <!-- forward fold against copy -->
+              <rect x="116" y="26" width="80" height="40" rx="3" fill="color-mix(in srgb, var(--accent-5) 18%, transparent)" stroke="var(--accent-5)" />
+              <text x="156" y="50" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink)">fold forward</text>
+              <line x1="198" y1="46" x2="230" y2="46" stroke="var(--accent-5)" marker-end="url(#ar-s7)" />
+              <!-- discard -->
+              <g>
+                <rect x="236" y="26" width="60" height="40" rx="3" fill="var(--panel-2)" stroke="var(--accent-5)" stroke-dasharray="4 3" />
+                <text x="266" y="50" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-2)">discard</text>
+              </g>
+              <line x1="298" y1="46" x2="328" y2="46" stroke="var(--accent-5)" marker-end="url(#ar-s7)" />
+              <text x="320" y="32" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--accent-5)">diff</text>
+              <text x="180" y="88" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-3)">return the change set; never touch reality</text>
+            </svg>
+          </div>
+
+          <h4>What it adds</h4>
+          <p>A <code>dry_run()</code> entrypoint: take a snapshot of the involved resources, fold the proposed journal forward against the copy, capture the resulting diff, throw the copy away. No live effect leaks. Irreversible effects are recorded as "would have called X with Y" without firing.</p>
+
+          <h4>What it unlocks</h4>
+          <p>"Show me what this agent <em>would</em> do." Pre-flight checks before committing. A/B prompts compared on their projected change set. Cost projections without spending money. The agent's plan becomes diffable in the same way code is &mdash; review the change, then approve the commit.</p>
+
+          <h4>How it traverses the journal</h4>
+          <div class="fold-line">Forward fold, against a snapshot, with the result discarded. Mathematically: <code>diff = state(fold(journal, snapshot)) − snapshot</code>. The work was already done by Slice 1's <code>snapshot</code> and Slice 5's fold mechanism; Slice 7 just wires them up differently.</p>
+        </article>
+
+        <!-- ============ SLICE 8 ============ -->
+        <article class="card s8" id="s8">
+          <div class="top"><span class="num">Slice · 08</span><span class="slice-pill s8">gateway</span></div>
+          <h3>The MCP gateway front-end</h3>
+          <p class="tagline">Same engine, new mouth.</p>
+
+          <div class="schematic">
+            <svg viewBox="0 0 360 110" class="glyph" aria-label="library and MCP gateway both feed the same core">
+              <!-- library -->
+              <rect x="14" y="14" width="100" height="34" rx="3" fill="color-mix(in srgb, var(--accent) 14%, transparent)" stroke="var(--accent)" />
+              <text x="64" y="36" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink)">library (py)</text>
+              <!-- gateway -->
+              <rect x="14" y="60" width="100" height="34" rx="3" fill="color-mix(in srgb, var(--warn) 18%, transparent)" stroke="var(--warn)" />
+              <text x="64" y="82" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink)">MCP gateway</text>
+              <!-- core -->
+              <rect x="170" y="32" width="170" height="46" rx="3" fill="var(--panel-2)" stroke="var(--ink-3)" />
+              <text x="255" y="56" text-anchor="middle" font-family="serif" font-style="italic" font-size="13" fill="var(--ink)">core/ — the journal &amp; runtime</text>
+              <text x="255" y="72" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-3)">unchanged across both</text>
+              <!-- connectors -->
+              <line x1="114" y1="31" x2="170" y2="50" stroke="var(--ink-3)" />
+              <line x1="114" y1="77" x2="170" y2="60" stroke="var(--ink-3)" />
+              <text x="180" y="104" text-anchor="middle" font-family="ui-monospace, monospace" font-size="10" fill="var(--ink-3)">two front-ends · one core · same protocol</text>
+            </svg>
+          </div>
+
+          <h4>What it adds</h4>
+          <p>A second front-end: instead of intercepting in-process Python function calls, the gateway speaks <em class="term">MCP</em> (Model Context Protocol &mdash; the wire protocol agents use to talk to tool servers). Agents in any language &mdash; TypeScript, Go, Rust, a hosted SaaS &mdash; route their tool calls through the gateway. The gateway translates each MCP message into an <code>Effect</code> and feeds the <em>same</em> <code>core/</code>.</p>
+
+          <h4>What it unlocks</h4>
+          <p>Language and deployment independence. You no longer need to <code>pip install pherix</code> into the agent process &mdash; the agent can be anywhere, in any language, in any framework, as long as it speaks MCP. Pherix moves from "a Python library" to "an infrastructure component you point your agent at".</p>
+
+          <h4>How it traverses the journal</h4>
+          <div class="fold-line">Identical traversals to every previous slice. The gateway is a <em>different interception point</em>, not a different engine. The core does not know, and does not need to know, whether the <code>Effect</code> on its desk came from an <code>@tool</code>-decorated Python function or a JSON-RPC message off a socket.</p>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ===================== WEDGE GROWTH ===================== -->
+    <section id="wedge">
+      <div class="eyebrow">Section 05 · The wedge, slice by slice</div>
+      <h2>Where the moat actually forms.</h2>
+      <p>Pherix claims three things nobody else does. The first is partially delivered by Slice 1, but the wedge isn't <em>real</em> until Slice 4 and Slice 6 ship. The heatmap below reads dark cells = the slice contributes substantively to that wedge.</p>
+
+      <div class="wedge" role="table" aria-label="Wedge contribution by slice">
+        <div class="w-cell w-head">Competitive wedge ↓ / Slice →</div>
+        <div class="w-cell w-head">S2</div>
+        <div class="w-cell w-head">S3</div>
+        <div class="w-cell w-head">S4</div>
+        <div class="w-cell w-head">S5</div>
+        <div class="w-cell w-head">S6</div>
+        <div class="w-cell w-head">S7</div>
+        <div class="w-cell w-head">S8</div>
+
+        <div class="w-row row-1">
+          <div class="w-cell w-label">1 — snapshot/rollback via real backend semantics</div>
+          <div class="w-cell heat-3">★</div>
+          <div class="w-cell heat-2">·</div>
+          <div class="w-cell heat-1">·</div>
+          <div class="w-cell heat-1">·</div>
+          <div class="w-cell heat-0">·</div>
+          <div class="w-cell heat-2">·</div>
+          <div class="w-cell heat-1">·</div>
+        </div>
+        <div class="w-row row-2">
+          <div class="w-cell w-label">2 — capability/policy as commit-time primitive</div>
+          <div class="w-cell heat-0">·</div>
+          <div class="w-cell heat-2">·</div>
+          <div class="w-cell heat-1">·</div>
+          <div class="w-cell heat-0">·</div>
+          <div class="w-cell heat-3">★</div>
+          <div class="w-cell heat-1">·</div>
+          <div class="w-cell heat-2">·</div>
+        </div>
+        <div class="w-row row-3">
+          <div class="w-cell w-label">3 — MVCC-style isolation between concurrent agents</div>
+          <div class="w-cell heat-0">·</div>
+          <div class="w-cell heat-1">·</div>
+          <div class="w-cell heat-3">★</div>
+          <div class="w-cell heat-1">·</div>
+          <div class="w-cell heat-1">·</div>
+          <div class="w-cell heat-1">·</div>
+          <div class="w-cell heat-2">·</div>
+        </div>
+      </div>
+
+      <details style="margin-top:18px;">
+        <summary>Reading the heatmap &mdash; why these cells, in this order</summary>
+        <p><b>Wedge 1 (snapshot/rollback)</b> is half-real after Slice 1 (SQL) and properly real after Slice 2: a second adapter with structurally different semantics proves the abstraction generalises. Slice 3 contributes by being honest about what <em>cannot</em> snapshot &mdash; calibrating the wedge rather than oversetting it. Slice 7 (dry-run) is a downstream consequence: you can only speculate without harm because you have rollback.</p>
+        <p><b>Wedge 2 (policy as commit-time primitive)</b> is the one that <em>requires</em> the journal. Stage-time policy alone (Slice 1's allow-list) is fine, but the wedge needs commit-time re-evaluation against the whole journal &mdash; spend caps, content rules, capability grants whose truth value depends on what else the txn did. That is Slice 6's job. Slice 8 (gateway) amplifies it by letting policy run independently of the agent's process.</p>
+        <p><b>Wedge 3 (isolation)</b> is the cleanest dependency: it is Slice 4 or it does not exist. The <code>read_keys</code> / <code>write_keys</code> slots in <code>Effect</code> from Slice 1 were placed precisely to make Slice 4 a plug-in rather than a rewrite. Slice 8 multiplies the value: isolation between Python agents in one process matters less than isolation between independent agent fleets sharing real backends &mdash; that is where the gateway lives.</p>
+      </details>
+    </section>
+
+    <!-- ===================== FRONT-ENDS ===================== -->
+    <section id="frontends">
+      <div class="eyebrow">Section 06 · The shape that comes from Slice 8</div>
+      <h2>Two front-ends, one core.</h2>
+      <p>This is the architectural fact that licences the whole roadmap. The <code>core/</code> directory of Pherix &mdash; journal, runtime, adapters, policy, isolation &mdash; is driven by a <em>front-end</em>: a thin layer that turns "something the agent did" into "an <code>Effect</code> on the journal". Today that something is a Python function call. Tomorrow it is an MCP wire message. The core does not change.</p>
+
+      <div class="compare">
+        <div class="col lib">
+          <h4>frontends/library.py · today</h4>
+          <p style="margin:8px 0;">Interception point: the <code>@tool</code> decorator. A <code>ContextVar</code> (Python's async-safe thread-local) holds the active transaction; tools check it on call and route through the runtime if one is active.</p>
+          <ul>
+            <li>In-process Python only</li>
+            <li>Agent code stays transaction-unaware</li>
+            <li><code>pip install pherix</code>, wrap your loop, done</li>
+            <li>Zero network hops</li>
+            <li>Same language as the agent</li>
+          </ul>
+        </div>
+        <div class="col gw">
+          <h4>frontends/proxy/ · Slice 8</h4>
+          <p style="margin:8px 0;">Interception point: the wire. The gateway terminates the MCP connection, translates each tool-call message into an <code>Effect</code>, runs it through the same runtime, and returns the result over MCP.</p>
+          <ul>
+            <li>Language-agnostic: any MCP-speaking agent</li>
+            <li>Out-of-process: the agent need not trust Pherix's runtime, only its wire</li>
+            <li>One Pherix instance can mediate many agents (Wedge 3 lives here)</li>
+            <li>Suits SaaS / managed deployments</li>
+            <li>Same engine, same journal, same audit</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout warm" style="margin-top:24px;">
+        <div class="micro">why this matters</div>
+        <h3>The discipline pays off here.</h3>
+        <p style="margin-bottom:0;">Because <code>core/</code> was kept ignorant of how it is driven &mdash; the CLAUDE.md rule "frontends/ is thin; core/ knows nothing about how it is driven" &mdash; bolting on the gateway is additive work, not a rewrite. Both front-ends produce the same <code>Effect</code> objects and feed the same journal. An audit row from a Python-library txn and an audit row from an MCP-gateway txn are indistinguishable. <em>That</em> is what "front-end-agnostic" buys.</p>
+      </div>
+    </section>
+
+    <!-- ===================== CLOSING ===================== -->
+    <section id="close">
+      <div class="eyebrow">Section 07 · Closing</div>
+      <h2>The shape of what Pherix becomes.</h2>
+      <p class="lede">A versioned effect journal. A protocol for resources. A pair of folds, a couple of diffs, a walk. Every other capability is one of those, applied to a different argument.</p>
+      <p>The slices in this document are not seven independent products glued together. They are seven views of the same object &mdash; the journal &mdash; under seven different traversals. The cheapness of the later slices is not an accident of scope; it is the dividend of having built the engine carefully the first time, in Slice 1.</p>
+      <p>If you find yourself, mid-slice, designing something that does not reduce to "fold forward, fold backward, fold against fresh state, fold against a snapshot then discard, diff two sets, or walk" &mdash; the slice has either drifted out of scope, or the abstraction has sprung a leak. Both are recoverable; both are worth catching early.</p>
+
+      <p class="closing">Five hard problems. One engine. Seven slices, each the same idea wearing a different costume.</p>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  // ----- architecture diagram: slice-progressive reveal -----
+  (function () {
+    const controls = document.getElementById('archControls');
+    const svg = document.getElementById('archSvg');
+    if (!controls || !svg) return;
+
+    function render(slice) {
+      const nodes = svg.querySelectorAll('.node');
+      nodes.forEach(n => {
+        const allowed = (n.dataset.slices || '').split(',').map(s => s.trim());
+        const newAt = parseInt(n.dataset.new || '0', 10);
+        if (allowed.indexOf(String(slice)) === -1) {
+          n.classList.add('hidden');
+          n.classList.remove('new');
+        } else {
+          n.classList.remove('hidden');
+          if (newAt === slice) n.classList.add('new');
+          else n.classList.remove('new');
+        }
+      });
+      // connectors: also fade if either endpoint slice not shown — simpler approach: keep all visible but dimmed when not at full
+      const conns = svg.querySelectorAll('.conn');
+      conns.forEach(c => { c.style.opacity = 0.35; });
+    }
+
+    controls.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        controls.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        render(parseInt(btn.dataset.slice, 10));
+      });
+    });
+
+    render(1);
+  })();
+</script>
+
+</body>
+</html>
