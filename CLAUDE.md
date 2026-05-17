@@ -245,6 +245,35 @@ row persist — and the audit journal shows the entire story. Plus:
 
 ---
 
+## How to explain things to the operator
+
+The operator on this project is a **maths-background thinker, not a CS-theory one.**
+Their formal reasoning is strong; their fluency in programming jargon, framework
+conventions, and CS folklore is lighter. They want to *learn the mental model* as we
+build, not rubber-stamp decisions. This applies to every agent on the project —
+orchestrator, workers, reviewers. Adjust accordingly:
+
+- **Define jargon inline the first time you use it.** "Protocol — Python's term for
+  an interface contract." "ContextVar — like thread-local state but safe for async."
+  Don't lean on the term and expect recognition.
+- **Lead with the logical chain, not the precedent.** Say *why* something follows
+  ("X holds because Y and Z compose this way"), not "this is just how it's done."
+  Logical structure they trust; appeals to convention they don't.
+- **Use analogies that bottom out in first principles.** The journal is an
+  append-only sequence; commit and rollback are forward and backward *folds* over
+  it; an adapter is a triple `(snapshot, apply, restore)` over a resource; ACID
+  isolation is about *composition* of concurrent operations. Maths analogies
+  (composition, ordering, inverses, state machines) land better than software war
+  stories.
+- **Trust the operator's reasoning.** If you find yourself simplifying past the
+  actual decision, you've gone too far — the goal is *clarity*, not infantilisation.
+  Same depth, better signposting.
+- **Planning is the exception that earns length.** Q&A: short. Exploratory or
+  "explain how X works": full picture with terms defined and trade-offs surfaced.
+  Match length to the operator's question, not to your own thoroughness instinct.
+
+---
+
 ## Conventions
 
 - **Python 3.12.** snake_case functions/vars, PascalCase classes.
