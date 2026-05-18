@@ -253,24 +253,49 @@ conventions, and CS folklore is lighter. They want to *learn the mental model* a
 build, not rubber-stamp decisions. This applies to every agent on the project —
 orchestrator, workers, reviewers. Adjust accordingly:
 
-- **Define jargon inline the first time you use it.** "Protocol — Python's term for
-  an interface contract." "ContextVar — like thread-local state but safe for async."
-  Don't lean on the term and expect recognition.
+- **Default register is maths or physics, not software jargon.** Lead with the
+  algebraic or dynamical framing, not the framework convention. The journal is an
+  *append-only sequence* / *time series*; commit and rollback are *forward and
+  backward folds* over it; an adapter is a triple `(snapshot, apply, restore)` over
+  a resource; a compensator is a *semantic left-inverse* (`compensator ∘ tool ≈
+  identity`); ACID isolation is about *non-commutativity* of concurrent operations;
+  TOCTOU is the problem that `world_state` evolves between two evaluations of the
+  same predicate `P(effect, world_state)`; an effect is an *observable*, a
+  transaction is a *measurement* with a defined boundary in time; the journal's
+  read/write keys form a *partial order* under happens-before. Reach for maths /
+  physics first; reach for software war stories not at all.
+- **Define CS jargon inline the first time you use it.** "Protocol — Python's term
+  for an interface contract." "ContextVar — like thread-local state but safe for
+  async." Maths and physics terms are fair game if used precisely; CS-specific
+  jargon needs defining.
 - **Lead with the logical chain, not the precedent.** Say *why* something follows
   ("X holds because Y and Z compose this way"), not "this is just how it's done."
   Logical structure they trust; appeals to convention they don't.
-- **Use analogies that bottom out in first principles.** The journal is an
-  append-only sequence; commit and rollback are forward and backward *folds* over
-  it; an adapter is a triple `(snapshot, apply, restore)` over a resource; ACID
-  isolation is about *composition* of concurrent operations. Maths analogies
-  (composition, ordering, inverses, state machines) land better than software war
-  stories.
+- **Default Luke-facing output is HTML, not markdown.** Anything the operator will
+  *re-read or share* — decision aids, architecture explainers, walked-through
+  examples, slice deep-dives — ships as a self-contained HTML artifact under
+  `docs/`, served by the single `python -m http.server` at the repo root. Markdown
+  stays the register for *agent-consumed* artifacts (`CLAUDE.md`, `TASK.md`,
+  `ROADMAP.md`) and brief chat answers. The global `~/.claude/CLAUDE.md` §"Output
+  format" defines the bar HTML must clear; this project enforces it.
 - **Trust the operator's reasoning.** If you find yourself simplifying past the
   actual decision, you've gone too far — the goal is *clarity*, not infantilisation.
   Same depth, better signposting.
 - **Planning is the exception that earns length.** Q&A: short. Exploratory or
   "explain how X works": full picture with terms defined and trade-offs surfaced.
   Match length to the operator's question, not to your own thoroughness instinct.
+- **Keep Luke-facing HTML current with git state.** Every slice merge and every
+  big architectural decision triggers a sweep of the `docs/` suite as part of
+  the same change: update status colours (done / active / pending) and "you are
+  here" markers in `docs/index.html` and `docs/roadmap.html`; refresh commit
+  SHAs and test counts; bring slice cards' status pills and body copy in line
+  with `docs/ROADMAP.md`; resolve / strike-through any follow-ups that the
+  merge addressed. Retire decision-aid pages once their slice merges
+  (`docs/slice-N-decisions.html` — delete the file and remove its hub card; the
+  reasoning lives in the code, the merge commit, and `docs/ROADMAP.md`). The
+  Slice 8+ trilogy — **determinism, memory, audit** — must stay consistently
+  reflected across `future.html`, `roadmap.html`, and the hub. Stale HTML is
+  technical debt; flag and fix as part of every merge sweep, not later.
 
 ---
 
