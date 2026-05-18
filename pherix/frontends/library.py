@@ -40,6 +40,7 @@ from pherix.core.isolation import (
     Retry,
     Serialize,
     _RetrySignal,
+    _in_run_txn,
 )
 from pherix.core.policy import Policy, PolicyViolation
 from pherix.core.runtime import CompensatorNotRegistered, GateBlocked, agent_txn
@@ -68,28 +69,46 @@ def run_txn(
     mechanically impossible (the body is not a callable Pherix owns), so
     with the context-manager form :class:`Retry` degrades to
     :class:`Abort` and the first conflict raises :class:`IsolationConflict`
-    immediately.
+    immediately. The :data:`_in_run_txn` contextvar is what selects
+    between the two paths.
 
     Default ``isolation=Abort()`` matches :func:`agent_txn`; ``run_txn``
     with ``Abort`` is exactly equivalent to ``with agent_txn(...) as
     ctx: fn(ctx)``.
+
+    Idempotency caveat: every replay re-invokes ``fn`` from the top
+    against a fresh :class:`TxnContext`. Effects routed through Pherix
+    (SQL via :func:`execute_isolated`, FS via :class:`FsHandle`, HTTP
+    staged effects) are unwound between attempts. Side effects that
+    bypass Pherix's seam — appending to a module-level list, raw
+    ``open()`` writes, unwrapped HTTP requests, mutating closure
+    variables — fire on *every* attempt. Design ``fn`` so a replay is
+    safe to repeat, or move the side effect through a Pherix tool.
     """
     isolation = isolation if isolation is not None else Abort()
     max_attempts = isolation.max_attempts if isinstance(isolation, Retry) else 1
     last_conflicts: list[Conflict] = []
-    for _ in range(max_attempts):
-        try:
-            with agent_txn(
-                adapters, policy=policy, audit=audit, isolation=isolation
-            ) as ctx:
-                fn(ctx)
-            return
-        except _RetrySignal as sig:
-            last_conflicts = sig.conflicts
-            continue
-    # Exhausted: convert the last retry signal into a real
-    # IsolationConflict so the caller sees a familiar exception type.
-    raise IsolationConflict(last_conflicts)
+    # Flag the retry loop so Retry.resolve raises the internal
+    # _RetrySignal (which we catch) instead of the public
+    # IsolationConflict (which would short-circuit the loop). The
+    # contextvar is reset on every exit path, including exceptions.
+    token = _in_run_txn.set(True)
+    try:
+        for _ in range(max_attempts):
+            try:
+                with agent_txn(
+                    adapters, policy=policy, audit=audit, isolation=isolation
+                ) as ctx:
+                    fn(ctx)
+                return
+            except _RetrySignal as sig:
+                last_conflicts = sig.conflicts
+                continue
+        # Exhausted: convert the last retry signal into a real
+        # IsolationConflict so the caller sees a familiar exception type.
+        raise IsolationConflict(last_conflicts)
+    finally:
+        _in_run_txn.reset(token)
 
 
 __all__ = [

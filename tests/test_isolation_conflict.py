@@ -201,11 +201,35 @@ def test_abort_resolve_raises_isolation_conflict():
     assert info.value.conflicts == cs
 
 
-def test_retry_resolve_raises_internal_retry_signal():
+def test_retry_resolve_raises_internal_retry_signal_inside_run_txn():
+    """Inside run_txn's contextvar window, Retry.resolve raises the
+    internal _RetrySignal so run_txn's outer loop can catch and replay.
+    Outside that window (covered by the next test), Retry.resolve
+    degrades to a public IsolationConflict.
+    """
+    from pherix.core.isolation import _in_run_txn
+
     cs = [Conflict(resource="r", key=("k",), version_at_read=1, version_now=2)]
-    with pytest.raises(_RetrySignal) as info:
+    token = _in_run_txn.set(True)
+    try:
+        with pytest.raises(_RetrySignal) as info:
+            Retry(max_attempts=2).resolve(None, cs)
+        assert info.value.conflicts == cs
+    finally:
+        _in_run_txn.reset(token)
+
+
+def test_retry_resolve_outside_run_txn_degrades_to_isolation_conflict():
+    """Outside run_txn (the contextvar is False — the default), Retry's
+    resolve raises the public IsolationConflict rather than leaking the
+    private _RetrySignal to a caller who isn't supposed to import it.
+    """
+    cs = [Conflict(resource="r", key=("k",), version_at_read=1, version_now=2)]
+    with pytest.raises(IsolationConflict) as info:
         Retry(max_attempts=2).resolve(None, cs)
     assert info.value.conflicts == cs
+    # And it's NOT the internal signal type.
+    assert not isinstance(info.value, _RetrySignal)
 
 
 def test_serialize_resolve_falls_back_to_isolation_conflict():

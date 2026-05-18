@@ -22,10 +22,24 @@ side-table version bumps through normal SQLite WAL semantics).
 
 from __future__ import annotations
 
+import contextvars
 import threading
 import time
 from dataclasses import dataclass
 from typing import Any
+
+
+# Set to True by :func:`pherix.frontends.library.run_txn` for the duration of
+# its retry loop. :meth:`Retry.resolve` checks this flag to decide whether to
+# raise the internal :class:`_RetrySignal` (which ``run_txn`` catches and
+# replays) or convert it to a public :class:`IsolationConflict` (which the
+# ``with agent_txn(...)`` form's caller can legitimately handle). Without
+# this gate the internal signal would leak out of ``agent_txn`` to a user
+# who is told in the docs that Retry "degrades to Abort" when used with the
+# context-manager form — the contract is now enforced.
+_in_run_txn: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "pherix_in_run_txn", default=False
+)
 
 
 @dataclass(frozen=True)
@@ -95,18 +109,40 @@ class Abort:
 class Retry:
     """Roll back and replay the transaction body up to ``max_attempts`` times.
 
-    Only meaningful with the :func:`run_txn` entry point — re-entering a
-    ``with agent_txn(...)`` block from outside Pherix is mechanically
+    Only meaningful with the :func:`pherix.run_txn` entry point — re-entering
+    a ``with agent_txn(...)`` block from outside Pherix is mechanically
     impossible (a context manager's body is not a callable Pherix owns).
     Used with the with-form, :class:`Retry` degrades to :class:`Abort`
-    behaviour: ``IsolationConflict`` is raised on the first conflict and
-    the operator should switch entry points.
+    behaviour: :class:`IsolationConflict` is raised on the first conflict
+    and the operator should switch entry points. The :data:`_in_run_txn`
+    contextvar is what selects between the two paths — set by ``run_txn``
+    for the duration of its loop, default ``False`` everywhere else.
+
+    Idempotency caveat: a Retry replay re-runs the user's ``fn`` from the
+    top against a fresh :class:`TxnContext`. Anything Pherix journals
+    (SQL via :func:`execute_isolated`, FS via :class:`FsHandle`, HTTP
+    staged effects) is properly unwound between attempts. Anything the
+    function does *outside* Pherix's seam — appending to a module-level
+    list, writing a file with raw ``open()``, firing an unwrapped HTTP
+    request, mutating a closure variable — fires on *every* attempt. The
+    same constraint applies to a hand-rolled retry loop around
+    :class:`Abort`; Pherix does not promise more than the journal can see.
     """
 
     max_attempts: int = 3
 
     def resolve(self, ctx: Any, conflicts: list[Conflict]) -> None:
-        raise _RetrySignal(conflicts)
+        if _in_run_txn.get():
+            # Inside run_txn: signal a replay attempt. run_txn's outer
+            # loop catches this, rolls the txn back via agent_txn's
+            # normal unwind path, and re-invokes fn against a fresh
+            # TxnContext.
+            raise _RetrySignal(conflicts)
+        # Outside run_txn (i.e. inside a bare ``with agent_txn(...)``):
+        # there's no callable Pherix can re-invoke, so degrade to Abort
+        # cleanly rather than leak the internal _RetrySignal name to a
+        # caller who isn't supposed to know it exists.
+        raise IsolationConflict(conflicts)
 
 
 @dataclass

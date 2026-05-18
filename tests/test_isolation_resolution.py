@@ -276,10 +276,10 @@ def test_retry_exhaustion_after_max_attempts():
 
 def test_retry_in_with_form_degrades_to_abort():
     """``with agent_txn(..., isolation=Retry(N))`` cannot re-enter from
-    outside Pherix. The first conflict propagates the internal _RetrySignal
-    out of commit; agent_txn rolls back and re-raises. The caller sees an
-    exception — not IsolationConflict (it's _RetrySignal), but the txn is
-    safely unwound. Document the constraint: use run_txn for Retry.
+    outside Pherix. The contract: Retry degrades to Abort cleanly — the
+    caller sees the public :class:`IsolationConflict`, never the internal
+    :class:`_RetrySignal`. :data:`_in_run_txn` (default False) is what
+    selects between the two paths in :meth:`Retry.resolve`.
     """
     shared = FakeAdapter()
 
@@ -292,18 +292,22 @@ def test_retry_in_with_form_degrades_to_abort():
         adapter.write(key, value)
         return value
 
-    # Any exception out of agent_txn proves the rollback ran cleanly. The
-    # exact type is _RetrySignal — documented as internal; the operator
-    # should switch to run_txn rather than catch it.
-    from pherix.core.isolation import _RetrySignal
-
-    with pytest.raises(_RetrySignal):
+    with pytest.raises(IsolationConflict) as info:
         with agent_txn({"fake": shared}, isolation=Retry(max_attempts=3)):
             read_x(key=("x",))
             with agent_txn({"fake": shared}) as ctx_b:
                 write_x(key=("x",), value="bump")
-            # A is read-only — diff fires, Retry's resolve raises
-            # _RetrySignal which the with-form has no machinery to catch.
+            # A is read-only — diff fires; Retry.resolve sees
+            # _in_run_txn == False and raises IsolationConflict, not the
+            # private _RetrySignal name.
+
+    # The conflict carries the moved key, same shape Abort would produce.
+    assert len(info.value.conflicts) == 1
+    assert info.value.conflicts[0].key == ("x",)
+    # The internal signal type must NOT leak: confirm the raised
+    # exception is the public type, not the private one.
+    from pherix.core.isolation import _RetrySignal
+    assert not isinstance(info.value, _RetrySignal)
 
 
 # --- Serialize ---------------------------------------------------------------
