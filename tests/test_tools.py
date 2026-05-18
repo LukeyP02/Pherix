@@ -97,3 +97,36 @@ def test_wrapper_exposes_tool_spec():
 
 def test_unregistered_tool_absent_from_registry():
     assert "never_registered" not in REGISTRY
+
+
+# --- compensator declaration (Slice 3 / D2) ---
+
+
+def test_compensator_defaults_to_none():
+    @tool(resource="http", reversible=False, injects_handle=False)
+    def send_email(to, body):
+        return to
+
+    assert REGISTRY.get("send_email").compensator is None
+
+
+def test_compensator_is_stored_on_spec_as_a_name():
+    # D2: the journal stores names (strings); the registry resolves names
+    # to callables at fire-time. We pin "string, not callable" so the
+    # journal stays JSON-serialisable end-to-end.
+    @tool(resource="http", reversible=False, injects_handle=False)
+    def refund_charge(customer_id, amount):
+        return None
+
+    @tool(
+        resource="http",
+        reversible=False,
+        injects_handle=False,
+        compensator="refund_charge",
+    )
+    def charge_card(customer_id, amount):
+        return "ch_1"
+
+    spec = REGISTRY.get("charge_card")
+    assert spec.compensator == "refund_charge"
+    assert isinstance(spec.compensator, str)

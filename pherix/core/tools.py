@@ -32,6 +32,11 @@ class ToolSpec:
     # First parameter (e.g. the SQL `conn`) is supplied by the adapter at apply
     # time and hidden from the agent's call-site — see D2.
     injects_handle: bool = True
+    # Name of another registered tool that is this tool's semantic left-inverse
+    # (Slice 3, D2). Pherix resolves the name to a callable at fire-time;
+    # missing names fail loudly at stage-time. Pherix does not verify the
+    # left-inverse property — the developer asserts it.
+    compensator: str | None = None
 
     def public_signature(self) -> inspect.Signature:
         """The signature the agent sees — the injected handle removed."""
@@ -76,6 +81,7 @@ def tool(
     reversible: bool = True,
     name: str | None = None,
     injects_handle: bool = True,
+    compensator: str | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         spec = ToolSpec(
@@ -84,6 +90,7 @@ def tool(
             resource=resource,
             reversible=reversible,
             injects_handle=injects_handle,
+            compensator=compensator,
         )
         REGISTRY.register(spec)
 
