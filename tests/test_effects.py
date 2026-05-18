@@ -1,5 +1,6 @@
+import json
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 import pytest
 
@@ -7,6 +8,7 @@ from pherix.core.effects import (
     Effect,
     EffectArgsError,
     EffectStatus,
+    StagedResult,
     compute_effect_id,
     strict_json_default,
 )
@@ -146,3 +148,39 @@ def test_strict_json_default_raises_for_unknown_types():
 
     with pytest.raises(TypeError, match="cannot journal"):
         strict_json_default(Opaque())
+
+
+# --- StagedResult (Slice 3 / D1) -------------------------------------------
+
+
+def test_staged_result_carries_effect_id():
+    s = StagedResult(effect_id="abc123")
+    assert s.effect_id == "abc123"
+
+
+def test_staged_result_is_value_typed_and_hashable():
+    # frozen=True: two StagedResults with the same effect_id are equal,
+    # hashable, and immutable. Pherix relies on this for set membership in
+    # approval-tracking and for safe propagation through agent code.
+    a = StagedResult(effect_id="x")
+    b = StagedResult(effect_id="x")
+    c = StagedResult(effect_id="y")
+    assert a == b
+    assert a != c
+    assert hash(a) == hash(b)
+    assert {a, b, c} == {a, c}
+
+
+def test_staged_result_is_json_serialisable_via_asdict():
+    # The audit journal serialises results with strict_json_default; for a
+    # dataclass that path is asdict. We pin the JSON shape so the audit row
+    # remains readable from outside the running process.
+    s = StagedResult(effect_id="xyz")
+    payload = json.dumps(asdict(s), sort_keys=True)
+    assert json.loads(payload) == {"effect_id": "xyz"}
+
+
+def test_staged_result_repr_is_useful():
+    s = StagedResult(effect_id="zzz")
+    assert "StagedResult" in repr(s)
+    assert "zzz" in repr(s)
