@@ -228,10 +228,20 @@ class FilesystemAdapter:
     # --- handle construction -----------------------------------------------
 
     def _handle_for(self, snapshot: SnapshotHandle) -> FsHandle:
+        # Slice 4: pass the active Effect (and self) so the FsHandle can
+        # record read_keys / write_keys automatically. ``active_effect`` is
+        # set by the runtime around ``adapter.apply``; outside an
+        # ``agent_txn`` it is None and the handle skips recording. Local
+        # import to avoid a cycle (tools.py is otherwise free of adapter
+        # imports).
+        from pherix.core.tools import active_effect
+
         return FsHandle(
             root=self._root,
             backup_dir=Path(snapshot.payload["backup_dir"]),
             touched=snapshot.payload["touched"],
+            effect=active_effect.get(),
+            adapter=self,
         )
 
     # --- versioning (Slice 4 — VersionedResourceAdapter) -------------------

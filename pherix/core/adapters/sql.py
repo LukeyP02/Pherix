@@ -5,8 +5,11 @@ The database does the heavy lifting: ``snapshot`` issues a real ``SAVEPOINT``,
 autocommit mode (``isolation_level=None``) so this adapter — not sqlite3's
 implicit machinery — controls every BEGIN / SAVEPOINT / COMMIT / ROLLBACK.
 
-This module never imports ``core/tools.py``: the runtime resolves ``effect.tool``
-to a callable and passes it to ``apply`` as ``tool_fn``.
+The :class:`SQLiteAdapter` class never imports ``core/tools.py`` at module
+load: the runtime resolves ``effect.tool`` to a callable and passes it to
+``apply`` as ``tool_fn``. Slice 4's :func:`execute_isolated` helper does
+read the ``active_effect`` contextvar from ``core/tools.py``, but only via
+a function-local import to keep module-load ordering free of cycles.
 """
 
 from __future__ import annotations
@@ -31,6 +34,22 @@ CREATE TABLE IF NOT EXISTS _pherix_versions (
 )
 """
 
+# Seam used by the module-level :func:`execute_isolated` helper to find the
+# :class:`SQLiteAdapter` bound to a given connection. We cannot attach
+# attributes to a C-extension ``sqlite3.Connection`` directly (it forbids
+# both attribute-set and weakref), so we key by ``id(conn)`` and require
+# every adapter to register here on construction. The mapping leaks an
+# entry per Connection object created in-process — a non-issue in test /
+# agent-runtime contexts where adapters and connections are O(handful).
+# A future revision could ship an explicit ``unregister`` if a long-lived
+# process churns many connections.
+_CONN_ADAPTERS: dict[int, "SQLiteAdapter"] = {}
+
+
+def _adapter_for(conn: sqlite3.Connection) -> "SQLiteAdapter | None":
+    """Return the :class:`SQLiteAdapter` registered for ``conn`` if any."""
+    return _CONN_ADAPTERS.get(id(conn))
+
 
 class SQLiteAdapter:
     name = "sql"
@@ -41,6 +60,14 @@ class SQLiteAdapter:
         # read_version on an unknown key returns 0 (not a missing-table
         # error). DDL is idempotent so re-binding the adapter is safe.
         self._conn.execute(_VERSIONS_TABLE_DDL)
+        # Slice 4 seam: register this adapter against the connection's
+        # identity so the module-level :func:`execute_isolated` helper can
+        # find it from a bare ``sqlite3.Connection`` (SQL tools accept a
+        # plain Connection — no adapter parameter pollutes the call-site).
+        # We must use an id-keyed module dict because ``sqlite3.Connection``
+        # is a C-extension type that forbids both attribute assignment and
+        # weakrefs.
+        _CONN_ADAPTERS[id(conn)] = self
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -119,3 +146,70 @@ class SQLiteAdapter:
         )
         row = cur.fetchone()
         return int(row[0])
+
+
+# --- Slice 4 isolation helper ---------------------------------------------
+
+
+def execute_isolated(
+    conn: sqlite3.Connection,
+    stmt: str,
+    params: tuple = (),
+    reads: list[tuple] | None = None,
+    writes: list[tuple] | None = None,
+) -> sqlite3.Cursor:
+    """SQL execution that records read/write keys into the active Effect.
+
+    ``reads`` and ``writes`` are lists of ``(table, pk_value)`` tuples — the
+    keys this statement reads from and writes to. SQL parsing is out of
+    scope, so Slice 4 ships explicit key declaration: tools say which rows
+    they touched. A future iteration could derive the keys from the
+    statement itself; the journal shape is the same either way.
+
+    Behaviour:
+
+    - Always runs ``conn.execute(stmt, params)`` and returns the cursor.
+    - Inside an ``agent_txn``, records each read as ``("sql", tuple(key),
+      adapter.read_version(key))`` into ``active_effect.read_keys`` and
+      each write as ``("sql", tuple(key))`` into ``write_keys``, after
+      bumping the side-table version via ``adapter.write_version(key)``.
+      Re-recording the same triple / pair within one effect is suppressed
+      so a tool that touches the same row repeatedly doesn't bloat the
+      journal. The version-side-table bump still fires on every write
+      call — every statement is a real write that increments the version,
+      even if its presence in ``write_keys`` is already noted.
+    - Outside an ``agent_txn`` (``active_effect`` is ``None``), the stmt
+      still runs but no recording happens — keeps the helper usable from
+      raw unit tests of SQL tools.
+    - If the connection has no registered adapter (a bare
+      ``sqlite3.Connection`` not wrapped by :class:`SQLiteAdapter`),
+      recording is also skipped. This is the same graceful-degrade as
+      the no-effect case.
+    """
+    # Local import to keep ``sql.py`` module-load free of any dependency on
+    # ``core/tools.py`` (and the contextvar living there).
+    from pherix.core.tools import active_effect
+
+    cursor = conn.execute(stmt, params or ())
+    effect = active_effect.get()
+    if effect is None:
+        return cursor
+    adapter = _adapter_for(conn)
+    if adapter is None:
+        return cursor
+    for key in reads or ():
+        key_t = tuple(key)
+        v = adapter.read_version(key_t)
+        triple = ("sql", key_t, v)
+        if triple not in effect.read_keys:
+            effect.read_keys.append(triple)
+    for key in writes or ():
+        key_t = tuple(key)
+        # write_version bumps the side-table — must always run, even when
+        # the pair is already in write_keys (a later read on the same key
+        # in another effect should see the new version, not the old one).
+        adapter.write_version(key_t)
+        pair = ("sql", key_t)
+        if pair not in effect.write_keys:
+            effect.write_keys.append(pair)
+    return cursor
