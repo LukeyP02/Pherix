@@ -1,4 +1,15 @@
-from pherix.core.effects import Effect, EffectStatus, compute_effect_id
+from datetime import datetime
+from dataclasses import dataclass
+
+import pytest
+
+from pherix.core.effects import (
+    Effect,
+    EffectArgsError,
+    EffectStatus,
+    compute_effect_id,
+    strict_json_default,
+)
 
 
 def make_effect(**overrides):
@@ -58,3 +69,80 @@ def test_read_write_key_slots_accept_tuples():
     e = make_effect(read_keys=[("sql", "users:1", 3)], write_keys=[("sql", "users:1")])
     assert e.read_keys == [("sql", "users:1", 3)]
     assert e.write_keys == [("sql", "users:1")]
+
+
+# --- strict args serialisation (Slice 1 review follow-up) -------------------
+
+
+def test_effect_id_raises_on_non_serialisable_args():
+    """Pherix's idempotency key requires deterministic serialisation —
+    silent str() coercion would let two distinct non-serialisable objects
+    collide on the same effect_id.
+    """
+    class Opaque:
+        pass
+
+    with pytest.raises(EffectArgsError, match="non-journal-able args"):
+        compute_effect_id("t", 0, "tool", {"x": Opaque()})
+
+
+def test_effect_construction_raises_on_non_serialisable_args():
+    """The error fires at Effect construction, not later — developer sees it
+    where the bad call originated."""
+    with pytest.raises(EffectArgsError):
+        Effect(
+            txn_id="t",
+            index=0,
+            tool="bad",
+            args={"f": lambda: None},
+            resource="x",
+            reversible=True,
+        )
+
+
+def test_effect_id_handles_bytes_args_deterministically():
+    """Same bytes content → same base64 representation → same effect_id."""
+    a = compute_effect_id("t", 0, "tool", {"body": b"hello"})
+    b = compute_effect_id("t", 0, "tool", {"body": b"hello"})
+    assert a == b
+    # Different bytes → different effect_id (no collision on str-coerced repr).
+    c = compute_effect_id("t", 0, "tool", {"body": b"goodbye"})
+    assert a != c
+
+
+def test_effect_id_handles_datetime_args_deterministically():
+    when = datetime(2026, 5, 18, 12, 0, 0)
+    a = compute_effect_id("t", 0, "tool", {"at": when})
+    b = compute_effect_id("t", 0, "tool", {"at": when})
+    assert a == b
+
+
+def test_effect_id_handles_dataclass_args():
+    @dataclass
+    class Address:
+        street: str
+        city: str
+
+    addr = Address(street="1 Pherix Way", city="London")
+    a = compute_effect_id("t", 0, "tool", {"addr": addr})
+    b = compute_effect_id("t", 0, "tool", {"addr": Address("1 Pherix Way", "London")})
+    assert a == b
+
+
+def test_strict_json_default_supports_documented_types():
+    assert strict_json_default(b"x").startswith("<bytes:b64:")
+    assert strict_json_default(datetime(2026, 5, 18)) == "2026-05-18T00:00:00"
+
+    @dataclass
+    class Box:
+        v: int
+
+    assert strict_json_default(Box(v=7)) == {"v": 7}
+
+
+def test_strict_json_default_raises_for_unknown_types():
+    class Opaque:
+        pass
+
+    with pytest.raises(TypeError, match="cannot journal"):
+        strict_json_default(Opaque())

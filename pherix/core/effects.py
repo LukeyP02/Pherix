@@ -3,13 +3,25 @@
 An Effect is a single entry in a Transaction's append-only effect journal.
 ``read_keys`` / ``write_keys`` slots exist from day one (Slice 4 isolation)
 but carry no logic in Slice 1; ``compensator`` is likewise inert until Slice 3.
+
+Effect args must be deterministically serialisable so the idempotency key
+(``effect_id``) is stable across runs and the audit journal can faithfully
+persist them. Supported in args (and in snapshots / results via the audit
+journal): anything natively JSON-serialisable (str / int / float / bool /
+list / dict / None), plus ``bytes`` (encoded as base64), ``datetime`` (ISO
+8601), and any ``@dataclass`` instance (recursively ``asdict``-ed).
+Anything else raises :class:`EffectArgsError` at Effect construction —
+silent ``str()`` coercion would let two distinct non-serialisable objects
+collide on the same effect_id, which is exactly the bug we don't want at
+the idempotency boundary (a Slice 1 review follow-up).
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
@@ -23,13 +35,54 @@ class EffectStatus(Enum):
     FAILED = "failed"
 
 
-def compute_effect_id(txn_id: str, index: int, tool: str, args: dict) -> str:
-    """Idempotency key = stable hash of (txn_id, index, tool, sorted args)."""
-    payload = json.dumps(
-        {"txn_id": txn_id, "index": index, "tool": tool, "args": args},
-        sort_keys=True,
-        default=str,
+class EffectArgsError(ValueError):
+    """Raised when Effect args contain a value Pherix cannot journal."""
+
+
+def strict_json_default(obj: Any) -> Any:
+    """JSON default fn that supports bytes / datetime / dataclass; raises otherwise.
+
+    Used by :func:`compute_effect_id` and the audit journal — both want a
+    deterministic, lossless representation. Silent ``str(obj)`` coercion is
+    forbidden: it lets two distinct non-serialisable objects collide on the
+    same effect_id and produces a lossy audit row. If a tool wants to pass an
+    exotic type, the developer converts it to a supported shape at the call
+    site (e.g. base64-encode a numpy array, ``.isoformat()`` a custom date).
+    """
+    if isinstance(obj, (bytes, bytearray)):
+        # base64 is deterministic and content-addressed: identical bytes
+        # produce identical strings, so identical args produce identical
+        # effect_ids.
+        return f"<bytes:b64:{base64.b64encode(bytes(obj)).decode('ascii')}>"
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return asdict(obj)
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(
+        f"Pherix cannot journal {type(obj).__name__!r} ({obj!r}). "
+        f"Supported types: native JSON, bytes, datetime, dataclass instances."
     )
+
+
+def compute_effect_id(txn_id: str, index: int, tool: str, args: dict) -> str:
+    """Idempotency key = stable hash of (txn_id, index, tool, sorted args).
+
+    Raises :class:`EffectArgsError` if any arg is not deterministically
+    serialisable. The error fires at Effect construction so the developer
+    sees it where the bad call originated, not later when commit runs.
+    """
+    try:
+        payload = json.dumps(
+            {"txn_id": txn_id, "index": index, "tool": tool, "args": args},
+            sort_keys=True,
+            default=strict_json_default,
+        )
+    except TypeError as exc:
+        raise EffectArgsError(
+            f"tool {tool!r} got non-journal-able args: {exc} "
+            f"Effect args must be deterministically serialisable so the "
+            f"idempotency key (effect_id) is stable across runs."
+        ) from exc
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 

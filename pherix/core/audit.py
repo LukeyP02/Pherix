@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from pherix.core.effects import Effect
+from pherix.core.effects import Effect, strict_json_default
 from pherix.core.transaction import Transaction
 
 _SCHEMA = """
@@ -41,18 +40,17 @@ CREATE TABLE IF NOT EXISTS effects (
 """
 
 
-def _json_default(obj: Any) -> Any:
-    if is_dataclass(obj) and not isinstance(obj, type):
-        return asdict(obj)
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    return str(obj)
-
-
 def _dump(value: Any) -> str | None:
+    """Strict JSON dump (raises on non-journal-able types).
+
+    Shares :func:`strict_json_default` with :mod:`pherix.core.effects` so the
+    audit row is consistent with the idempotency key — both support bytes,
+    datetime, dataclass; both reject silent ``str()`` coercion. See the Slice 1
+    review follow-up resolved here.
+    """
     if value is None:
         return None
-    return json.dumps(value, default=_json_default, sort_keys=True)
+    return json.dumps(value, default=strict_json_default, sort_keys=True)
 
 
 def _now() -> str:
