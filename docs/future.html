@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pherix — beyond Slice 3 — the unifying journal & its two pillars</title>
+<title>Pherix — beyond Slice 2 — the unifying journal & its two pillars</title>
 <style>
   :root {
     --bg: #faf8f3;
@@ -1170,7 +1170,7 @@
 <div class="frame">
   <nav class="toc" aria-label="Table of contents">
     <h1>Pherix</h1>
-    <div class="sub">Beyond Slice 3</div>
+    <div class="sub">Beyond Slice 2</div>
 
     <div class="group-label">The argument</div>
     <ol>
@@ -1182,8 +1182,8 @@
     <div class="group-label">The slices</div>
     <ol>
       <li><a href="#s2">Filesystem adapter <span style="color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
-      <li><a href="#s3">HTTP / irreversible <span style="color: var(--accent-2); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
-      <li><a href="#s4">Isolation <span style="color: var(--accent-3); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·IN&nbsp;DESIGN</span></a></li>
+      <li><a href="#s3">HTTP / irreversible</a></li>
+      <li><a href="#s4">Isolation</a></li>
       <li><a href="#s5">Replay</a></li>
       <li><a href="#s6">Real policy engine</a></li>
       <li><a href="#s7">Speculative dry-run</a></li>
@@ -1202,7 +1202,7 @@
   <main>
 
     <header class="hero">
-      <div class="tag">Vision · Slices 1—3 shipped · 4 in design · 5—8 ahead · then the trilogy</div>
+      <div class="tag">Vision · Slices 1—4 shipped · 5 next (replay) · 6—8 ahead · then the trilogy</div>
       <h1>One engine, <em>three</em> faces.</h1>
       <p class="sub">Pherix grows by traversing the same sequence in a new direction each time. Forward fold. Backward fold. Fold against fresh state. Fold against a snapshot, then discard. Diff. Walk. Six verbs over one ordered object — the journal — yield every capability the system claims. Slices&nbsp;1—8 ship the determinism engine. Beyond, two more pillars grow from the same substrate: a <em>memory</em> layer that indexes the journal, and an <em>audit</em> layer that queries it.</p>
     </header>
@@ -1270,7 +1270,7 @@
         <p style="margin-top:18px; color: var(--ink-2);">Five hard problems &mdash; rollback semantics, isolation, partial-failure correctness, deterministic replay, what-if simulation &mdash; reduce to <b>six verbs over one list</b>. That is the wedge. The slices below are each one verb wearing a different costume.</p>
       </div>
 
-      <p style="margin-top:18px;">Slices&nbsp;1, 2 and 3 are <b>all merged</b> &mdash; the SQL adapter at <code>ad4e9c0</code>, the filesystem adapter at <code>c926f97</code>, the irreversible/HTTP lane at <code>a13018b</code> (159 tests green). Slice&nbsp;1 is covered in detail in <code>slice-1.html</code>; Slice&nbsp;4 (isolation) is now in design with all five decisions locked &mdash; see <code>slice-4-decisions.html</code>. This document is the trajectory: how the same engine extends to concurrent agents, deterministic replay, real policy, speculative execution, and a language-agnostic gateway &mdash; <em>without rebuilding the engine</em> &mdash; and then how two further pillars, memory and audit, grow from the same journal.</p>
+      <p style="margin-top:18px;">Slices&nbsp;1&ndash;4 are <b>merged</b> &mdash; the SQL adapter at <code>ad4e9c0</code>, the filesystem adapter at <code>c926f97</code>, the irreversible / HTTP lane at <code>a13018b</code>, and isolation (read/write-set capture, commit-time diff, <code>Abort</code> / <code>Retry</code> / <code>Serialize</code>) pending merge on <code>feat/slice-4</code>. Slice&nbsp;1 is covered in detail in <code>slice-1.html</code>; Slice&nbsp;5 (replay) is next on the critical path. This document is the trajectory: how the same engine extends to deterministic replay, real policy, speculative execution, and a language-agnostic gateway &mdash; <em>without rebuilding the engine</em> &mdash; and then how two further pillars, memory and audit, grow from the same journal.</p>
     </section>
 
     <!-- ===================== MATRIX ===================== -->
@@ -1305,8 +1305,8 @@
 
         <div class="row" role="row">
           <div class="cell rowhead">Stage &amp; gate irreversible</div>
-          <div class="cell lit s3"><span class="slice-pill s3">S3 · shipped</span><div class="note">staged effects fire at commit, after approval</div></div>
-          <div class="cell lit s3"><span class="slice-pill s3">S3 · shipped</span><div class="note">compensator = semantic left-inverse</div></div>
+          <div class="cell lit s3"><span class="slice-pill s3">S3</span><div class="note">only at commit, after approval</div></div>
+          <div class="cell lit s3"><span class="slice-pill s3">S3</span><div class="note">via compensator</div></div>
           <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
         </div>
 
@@ -1607,8 +1607,8 @@
 
         <div class="arch-legend">
           <span><i style="background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: var(--accent);"></i>Slice 2 (filesystem) &middot; shipped</span>
-          <span><i style="background: color-mix(in srgb, var(--accent-2) 14%, transparent); border-color: var(--accent-2);"></i>Slice 3 (irreversible / HTTP) &middot; shipped</span>
-          <span><i style="background: color-mix(in srgb, var(--accent-3) 14%, transparent); border-color: var(--accent-3);"></i>Slice 4 (isolation) &middot; in design</span>
+          <span><i style="background: color-mix(in srgb, var(--accent-2) 14%, transparent); border-color: var(--accent-2);"></i>Slice 3 (irreversible / HTTP)</span>
+          <span><i style="background: color-mix(in srgb, var(--accent-3) 14%, transparent); border-color: var(--accent-3);"></i>Slice 4 (isolation)</span>
           <span><i style="background: color-mix(in srgb, var(--accent-5) 14%, transparent); border-color: var(--accent-5);"></i>Slice 5 &amp; 7 (replay, dry-run)</span>
           <span><i style="background: color-mix(in srgb, var(--accent-4) 14%, transparent); border-color: var(--accent-4);"></i>Slice 6 (real policy)</span>
           <span><i style="background: color-mix(in srgb, var(--warn) 14%, transparent); border-color: var(--warn);"></i>Slice 8 (MCP gateway)</span>
@@ -1624,7 +1624,7 @@
     <section>
       <div class="eyebrow">Section 04 · The slices in turn</div>
       <h2>Each slice, the same verb in a new costume.</h2>
-      <p>For each slice: what it adds, what it unlocks for the operator running an agent under Pherix, and the operation it performs over the journal. The third line is the load-bearing one &mdash; it is what makes the slice cheap. Slices&nbsp;2 and 3 are shipped (past tense). Slice&nbsp;4 is in design &mdash; all five decisions locked, including the single-host shared journal for arbitration scope. Slices&nbsp;5&ndash;8 are still ahead.</p>
+      <p>For each slice: what it adds, what it unlocks for the operator running an agent under Pherix, and the operation it performs over the journal. The third line is the load-bearing one &mdash; it is what makes the slice cheap. Slices&nbsp;2&ndash;4 are shipped (past tense). Slice&nbsp;5 is next on the critical path. Slices&nbsp;6&ndash;8 are still ahead.</p>
 
       <div class="slices">
 
@@ -1667,7 +1667,7 @@
           <p>A <code>FilesystemAdapter(root)</code> that snapshots files via a per-transaction tempdir backup, applies tool writes through an <code>FsHandle</code> (rooted, with lazy per-path snapshotting and explicit path-traversal &amp; symlink-escape defence), and restores by copying backups back into place (or deleting paths that did not exist before the effect). A new sub-protocol <code>TransactionalResourceAdapter</code> now formalises the <code>begin / commit / rollback</code> lifecycle that SQLite previously had only via duck-typing &mdash; the type system reflects the real taxonomy of resources, and a typo'd <code>begin</code> fails at type-check rather than silently skipping.</p>
 
           <h4>What it unlocked</h4>
-          <p>The acceptance bar &mdash; cleared &mdash; was a <em>mixed-resource transaction</em>: one <code>agent_txn</code> writes to the database <em>and</em> the filesystem, you call <code>rollback()</code>, and both are wiped. The demo lives in <code>examples/mixed_resource_demo.py</code>. The operator can stop thinking about Pherix as a SQL thing &mdash; it is a transaction <em>over arbitrary resources</em>, with the second resource as the existence proof. 103 tests green; the abstraction generalises.</p>
+          <p>The acceptance bar &mdash; cleared &mdash; was a <em>mixed-resource transaction</em>: one <code>agent_txn</code> writes to the database <em>and</em> the filesystem, you call <code>rollback()</code>, and both are wiped. The demo lives in <code>examples/slice2_demo.py</code>. The operator can stop thinking about Pherix as a SQL thing &mdash; it is a transaction <em>over arbitrary resources</em>, with the second resource as the existence proof.</p>
 
           <h4>How it traverses the journal</h4>
           <div class="fold-line"><b>Same</b> forward fold for commit, <b>same</b> backward fold for rollback &mdash; a new adapter under the hood, nothing else. Heterogeneous effects compose in journal order because <code>apply</code> and <code>restore</code> are independent per-effect. The journal does not know &mdash; or need to know &mdash; that two adjacent effects touch different kinds of resource. The protocol survived contact with a structurally different backend; that was the test.</p>
@@ -1677,7 +1677,7 @@
         <article class="card s3" id="s3">
           <div class="top"><span class="num">Slice · 03 · shipped <code style="font-size:10px; color:var(--ink-3); margin-left:6px;">a13018b</code></span><span class="slice-pill s3">irreversible</span></div>
           <h3>HTTP &amp; the irreversible path</h3>
-          <p class="tagline">Honesty about what cannot be undone &mdash; <em>now in tree</em>. 159 tests green.</p>
+          <p class="tagline">Honesty about what cannot be undone. Stage, gate, compensate.</p>
 
           <div class="schematic">
             <svg viewBox="0 0 360 100" class="glyph" aria-label="staged effects fire at commit">
@@ -1708,21 +1708,21 @@
             </svg>
           </div>
 
-          <h4>What it added</h4>
-          <p>An <code>HTTPAdapter</code> whose <code>supports_rollback()</code> returns <code>False</code> &mdash; honest, not pretend. The runtime now routes such effects down the irreversible lane: instead of executing live, they return a <code>StagedResult</code> &mdash; a frozen dataclass carrying the deterministic <code>effect_id</code> (= <code>hash(txn_id + index + tool + sorted args)</code>), which doubles as the idempotency key so a re-fire after partial crash hits the wire at most once. <em class="term">Compensators</em> are registered as ordinary tools via <code>@tool(compensator='name')</code> &mdash; the inverse is a <em>declaration</em>, validated at stage-time (a misspelt compensator name fails before any side-effect is staged). At <code>commit()</code>, staged effects fire in journal order. Without a compensator, the effect <em class="term">gates</em> and <code>commit()</code> blocks until <code>txn.approve_irreversible(effect_id)</code> is called &mdash; pre-approval, per effect, by id. Policy is <em>re-evaluated at commit-time</em> against the same effect (TOCTOU-safe: a grant true at stage-time can fail at commit-time if the world moved).</p>
+          <h4>What it adds</h4>
+          <p>An <code>HTTPAdapter</code> whose <code>supports_rollback()</code> is <code>False</code> &mdash; honest, not pretend. The runtime routes such effects down the irreversible lane: instead of executing live, they become <code>StagedResult</code> placeholders. At <code>commit()</code>, staged effects fire in journal order. Each may have a registered <em class="term">compensator</em> (an inverse tool that runs on rollback after the fact &mdash; e.g. issue a refund); without one, the effect <em class="term">gates</em> and <code>commit()</code> blocks until <code>approve_irreversible()</code> is called by a human or higher-trust policy. Every staged effect carries an <em class="term">idempotency key</em> = <code>hash(txn_id + index + tool + args)</code>, so a re-fire after a partial crash hits the API at most once.</p>
 
-          <h4>What it unlocked</h4>
-          <p>The agent can now <em>plan</em> with calls to "send the email", "charge the card", "post to Slack" without any of them happening yet. <code>rollback()</code> before commit means those calls simply never occurred. <code>commit()</code> with gating means a human (or higher-trust policy) vets the planned irreversible set as a batch &mdash; the same review surface as a DB transaction, applied to the rest of the world. Mixed transactions &mdash; reversible DB writes plus irreversible API calls in one journal &mdash; commit and unwind correctly: on partial-commit failure, compensators auto-fire in reverse for already-applied irreversibles, the state machine lands in <code>PARTIAL</code> or, when a compensator is missing or fails, <code>STUCK</code> &mdash; the journal admits the bound on what can be undone rather than papering over it.</p>
+          <h4>What it unlocks</h4>
+          <p>The agent can <em>plan</em> with calls to "send the email", "charge the card", "post to Slack" without any of them happening yet. <code>rollback()</code> before commit means those calls simply never occurred. <code>commit()</code> with gating means a human can vet the planned irreversible set as a batch &mdash; the same review surface as a DB transaction, applied to the rest of the world.</p>
 
           <h4>How it traverses the journal</h4>
-          <div class="fold-line">Mixed forward fold. Reversible effects execute live and journal as <code>APPLIED</code>; irreversible effects journal as <code>STAGED</code> and stay inert until <code>commit()</code> folds them too. On partial failure the runtime walks the journal <em>backward</em>: SQL/FS restore via <code>adapter.restore</code>; irreversibles run their declared compensator &mdash; a <em>semantic left-inverse</em>, not a structural one. State machine: <code>OPEN &rarr; STAGED &rarr; COMMITTED | PARTIAL</code>, with <code>PARTIAL &rarr; ROLLED_BACK | STUCK</code>. Inverses still exist; some are structural (<code>SAVEPOINT</code>, copy-back) and some are declared (<code>refund_charge</code>). The journal carries both kinds in the same row schema.</p>
+          <div class="fold-line">Forward fold delayed to <code>commit()</code>: staged entries are inert until then. The "backward fold" for an already-applied irreversible effect is not free &mdash; it is the registered compensator, which is itself a new effect appended to the journal. Inverses are still there, but as <em>declared</em> rather than <em>structural</em>.</p>
         </article>
 
         <!-- ============ SLICE 4 ============ -->
         <article class="card s4" id="s4">
-          <div class="top"><span class="num">Slice · 04 · in design</span><span class="slice-pill s4">isolation</span></div>
+          <div class="top"><span class="num">Slice · 04 · shipped <code style="font-size:10px; color:var(--ink-3); margin-left:6px;">feat/slice-4</code></span><span class="slice-pill s4">isolation</span></div>
           <h3>Isolation between concurrent agents</h3>
-          <p class="tagline">A diff, not a lock. All five decisions locked &mdash; see <code><a href="slice-4-decisions.html" style="color: inherit;">slice-4-decisions.html</a></code>.</p>
+          <p class="tagline">A diff, not a lock. <code>Abort</code> · <code>Retry(N)</code> · <code>Serialize</code>, with the journal as arbiter.</p>
 
           <div class="schematic">
             <svg viewBox="0 0 360 110" class="glyph" aria-label="two journals overlap; intersection is the conflict">
@@ -1738,14 +1738,14 @@
             </svg>
           </div>
 
-          <h4>What it adds</h4>
-          <p>Every <code>Effect</code> already carries <code>read_keys</code> (<code>(resource, key, version)</code> triples it observed) and <code>write_keys</code> (<code>(resource, key)</code> pairs it intends to alter) &mdash; those slots are baked in from Slice 1 precisely so isolation is never a retrofit. Slice 4 turns those slots from inert metadata into the basis of <em class="term">MVCC</em> (multi-version concurrency control &mdash; conflicts detected by version mismatch, not pessimistic locks). The mathematical frame: isolation is the <em>preservation of serializability under interleaving</em>; a conflict is a <em>non-commutativity event</em> between two transactions whose read/write sets overlap. Detection is a set diff; resolution is a function <code>f: conflict &rarr; {Abort, Retry, Serialize}</code>. Each adapter exposes <code>read_version(key)</code> and <code>write_version(key)</code> &mdash; the same protocol across SQL (row version), FS (mtime + content hash), and future Vector adapters (index version). HTTP is <em>isolated by construction</em>: irreversibles stage until <code>commit()</code>, so they cannot interleave on the wire. The five locked decisions: <b>D1</b> adapter-mediated key capture, <b>D2</b> per-adapter versioning, <b>D3</b> detection at commit-time, <b>D4</b> resolution as policy, <b>D5</b> single-host shared journal as Slice 4's arbitration scope (cross-host is a later slice).</p>
+          <h4>What it added</h4>
+          <p>Every <code>Effect</code> already carried <code>read_keys</code> (<code>(resource, key, version)</code> triples observed) and <code>write_keys</code> (<code>(resource, key)</code> pairs altered) &mdash; baked in from Slice 1 precisely so isolation was never a retrofit. Slice 4 turned those slots from inert metadata into live <em class="term">MVCC</em>. Capture is automatic through the resource handle: <code>FsHandle.read/write/delete</code> records keys against the active <code>Effect</code>; SQL has explicit <code>execute_isolated(conn, stmt, params, reads, writes)</code> because parsing SQL is out of scope. Versioning is per-adapter (<code>VersionedResourceAdapter</code> sub-protocol): SQL via a monotonic counter side-table read through a dedicated meta-connection (so cross-process commits see each other's bumps), FS via sha256 content hash, HTTP not-conforming (irreversibles are isolated-by-construction via staging). The resolution policy is an operator-chosen callable <code>f: Conflict → Action</code> &mdash; <code>Abort()</code>, <code>Retry(N)</code> via <code>run_txn(fn, ...)</code>, or in-process <code>Serialize()</code>.</p>
 
-          <h4>What it unlocks</h4>
-          <p>Two agents acting on the same resources stop stepping on each other. The losing transaction is told <em>why</em> it lost &mdash; "you read row 42 at version 3, but version 4 was committed by txn B" &mdash; and the resolution policy gives it a path: redo, abandon, or wait its turn. No global mutex. No "just hope". And because every adapter speaks the same versioning protocol, the same isolation story applies whether the contested resource is a SQL row, a file on disk, or (later) a vector index entry.</p>
+          <h4>What it unlocked</h4>
+          <p>Two agents acting on the same resources stop stepping on each other. The losing transaction is told <em>why</em> it lost &mdash; "you read row 42 at version 3, but version 4 was committed by txn B" &mdash; and the resolution policy gives it a path: redo, abandon, or wait its turn. No global mutex. No "just hope". Multi-agent in one Python process is the in-process <code>JournalRegistry</code> case; multi-process on one host is the filesystem-shared SQLite side-table case &mdash; both substrates ship.</p>
 
           <h4>How it traverses the journal</h4>
-          <div class="fold-line">Set diff. <code>read_keys(self) &cap; write_keys(committed_journal_after_my_snapshot)</code>. Empty &rArr; commit. Non-empty &rArr; the txn pair fails to commute &rArr; apply <code>f</code>. Conflict detection is structurally a <em>relation</em> on two journals, not a procedure.</p>
+          <div class="fold-line">Set diff at commit-time. For every <code>(resource, key, v_at_read)</code> in this txn's read-set, ask <code>adapter.read_version(key)</code> now. If the tag has moved, flag a conflict. The resolution policy decides what to do with the list. Conflict detection is structurally a <em>relation</em> on the journal &times; current adapter state, not a procedure.</div>
         </article>
 
         <!-- ============ SLICE 5 ============ -->
@@ -1919,7 +1919,7 @@
     <section id="wedge">
       <div class="eyebrow">Section 05 · The wedge, slice by slice</div>
       <h2>Where the moat actually forms.</h2>
-      <p>Pherix claims three things nobody else does. The first is delivered by Slices 1&ndash;2 and <em>calibrated</em> by Slice 3 (which ships honest <code>supports_rollback=False</code> staging, gating and compensators &mdash; landed at <code>a13018b</code>). The remaining wedge isn't fully <em>real</em> until Slice 4 (isolation) and Slice 6 (real policy) ship. The heatmap below reads dark cells = the slice contributes substantively to that wedge; the S2 and S3 columns are now retrospective &mdash; in tree.</p>
+      <p>Pherix claims three things nobody else does. The first is partially delivered by Slice 1, but the wedge isn't <em>real</em> until Slice 4 and Slice 6 ship. The heatmap below reads dark cells = the slice contributes substantively to that wedge.</p>
 
       <div class="wedge" role="table" aria-label="Wedge contribution by slice">
         <div class="w-cell w-head">Competitive wedge ↓ / Slice →</div>
@@ -1965,7 +1965,7 @@
 
       <details style="margin-top:18px;">
         <summary>Reading the heatmap &mdash; why these cells, in this order</summary>
-        <p><b>Wedge 1 (snapshot/rollback)</b> is half-real after Slice 1 (SQL) and properly real after Slice 2: a second adapter with structurally different semantics proves the abstraction generalises. Slice 3 (shipped, <code>a13018b</code>) contributes by being honest about what <em>cannot</em> snapshot &mdash; HTTP returns <code>supports_rollback=False</code> and the runtime stages, gates, or compensates accordingly. The irreversible-lane primitives (<code>StagedResult</code>, gate, compensator-as-tool, deterministic <code>effect_id</code> doubling as the idempotency key, <code>STUCK</code> as a terminal state when no inverse is declarable) are <em>landed</em>, not promised &mdash; calibrating the wedge rather than oversetting it. Slice 7 (dry-run) is a downstream consequence: you can only speculate without harm because you have rollback.</p>
+        <p><b>Wedge 1 (snapshot/rollback)</b> is half-real after Slice 1 (SQL) and properly real after Slice 2: a second adapter with structurally different semantics proves the abstraction generalises. Slice 3 contributes by being honest about what <em>cannot</em> snapshot &mdash; calibrating the wedge rather than oversetting it. Slice 7 (dry-run) is a downstream consequence: you can only speculate without harm because you have rollback.</p>
         <p><b>Wedge 2 (policy as commit-time primitive)</b> is the one that <em>requires</em> the journal. Stage-time policy alone (Slice 1's allow-list) is fine, but the wedge needs commit-time re-evaluation against the whole journal &mdash; spend caps, content rules, capability grants whose truth value depends on what else the txn did. That is Slice 6's job. Slice 8 (gateway) amplifies it by letting policy run independently of the agent's process.</p>
         <p><b>Wedge 3 (isolation)</b> is the cleanest dependency: it is Slice 4 or it does not exist. The <code>read_keys</code> / <code>write_keys</code> slots in <code>Effect</code> from Slice 1 were placed precisely to make Slice 4 a plug-in rather than a rewrite. Slice 8 multiplies the value: isolation between Python agents in one process matters less than isolation between independent agent fleets sharing real backends &mdash; that is where the gateway lives.</p>
       </details>

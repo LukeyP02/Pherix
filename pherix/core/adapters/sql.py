@@ -68,6 +68,40 @@ class SQLiteAdapter:
         # is a C-extension type that forbids both attribute assignment and
         # weakrefs.
         _CONN_ADAPTERS[id(conn)] = self
+        # Slice 4 (D5 multi-process arbitration): a separate autocommit
+        # "meta" connection used only for ``read_version`` queries.
+        # Rationale: during an ``agent_txn`` the main connection sits
+        # inside an open ``BEGIN``. Under WAL mode (and even some non-WAL
+        # cases) its reads of ``_pherix_versions`` are snapshot-isolated
+        # to the moment the txn started — so a bump committed by another
+        # process *while we are open* would be invisible to us, and the
+        # commit-time diff would silently miss the cross-process
+        # lost-update. The meta-connection is never inside a BEGIN; its
+        # reads see the latest committed state. Writes still go through
+        # the main connection so they roll back with the txn.
+        # In-memory DBs (``:memory:``) have no shareable path; meta_conn
+        # is None and ``read_version`` falls back to the main conn —
+        # which is fine, in-memory is single-process by definition.
+        db_path = self._derive_db_path(conn)
+        self._meta_conn: sqlite3.Connection | None = (
+            sqlite3.connect(db_path, isolation_level=None)
+            if db_path
+            else None
+        )
+
+    @staticmethod
+    def _derive_db_path(conn: sqlite3.Connection) -> str | None:
+        """Path of the connection's ``main`` database, or None for memory.
+
+        ``PRAGMA database_list`` yields rows ``(seq, name, file)`` — file
+        is an empty string for ``:memory:`` connections. We honour only
+        the ``main`` schema; attached schemas are out of scope (Slice 4
+        does not promise multi-schema isolation).
+        """
+        for _seq, name, file in conn.execute("PRAGMA database_list").fetchall():
+            if name == "main":
+                return file or None
+        return None
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -125,7 +159,12 @@ class SQLiteAdapter:
         return json.dumps(list(key), sort_keys=True)
 
     def read_version(self, key: tuple) -> int:
-        row = self._conn.execute(
+        # Use the meta-connection if available (D5: it bypasses the main
+        # connection's BEGIN snapshot, so cross-process bumps are visible
+        # at commit-time diff). Falls back to the main connection for
+        # in-memory adapters where meta_conn does not exist.
+        target = self._meta_conn or self._conn
+        row = target.execute(
             "SELECT version FROM _pherix_versions "
             "WHERE resource = ? AND key_json = ?",
             (self.name, self._encode_key(key)),
