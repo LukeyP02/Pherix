@@ -1,0 +1,2222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pherix Slice 3 — Design Decisions</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --panel: #ffffff;
+    --panel-2: #f2f1ec;
+    --ink: #1a1916;
+    --ink-soft: #4a4842;
+    --ink-faint: #7a786f;
+    --rule: #d9d6cc;
+    --rule-strong: #bfbbae;
+    --accent: #3a5a40;
+    --accent-soft: #d6e3d9;
+    --reject: #8a3a3a;
+    --reject-soft: #ecd6d6;
+    --warn: #8a6c2a;
+    --warn-soft: #ecdfc0;
+    --code-bg: #1a1916;
+    --code-ink: #f0eee5;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --serif: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14130f;
+      --panel: #1d1c18;
+      --panel-2: #25241f;
+      --ink: #f0eee5;
+      --ink-soft: #c8c5b8;
+      --ink-faint: #8a877c;
+      --rule: #34322c;
+      --rule-strong: #4a4842;
+      --accent: #8db28a;
+      --accent-soft: #2a3a2c;
+      --reject: #c98080;
+      --reject-soft: #3a2424;
+      --warn: #d9b870;
+      --warn-soft: #3a2f1a;
+      --code-bg: #0c0b09;
+      --code-ink: #e5e3d8;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 48px 32px 96px;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 56px;
+  }
+  @media (max-width: 900px) {
+    .wrap { grid-template-columns: 1fr; gap: 24px; padding: 24px 18px 64px; }
+    nav.toc { position: static !important; }
+  }
+
+  /* Sticky TOC */
+  nav.toc {
+    position: sticky;
+    top: 32px;
+    align-self: start;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--ink-faint);
+    border-left: 1px solid var(--rule);
+    padding-left: 16px;
+  }
+  nav.toc .label {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    margin-bottom: 10px;
+    display: block;
+  }
+  nav.toc a {
+    display: block;
+    color: var(--ink-soft);
+    text-decoration: none;
+    padding: 3px 0;
+    border-left: 2px solid transparent;
+    margin-left: -18px;
+    padding-left: 16px;
+  }
+  nav.toc a:hover { color: var(--ink); }
+  nav.toc a.is-active { color: var(--ink); border-left-color: var(--accent); font-weight: 600; }
+  nav.toc .sub { margin-left: 12px; font-size: 11.5px; color: var(--ink-faint); }
+  nav.toc .open-tag {
+    display: inline-block;
+    margin-left: 4px;
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--warn-soft);
+    color: var(--warn);
+    font-weight: 700;
+    vertical-align: 1px;
+  }
+
+  /* Typography */
+  h1 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 44px;
+    line-height: 1.05;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  h2 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 30px;
+    line-height: 1.15;
+    margin: 0 0 6px;
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 15px;
+    line-height: 1.3;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    margin: 28px 0 12px;
+    color: var(--ink-soft);
+  }
+  h4 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 14px;
+    margin: 16px 0 8px;
+    color: var(--ink);
+  }
+  p { margin: 0 0 14px; color: var(--ink-soft); }
+  p.lede { font-size: 18px; color: var(--ink); line-height: 1.5; }
+  p strong { color: var(--ink); }
+  code, .mono { font-family: var(--mono); font-size: 0.88em; }
+  p code, li code, td code {
+    background: var(--panel-2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  pre.code {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 16px 18px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 12px 0 18px;
+  }
+  pre.code .k { color: #d9b870; }
+  pre.code .s { color: #8db28a; }
+  pre.code .c { color: #6a6860; font-style: italic; }
+  pre.code .t { color: #c98080; }
+  pre.code .n { color: #cfb98a; }
+
+  /* Hero */
+  header.hero {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 28px;
+    margin-bottom: 8px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px 28px;
+    margin-top: 22px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+  .meta-row span b { color: var(--ink); font-weight: 600; }
+
+  /* Section */
+  section.decision {
+    border-top: 1px solid var(--rule);
+    padding-top: 56px;
+    margin-top: 56px;
+  }
+  section.decision:first-of-type { border-top: none; margin-top: 24px; padding-top: 12px; }
+
+  .d-head {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 22px;
+    align-items: baseline;
+    margin-bottom: 22px;
+  }
+  .d-id {
+    font-family: var(--mono);
+    font-size: 56px;
+    line-height: 0.9;
+    color: var(--accent);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .d-id.open { color: var(--warn); }
+  .d-title h2 { margin-bottom: 4px; }
+  .d-title .q {
+    font-family: var(--serif);
+    font-style: italic;
+    color: var(--ink-faint);
+    font-size: 17px;
+  }
+  .d-title .status {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 3px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 700;
+    margin-left: 8px;
+    vertical-align: 4px;
+  }
+  .d-title .status.open {
+    background: var(--warn-soft);
+    color: var(--warn);
+  }
+
+  /* Verdict banner */
+  .verdict {
+    background: var(--accent-soft);
+    border-left: 4px solid var(--accent);
+    padding: 18px 22px;
+    border-radius: 0 6px 6px 0;
+    margin: 22px 0 28px;
+  }
+  .verdict.open {
+    background: var(--warn-soft);
+    border-left-color: var(--warn);
+  }
+  .verdict .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+  .verdict.open .tag { color: var(--warn); }
+  .verdict .pick {
+    font-family: var(--serif);
+    font-size: 24px;
+    line-height: 1.25;
+    color: var(--ink);
+    margin: 0 0 8px;
+    font-weight: 500;
+  }
+  .verdict .why {
+    color: var(--ink-soft);
+    margin: 0;
+    font-size: 15.5px;
+  }
+
+  /* Option cards */
+  .options {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin: 8px 0 24px;
+  }
+  @media (max-width: 800px) { .options { grid-template-columns: 1fr; } }
+  .opt {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 18px 18px 22px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .opt.pick {
+    border-color: var(--accent);
+    background: var(--panel);
+    box-shadow: 0 0 0 1px var(--accent), 0 4px 18px -8px rgba(58, 90, 64, 0.35);
+  }
+  .opt.rec {
+    border-color: var(--warn);
+    background: var(--panel);
+    box-shadow: 0 0 0 1px var(--warn), 0 4px 18px -8px rgba(138, 108, 42, 0.35);
+  }
+  .opt.rej { background: var(--panel); }
+  .opt .badge {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 3px;
+    display: inline-block;
+    margin-bottom: 12px;
+  }
+  .opt.pick .badge { background: var(--accent); color: white; }
+  .opt.rec .badge { background: var(--warn); color: white; }
+  .opt.rej .badge { background: var(--reject-soft); color: var(--reject); }
+  .opt h4 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 19px;
+    margin: 0 0 6px;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--ink);
+  }
+  .opt .label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .opt p { font-size: 14px; margin-bottom: 12px; }
+  .crit {
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px dashed var(--rule);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 12px;
+    font-size: 13px;
+  }
+  .crit .name { color: var(--ink-faint); }
+  .crit .val { font-family: var(--mono); font-weight: 700; font-size: 13px; }
+  .v-yes { color: var(--accent); }
+  .v-no  { color: var(--reject); }
+  .v-mid { color: var(--warn); }
+
+  /* Criteria summary table */
+  table.crit-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 20px;
+    font-size: 14px;
+  }
+  table.crit-table th, table.crit-table td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  table.crit-table thead th {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-faint);
+    font-weight: 600;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  table.crit-table tbody tr:hover { background: var(--panel-2); }
+  table.crit-table .axis { width: 28%; color: var(--ink); font-weight: 500; }
+  table.crit-table .pickcol { background: var(--accent-soft); }
+  table.crit-table .reccol { background: var(--warn-soft); }
+  @media (prefers-color-scheme: dark) {
+    table.crit-table .pickcol { background: rgba(141, 178, 138, 0.10); }
+    table.crit-table .reccol { background: rgba(217, 184, 112, 0.10); }
+  }
+
+  /* Two-up panels */
+  .twoup {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 16px 0 18px;
+  }
+  @media (max-width: 760px) { .twoup { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 18px;
+  }
+  .panel.pick { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .panel.rej { opacity: 0.92; }
+  .panel .ribbon {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .panel.pick .ribbon { background: var(--accent); color: white; }
+  .panel.rej .ribbon  { background: var(--reject-soft); color: var(--reject); }
+  .panel h4 {
+    font-family: var(--serif);
+    font-size: 18px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+    margin: 0 0 8px;
+  }
+  .panel p { font-size: 14px; margin-bottom: 10px; }
+
+  /* SVG figure */
+  .figure {
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 18px;
+    margin: 14px 0 22px;
+  }
+  .figure svg { width: 100%; height: auto; display: block; }
+  .figure figcaption {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    margin-top: 10px;
+    text-align: center;
+    letter-spacing: 0.04em;
+  }
+  .svg-stroke-ink  { stroke: var(--ink-soft); }
+  .svg-stroke-rule { stroke: var(--rule-strong); }
+  .svg-fill-panel  { fill: var(--panel); }
+  .svg-fill-panel2 { fill: var(--panel-2); }
+  .svg-fill-ink    { fill: var(--ink); }
+  .svg-fill-soft   { fill: var(--ink-soft); }
+  .svg-fill-faint  { fill: var(--ink-faint); }
+  .svg-fill-accent { fill: var(--accent); }
+  .svg-fill-accent-soft { fill: var(--accent-soft); }
+  .svg-fill-reject { fill: var(--reject); }
+  .svg-fill-reject-soft { fill: var(--reject-soft); }
+  .svg-fill-warn   { fill: var(--warn); }
+  .svg-fill-warn-soft   { fill: var(--warn-soft); }
+  .svg-stroke-accent { stroke: var(--accent); }
+  .svg-stroke-reject { stroke: var(--reject); }
+  .svg-stroke-warn   { stroke: var(--warn); }
+  text { font-family: var(--mono); font-size: 11px; fill: var(--ink); }
+  text.h { font-family: var(--sans); font-weight: 600; font-size: 12px; }
+  text.lbl { fill: var(--ink-faint); font-size: 10.5px; letter-spacing: 0.08em; }
+
+  /* Controls (D5 interactive) */
+  .ctrl {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 12px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+  }
+  .ctrl button {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--rule-strong);
+    border-radius: 5px;
+    padding: 7px 14px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .ctrl button:hover { border-color: var(--accent); color: var(--accent); }
+  .ctrl button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+  .ctrl button.primary:hover { color: white; opacity: 0.92; }
+  .ctrl button.danger { background: var(--reject-soft); color: var(--reject); border-color: var(--reject); }
+  .ctrl button.active-mode { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .ctrl button.active-mode:hover { color: var(--bg); }
+  .ctrl .step-readout { margin-left: auto; color: var(--ink-faint); }
+  .ctrl .step-readout b { color: var(--ink); }
+  .mode-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 10px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+  }
+  .mode-row .lbl-pre {
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-right: 8px;
+  }
+
+  .journal {
+    margin-top: 14px;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    min-height: 180px;
+  }
+  .journal .row {
+    display: grid;
+    grid-template-columns: 32px 1fr 130px 90px;
+    gap: 10px;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+  .journal .row.show { opacity: 1; }
+  .journal .row.struck { color: #8a877c; text-decoration: line-through; }
+  .journal .row .idx   { color: #d9b870; }
+  .journal .row .stat-st { color: #d9b870; }   /* STAGED */
+  .journal .row .stat-ap { color: #8db28a; }   /* APPLIED */
+  .journal .row .stat-co { color: #c98080; }   /* COMPENSATED */
+  .journal .row .stat-ga { color: #c98080; }   /* GATED */
+  .journal .row .stat-fa { color: #c98080; }   /* FAILED */
+  .journal .empty { color: #6a6860; font-style: italic; }
+
+  /* World-state pane (D5) */
+  .world {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  @media (max-width: 760px) { .world { grid-template-columns: 1fr; } }
+  .world .cell {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-size: 13px;
+  }
+  .world .cell .ttl {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-faint);
+    margin-bottom: 5px;
+  }
+  .world .cell .val {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .world .cell.fired   .val { color: var(--accent); }
+  .world .cell.refunded .val { color: var(--warn); }
+  .world .cell.not-fired .val { color: var(--ink-faint); }
+  .world .cell.stuck .val { color: var(--reject); }
+
+  /* Final-state callout for D5 */
+  .endstate {
+    margin-top: 12px;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-size: 14px;
+  }
+  .endstate .row1 {
+    display: flex;
+    gap: 14px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .endstate .txn-state {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 4px;
+    background: var(--panel-2);
+    color: var(--ink);
+  }
+  .endstate .txn-state.committed   { background: var(--accent); color: white; }
+  .endstate .txn-state.rolled_back { background: var(--reject-soft); color: var(--reject); }
+  .endstate .txn-state.stuck       { background: var(--warn-soft); color: var(--warn); }
+  .endstate .txn-state.partial     { background: var(--warn-soft); color: var(--warn); }
+  .endstate .verdict-line {
+    font-family: var(--serif);
+    font-size: 15.5px;
+    color: var(--ink);
+  }
+  .endstate .gap {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--reject);
+    margin-top: 6px;
+  }
+  .endstate .gap.ok { color: var(--accent); }
+
+  /* Footnotes / definitions */
+  details.deep {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 0;
+    margin: 18px 0 8px;
+  }
+  details.deep summary {
+    cursor: pointer;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    letter-spacing: 0.04em;
+    list-style: none;
+    user-select: none;
+    position: relative;
+  }
+  details.deep summary::-webkit-details-marker { display: none; }
+  details.deep summary::before {
+    content: "▸";
+    display: inline-block;
+    margin-right: 10px;
+    color: var(--ink-faint);
+    transition: transform 0.15s;
+  }
+  details.deep[open] summary::before { transform: rotate(90deg); }
+  details.deep .body {
+    padding: 4px 16px 16px;
+    border-top: 1px solid var(--rule);
+    font-size: 14.5px;
+  }
+  details.deep .body p { font-size: 14.5px; }
+  details.deep .body ul { margin: 6px 0 10px; padding-left: 22px; color: var(--ink-soft); }
+  details.deep .body li { margin-bottom: 4px; }
+
+  .callout {
+    border-left: 3px solid var(--warn);
+    background: var(--warn-soft);
+    padding: 12px 16px;
+    border-radius: 0 6px 6px 0;
+    margin: 16px 0;
+    font-size: 14.5px;
+    color: var(--ink);
+  }
+  .callout .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--warn);
+    margin-right: 8px;
+    font-weight: 700;
+  }
+
+  .kbd {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  footer.foot {
+    grid-column: 1 / -1;
+    margin-top: 64px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  /* TL;DR strip */
+  .tldr {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin: 28px 0 8px;
+  }
+  @media (max-width: 980px) { .tldr { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .tldr { grid-template-columns: 1fr; } }
+  .tldr .card {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 16px 18px;
+    border-top: 4px solid var(--accent);
+  }
+  .tldr .card.open { border-top-color: var(--warn); }
+  .tldr .card .id {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    margin-bottom: 6px;
+  }
+  .tldr .card.open .id { color: var(--warn); }
+  .tldr .card .title {
+    font-family: var(--serif);
+    font-size: 17px;
+    color: var(--ink);
+    line-height: 1.3;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .tldr .card .one { font-size: 13.5px; color: var(--ink-soft); margin: 0; }
+
+  .formula {
+    background: var(--panel-2);
+    border-left: 3px solid var(--ink-faint);
+    padding: 10px 14px;
+    margin: 12px 0 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink);
+    border-radius: 0 4px 4px 0;
+  }
+  .formula em { color: var(--ink-faint); font-style: italic; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">Pherix · Slice 3 · Decision Aid</div>
+    <h1>The second lane goes live: irreversibility, contained.</h1>
+    <p class="lede" style="max-width: 68ch;">
+      Slices 1 and 2 built the <em>reversible</em> lane — snapshot, apply live,
+      journal, fold-backward on rollback. Slice 3 lights up the lane that has
+      always been promised but never wired: <em>irreversible</em> effects. The
+      ones that send the email, charge the card, call the third-party API.
+      <strong>All five decisions are locked.</strong> D5 — partial-commit
+      recovery — chose option <b>(b)</b>: compensator auto-fire on partial
+      failure, with <code>STUCK</code> for the missing-compensator case.
+    </p>
+    <div class="meta-row">
+      <span><b>Slice:</b> 3 — HTTP / irreversible adapter, staging, gates, compensators</span>
+      <span><b>Locked:</b> D1–D5 — D5 → option (b)</span>
+      <span><b>Source of truth:</b> <code>Pherix-slice-3/TASK.md</code></span>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Contents">
+    <span class="label">Decisions</span>
+    <a href="#tldr">TL;DR</a>
+    <a href="#frame">The two lanes</a>
+    <a href="#d1">D1 — StagedResult</a>
+    <a href="#d2">D2 — Compensators</a>
+    <a href="#d3">D3 — Approval &amp; gate</a>
+    <a href="#d4">D4 — Policy re-eval</a>
+    <a href="#d5">D5 — Partial commit<span class="open-tag">locked · b</span></a>
+    <a href="#journal">Journal — closing</a>
+    <a href="#why">Why this matters</a>
+  </nav>
+
+  <main>
+
+  <!-- ============== TL;DR ============== -->
+  <section id="tldr" style="margin-top: 8px;">
+    <h3>Five questions, one breath</h3>
+    <div class="tldr">
+      <div class="card">
+        <div class="id">D1</div>
+        <div class="title">StagedResult: sentinel placeholder.</div>
+        <p class="one">A JSON-able token carrying an <code>effect_id</code>. The agent can pass it around; the actual value lands at commit.</p>
+      </div>
+      <div class="card">
+        <div class="id">D2</div>
+        <div class="title">Compensators: string-named tools.</div>
+        <p class="one">A compensator is just another <code>@tool</code>. The original tool references it by name — journal-able, audit-able, replaceable.</p>
+      </div>
+      <div class="card">
+        <div class="id">D3</div>
+        <div class="title">Pre-approval on the txn context.</div>
+        <p class="one">An out-of-band approver calls <code>txn.approve_irreversible(effect_id)</code>. Pherix records the verdict; it doesn't generate it.</p>
+      </div>
+      <div class="card">
+        <div class="id">D4</div>
+        <div class="title">Policy checked twice.</div>
+        <p class="one">Stage-time and again at commit-time. Cheap when policy is stateless; load-bearing when state-dependent rules arrive in Slice 6.</p>
+      </div>
+      <div class="card open">
+        <div class="id">D5 · LOCKED → (b)</div>
+        <div class="title">Partial-commit recovery — compensator auto-fire.</div>
+        <p class="one">Effect N fails mid-commit; walk back through fired effects in reverse, invoke their compensators. Missing compensator → <code>STUCK</code>.</p>
+      </div>
+      <div class="card">
+        <div class="id">∴</div>
+        <div class="title">Same engine, more entries.</div>
+        <p class="one">A staged effect's lifecycle (STAGED → APPROVED → APPLIED → COMPENSATED) is still just rows in the journal. No new orchestrator.</p>
+      </div>
+    </div>
+    <details class="deep">
+      <summary>Read this first if any term is new — staging, gate, compensator, TOCTOU.</summary>
+      <div class="body">
+        <p><b>Reversible vs irreversible.</b> A reversible effect is one whose <em>before-state can be reconstructed</em>: SQL row insertion (DB savepoint), file write (copy-on-write backup). An irreversible effect is one whose before-state <em>cannot</em> be recovered: an email recipient remembers the email; a credit-card charge moves money. The adapter's <code>supports_rollback()</code> is the honesty flag.</p>
+        <p><b>Staging</b> means: record the effect in the journal as <em>intent</em>, do not execute it yet. The act is deferred to <code>commit()</code>. Mathematically, staged effects live in a partial order with respect to commit time — they are temporally posterior to it, by construction. Reversible effects, by contrast, are temporally prior to commit (they fired live, with a snapshot, ready to be undone).</p>
+        <p><b>Compensator.</b> A second tool that <em>semantically</em> undoes the first. <code>refund_charge</code> compensates <code>charge_card</code>; the money came in, then went out; net effect (modulo bank fees) approximates the identity. Pherix does not verify the inverse relationship — the developer asserts it. Pherix records the pairing and provides the firing mechanism.</p>
+        <p><b>The gate.</b> A predicate at commit time: every staged irreversible effect must be EITHER compensator-backed OR explicitly pre-approved. If neither holds, commit blocks. The gate is what makes "stage then commit" qualitatively different from "execute immediately."</p>
+        <p><b>TOCTOU.</b> Time-Of-Check vs Time-Of-Use — a class of bugs where a property is checked, then acted upon, with intervening state change invalidating the check. The classic example: <code>os.access(f); open(f)</code> — a symlink swap between the two lines defeats the check. In policy terms: a spend cap looks fine at stage-time and is exceeded by commit-time. Two-phase checking closes that window.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============== FRAMING ============== -->
+  <section class="decision" id="frame">
+    <div class="d-head">
+      <div class="d-id">§0</div>
+      <div class="d-title">
+        <h2>The two lanes the execution model has always had.</h2>
+        <p class="q">Slice 1's <code>EffectStatus.STAGED</code>, <code>GATED</code>, and <code>TxnState.STAGED</code> / <code>PARTIAL</code> / <code>STUCK</code> aren't new — they were defined as dormant. Slice 3 brings them online.</p>
+      </div>
+    </div>
+
+    <p>
+      The execution model in CLAUDE.md §"Execution model" is bilateral: every
+      tool either has a way back, or it doesn't. The reversible lane (Slice 1, 2)
+      is live; the irreversible lane is dormant code waiting on the orchestration
+      around it.
+    </p>
+
+    <div class="formula">
+      <em>Reversible</em> effect ≼ commit · &nbsp; <em>(temporally prior — fired live, snapshot held, rollback restores)</em><br>
+      <em>Irreversible</em> effect ≽ commit · &nbsp; <em>(temporally posterior — staged, fires at commit, gate or compensator demanded)</em>
+    </div>
+
+    <p>
+      Read that as a partial order. <em>Commit</em> is the cut. Reversible
+      effects live on one side, irreversible on the other. Rollback <em>before</em>
+      commit is in the "never instantiated" regime for the irreversible lane —
+      which is the entire reason staging exists. The agent can ask for an
+      email; if the transaction aborts before commit, no email was sent.
+    </p>
+
+    <figure class="figure" aria-label="Two-lane execution model: reversible vs irreversible">
+      <svg viewBox="0 0 880 380" role="img" aria-label="Two execution lanes of Pherix">
+        <defs>
+          <marker id="frmArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-soft"/>
+          </marker>
+          <marker id="frmArrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-accent"/>
+          </marker>
+          <marker id="frmArrW" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-warn"/>
+          </marker>
+          <marker id="frmArrR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-reject"/>
+          </marker>
+        </defs>
+
+        <!-- header -->
+        <text x="20" y="20" class="h">Two lanes through the engine — supports_rollback() chooses which lane each effect enters.</text>
+
+        <!-- vertical commit cut line -->
+        <line x1="560" y1="48" x2="560" y2="360" stroke-width="1" stroke-dasharray="3 3" class="svg-stroke-rule"/>
+        <text x="560" y="44" text-anchor="middle" class="lbl" style="letter-spacing: 0.12em;">COMMIT()</text>
+
+        <!-- LEFT: reversible lane -->
+        <g transform="translate(20, 60)">
+          <rect x="0" y="0" width="520" height="130" rx="10" class="svg-fill-accent-soft" stroke-width="1.4" style="stroke: var(--accent);"/>
+          <text x="14" y="22" class="h" style="fill: var(--accent);">REVERSIBLE LANE</text>
+          <text x="14" y="40" class="lbl">supports_rollback() = true · SQL · Filesystem</text>
+
+          <!-- nodes -->
+          <g>
+            <rect x="20" y="56" width="90" height="42" rx="6" class="svg-fill-panel" stroke-width="1" style="stroke: var(--ink-soft);"/>
+            <text x="65" y="74" text-anchor="middle" class="h">snapshot</text>
+            <text x="65" y="90" text-anchor="middle" class="lbl">before-state</text>
+          </g>
+          <path d="M110,77 L150,77" stroke-width="1.4" class="svg-stroke-accent" marker-end="url(#frmArrA)" fill="none"/>
+          <g>
+            <rect x="150" y="56" width="90" height="42" rx="6" class="svg-fill-panel" stroke-width="1" style="stroke: var(--ink-soft);"/>
+            <text x="195" y="74" text-anchor="middle" class="h">apply LIVE</text>
+            <text x="195" y="90" text-anchor="middle" class="lbl">tool runs now</text>
+          </g>
+          <path d="M240,77 L280,77" stroke-width="1.4" class="svg-stroke-accent" marker-end="url(#frmArrA)" fill="none"/>
+          <g>
+            <rect x="280" y="56" width="110" height="42" rx="6" class="svg-fill-accent" stroke-width="1" style="stroke: var(--accent);"/>
+            <text x="335" y="74" text-anchor="middle" class="h" style="fill: white;">EffectStatus</text>
+            <text x="335" y="90" text-anchor="middle" class="lbl" style="fill: white;">= APPLIED</text>
+          </g>
+          <path d="M390,77 L430,77" stroke-width="1.4" class="svg-stroke-accent" marker-end="url(#frmArrA)" fill="none"/>
+          <g>
+            <rect x="430" y="56" width="76" height="42" rx="6" class="svg-fill-panel" stroke-width="1" style="stroke: var(--ink-soft);"/>
+            <text x="468" y="74" text-anchor="middle" class="h">journal</text>
+            <text x="468" y="90" text-anchor="middle" class="lbl">row appended</text>
+          </g>
+
+          <!-- rollback note -->
+          <text x="14" y="118" class="lbl" style="fill: var(--reject);">on rollback: walk journal backward, adapter.restore() each; status → COMPENSATED</text>
+        </g>
+
+        <!-- RIGHT: irreversible lane -->
+        <g transform="translate(20, 210)">
+          <rect x="0" y="0" width="840" height="150" rx="10" class="svg-fill-warn-soft" stroke-width="1.4" style="stroke: var(--warn);"/>
+          <text x="14" y="22" class="h" style="fill: var(--warn);">IRREVERSIBLE LANE</text>
+          <text x="14" y="40" class="lbl">supports_rollback() = false · HTTP / email / payments</text>
+
+          <!-- staged box (left of commit cut) -->
+          <g>
+            <rect x="20" y="56" width="100" height="48" rx="6" class="svg-fill-panel" stroke-width="1" style="stroke: var(--warn);"/>
+            <text x="70" y="76" text-anchor="middle" class="h">stage</text>
+            <text x="70" y="92" text-anchor="middle" class="lbl">no I/O</text>
+          </g>
+          <path d="M120,80 L160,80" stroke-width="1.4" class="svg-stroke-warn" marker-end="url(#frmArrW)" fill="none"/>
+          <g>
+            <rect x="160" y="56" width="120" height="48" rx="6" class="svg-fill-warn" stroke-width="1" style="stroke: var(--warn);"/>
+            <text x="220" y="76" text-anchor="middle" class="h" style="fill: white;">EffectStatus</text>
+            <text x="220" y="92" text-anchor="middle" class="lbl" style="fill: white;">= STAGED</text>
+          </g>
+          <path d="M280,80 L320,80" stroke-width="1.4" class="svg-stroke-warn" marker-end="url(#frmArrW)" fill="none"/>
+          <g>
+            <rect x="320" y="56" width="100" height="48" rx="6" class="svg-fill-panel" stroke-width="1" style="stroke: var(--ink-soft);"/>
+            <text x="370" y="76" text-anchor="middle" class="h">wait</text>
+            <text x="370" y="92" text-anchor="middle" class="lbl">until commit</text>
+          </g>
+
+          <!-- at commit, three outcomes -->
+          <path d="M420,80 L560,80" stroke-width="1.6" class="svg-stroke-ink" marker-end="url(#frmArr)" fill="none"/>
+          <text x="490" y="72" text-anchor="middle" class="lbl">commit() fires</text>
+
+          <!-- outcome: APPLIED -->
+          <g>
+            <rect x="580" y="48" width="240" height="28" rx="5" class="svg-fill-accent" stroke-width="1" style="stroke: var(--accent);"/>
+            <text x="700" y="66" text-anchor="middle" class="h" style="fill: white;">APPLIED · approved &amp; fired cleanly</text>
+          </g>
+          <!-- outcome: COMPENSATED-pair -->
+          <g>
+            <rect x="580" y="80" width="240" height="28" rx="5" class="svg-fill-warn" stroke-width="1" style="stroke: var(--warn);"/>
+            <text x="700" y="98" text-anchor="middle" class="h" style="fill: white;">APPLIED · with compensator paired</text>
+          </g>
+          <!-- outcome: GATED -->
+          <g>
+            <rect x="580" y="112" width="240" height="28" rx="5" class="svg-fill-reject" stroke-width="1" style="stroke: var(--reject);"/>
+            <text x="700" y="130" text-anchor="middle" class="h" style="fill: white;">GATED · no approval, no compensator → block</text>
+          </g>
+        </g>
+      </svg>
+      <figcaption>Reversible effects are temporally <em>prior</em> to the commit cut — they ran live and recorded their undo. Irreversible effects are temporally <em>posterior</em> — staged in the journal, they fire only when commit demands they do. Rollback before commit means the irreversible side simply never happened.</figcaption>
+    </figure>
+
+    <details class="deep">
+      <summary>What "dormant since Slice 1" means in concrete code.</summary>
+      <div class="body">
+        <p>In <code>pherix/core/effects.py</code>, the <code>EffectStatus</code> enum already lists <code>STAGED</code> and <code>GATED</code>; the dataclass already has a <code>compensator: str | None</code> field. In <code>pherix/core/transaction.py</code>, the <code>TxnState</code> enum already lists <code>STAGED</code>, <code>PARTIAL</code>, and <code>STUCK</code>; the <code>_ALLOWED_TRANSITIONS</code> table currently only opens the reversible paths. Slice 3's job is to wire them up — not to add new types.</p>
+        <p>That's the project ethos working: the data model encodes the full execution model from day one; later slices fill in the orchestration. No retrofits.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============== D1 ============== -->
+  <section class="decision" id="d1">
+    <div class="d-head">
+      <div class="d-id">D1</div>
+      <div class="d-title">
+        <h2>What does a staged tool call <em>return</em> to the agent?</h2>
+        <p class="q">The tool hasn't run yet. The agent needs <em>something</em> back — what shape, and what can it do with it?</p>
+      </div>
+    </div>
+
+    <p>
+      In the reversible lane, the runtime returns the real result — the row id,
+      the bytes that were written. Now the tool hasn't actually fired. The
+      contract has to be honest about that, but it also can't break the agent's
+      synchronous control flow.
+    </p>
+
+    <h3>The three options on the table</h3>
+
+    <div class="options">
+
+      <article class="opt pick">
+        <span class="badge">Picked · (a)</span>
+        <div class="label">sentinel placeholder</div>
+        <h4>Return a <code>StagedResult(effect_id=...)</code> token.</h4>
+        <p>JSON-able, comparable, deterministic effect_id. The agent can store it, pass it through other tools, branch on whether it exists — but cannot meaningfully act on its <em>content</em>. Real result lands in the audit journal at commit time.</p>
+        <div class="crit">
+          <div class="name">Honesty</div><div class="val v-yes">✓ "not yet"</div>
+          <div class="name">Composes</div><div class="val v-yes">✓ multi-stage flows</div>
+          <div class="name">Wire-friendly</div><div class="val v-yes">✓ JSON-able</div>
+        </div>
+      </article>
+
+      <article class="opt rej">
+        <span class="badge">Rejected · (b)</span>
+        <div class="label">abort-on-stage</div>
+        <h4>Raise an exception; agent must restart with explicit handling.</h4>
+        <p>The agent's call to a staged tool throws; no further tool calls are accepted on the txn until <code>commit()</code> resolves staged effects.</p>
+        <div class="crit">
+          <div class="name">Honesty</div><div class="val v-yes">✓ very loud</div>
+          <div class="name">Composes</div><div class="val v-no">✗ breaks multi-stage</div>
+          <div class="name">Wire-friendly</div><div class="val v-mid">N/A</div>
+        </div>
+      </article>
+
+      <article class="opt rej">
+        <span class="badge">Rejected · (c)</span>
+        <div class="label">deferred future</div>
+        <h4>Return a <code>Future</code>-like awaitable that resolves at commit.</h4>
+        <p>Async semantics; the agent <code>await</code>s the staged result to get the value. Resolves to <code>None</code> on rollback.</p>
+        <div class="crit">
+          <div class="name">Honesty</div><div class="val v-mid">leaky semantics</div>
+          <div class="name">Composes</div><div class="val v-mid">async only</div>
+          <div class="name">Wire-friendly</div><div class="val v-no">✗ Future ≠ JSON</div>
+        </div>
+      </article>
+
+    </div>
+
+    <h3>Three return-types, what each one enables and forbids</h3>
+
+    <table class="crit-table">
+      <thead>
+        <tr>
+          <th class="axis">Capability</th>
+          <th class="pickcol">(a) Sentinel &nbsp;✓</th>
+          <th>(b) Exception</th>
+          <th>(c) Future</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="axis">Stage two effects in one txn<br><span class="mono" style="color: var(--ink-faint); font-size: 11.5px;">e.g. <code>charge</code> then <code>send_email</code></span></td>
+          <td class="pickcol"><span class="v-yes mono">Yes.</span> Each returns its own token; agent continues.</td>
+          <td><span class="v-no mono">No.</span> First raise aborts the rest of the sequence.</td>
+          <td><span class="v-mid mono">Yes, but async-only.</span> Forces agent into async.</td>
+        </tr>
+        <tr>
+          <td class="axis">Persist the token in the journal</td>
+          <td class="pickcol"><span class="v-yes mono">Yes.</span> Plain dataclass, dumps to JSON.</td>
+          <td><span class="v-mid mono">N/A.</span></td>
+          <td><span class="v-no mono">No.</span> A Future object isn't serialisable.</td>
+        </tr>
+        <tr>
+          <td class="axis">Branch on "did I stage X yet"</td>
+          <td class="pickcol"><span class="v-yes mono">Yes.</span> Token equality / journal lookup.</td>
+          <td><span class="v-mid mono">By exception type.</span></td>
+          <td><span class="v-yes mono">Yes.</span> Future identity.</td>
+        </tr>
+        <tr>
+          <td class="axis">Branch on the <em>value</em> the tool will return</td>
+          <td class="pickcol"><span class="v-no mono">No — by design.</span> The value doesn't exist yet; pretending it does is the bug.</td>
+          <td><span class="v-no mono">No.</span></td>
+          <td><span class="v-mid mono">Only after await.</span> Forces the agent to wait before commit — defeats batching.</td>
+        </tr>
+        <tr>
+          <td class="axis">Fits Pherix's existing layer<br><span class="mono" style="color: var(--ink-faint); font-size: 11.5px;">synchronous tool loops, no event loop</span></td>
+          <td class="pickcol"><span class="v-yes mono">Yes.</span> Same sync contract as reversible tools.</td>
+          <td><span class="v-yes mono">Yes.</span> Sync raise.</td>
+          <td><span class="v-no mono">No.</span> Pulls Pherix toward agent-runtime territory it explicitly avoids.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <figure class="figure" aria-label="StagedResult return-type comparison">
+      <svg viewBox="0 0 880 240" role="img" aria-label="What each return-type enables">
+        <defs>
+          <marker id="d1Arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-soft"/>
+          </marker>
+        </defs>
+
+        <!-- column headers -->
+        <text x="20" y="22" class="h">What the agent gets back from charge_card(amount=20)</text>
+
+        <!-- (a) sentinel -->
+        <g transform="translate(20, 42)">
+          <rect x="0" y="0" width="270" height="180" rx="8" class="svg-fill-accent-soft" stroke-width="1.4" style="stroke: var(--accent);"/>
+          <text x="14" y="22" class="h" style="fill: var(--accent);">(a) StagedResult — picked</text>
+          <rect x="14" y="34" width="244" height="56" rx="5" class="svg-fill-panel" stroke-width="1" style="stroke: var(--rule-strong);"/>
+          <text x="24" y="54" style="font-family: var(--mono);">{</text>
+          <text x="36" y="70" style="font-family: var(--mono);">"_kind": "StagedResult",</text>
+          <text x="36" y="84" style="font-family: var(--mono);">"effect_id": "a7c3..."</text>
+          <text x="24" y="98" style="font-family: var(--mono);">}</text>
+
+          <text x="14" y="118" class="lbl" style="fill: var(--accent);">JSON-ABLE · COMPARABLE</text>
+          <text x="14" y="138" style="fill: var(--accent);">✓ store, pass, journal it</text>
+          <text x="14" y="156" style="fill: var(--accent);">✓ compose with more staged calls</text>
+          <text x="14" y="174" style="fill: var(--reject);">✗ no access to "what it will become"</text>
+        </g>
+
+        <!-- (b) exception -->
+        <g transform="translate(305, 42)">
+          <rect x="0" y="0" width="270" height="180" rx="8" class="svg-fill-reject-soft" stroke-width="1.4" style="stroke: var(--reject); stroke-dasharray: 4 3;"/>
+          <text x="14" y="22" class="h" style="fill: var(--reject);">(b) Exception — rejected</text>
+          <rect x="14" y="34" width="244" height="56" rx="5" class="svg-fill-panel" stroke-width="1" style="stroke: var(--rule-strong);"/>
+          <text x="24" y="56" style="font-family: var(--mono); fill: var(--reject);">raise StagedEffect(</text>
+          <text x="36" y="72" style="font-family: var(--mono); fill: var(--reject);">"charge_card"</text>
+          <text x="24" y="88" style="font-family: var(--mono); fill: var(--reject);">)</text>
+
+          <text x="14" y="118" class="lbl" style="fill: var(--reject);">CONTROL-FLOW INTERRUPT</text>
+          <text x="14" y="138" style="fill: var(--reject);">✗ next tool call never runs</text>
+          <text x="14" y="156" style="fill: var(--reject);">✗ multi-stage txn = impossible</text>
+          <text x="14" y="174" style="fill: var(--ink-faint);">  (the whole point of staging is to batch)</text>
+        </g>
+
+        <!-- (c) future -->
+        <g transform="translate(590, 42)">
+          <rect x="0" y="0" width="270" height="180" rx="8" class="svg-fill-reject-soft" stroke-width="1.4" style="stroke: var(--reject); stroke-dasharray: 4 3;"/>
+          <text x="14" y="22" class="h" style="fill: var(--reject);">(c) Future — rejected</text>
+          <rect x="14" y="34" width="244" height="56" rx="5" class="svg-fill-panel" stroke-width="1" style="stroke: var(--rule-strong);"/>
+          <text x="24" y="54" style="font-family: var(--mono);">Future&lt;ChargeReceipt&gt;</text>
+          <text x="24" y="70" style="font-family: var(--mono); fill: var(--ink-faint);">  (un-resolved)</text>
+          <text x="24" y="86" style="font-family: var(--mono);">.<tspan style="fill: var(--reject);">await()</tspan> on commit</text>
+
+          <text x="14" y="118" class="lbl" style="fill: var(--reject);">ASYNC LIFECYCLE</text>
+          <text x="14" y="138" style="fill: var(--reject);">✗ not JSON-able → no journal</text>
+          <text x="14" y="156" style="fill: var(--reject);">✗ couples Pherix to an event loop</text>
+          <text x="14" y="174" style="fill: var(--ink-faint);">  (Pherix is not an agent runtime)</text>
+        </g>
+      </svg>
+      <figcaption>The same call — <code>charge_card(amount=20)</code> — surfaces in three radically different shapes. Only (a) preserves both the agent's sync flow and the journal's serialisability.</figcaption>
+    </figure>
+
+    <div class="verdict">
+      <div class="tag">Why (a) wins</div>
+      <p class="pick">A staged result is, semantically, a <em>promise the runtime makes</em>. The token is the artifact of that promise — it has a stable identity (<code>effect_id</code>) and no content. That is exactly the right ergonomic: the agent can branch on "have I asked for this yet?" but not on "what will it return?" — because asking the second question is the bug the staging model exists to prevent.</p>
+      <p class="why">Mathematically, <code>StagedResult</code> is a token with one field (the identifier) and no semantic content. It's a name for a future point in the journal; it carries no information about what will live there. The agent that tries to do arithmetic on its value is asking a question outside the model.</p>
+    </div>
+
+    <details class="deep">
+      <summary>The dataclass and the runtime branch.</summary>
+      <div class="body">
+<pre class="code"><span class="c"># core/effects.py — addition</span>
+<span class="k">@dataclass(frozen=True)</span>
+<span class="k">class</span> <span class="t">StagedResult</span>:
+    effect_id: <span class="t">str</span>
+    _kind: <span class="t">str</span> = <span class="s">"StagedResult"</span>   <span class="c"># wire-tag for JSON consumers</span>
+
+<span class="c"># core/runtime.py — staging branch</span>
+<span class="k">if not</span> adapter.supports_rollback():
+    effect.status = EffectStatus.STAGED
+    <span class="k">self</span>.audit.update_effect(effect)
+    <span class="k">return</span> StagedResult(effect_id=effect.effect_id)
+<span class="c"># ...else reversible path (unchanged)</span></pre>
+        <p>Three lines. The contract — "if the resource can't be rolled back, the tool doesn't fire and you get a token" — is enforced at one site, not negotiated per tool.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============== D2 ============== -->
+  <section class="decision" id="d2">
+    <div class="d-head">
+      <div class="d-id">D2</div>
+      <div class="d-title">
+        <h2>How does a tool declare its compensator?</h2>
+        <p class="q">A compensator is itself a tool. The question is how the original tool <em>refers</em> to it.</p>
+      </div>
+    </div>
+
+    <p>
+      A compensator is the <em>semantic left-inverse</em> of an irreversible
+      tool. The composition <code>refund(charge(x))</code> approximates the
+      identity in the resource's state-space — money out, money back. Pherix
+      doesn't verify the inverse property (that's developer-asserted, often
+      modulo fees and clock skew) but it does record the pairing.
+    </p>
+
+    <div class="formula">
+      <em>For a tool</em> f<em>: Args → World, a compensator</em> g<em>: Args → World <em>such that</em></em> g ∘ f ≈ id<em>.<br>
+      <em>Pherix records the pair</em> (f, g)<em>; the developer asserts the approximation; the world is the rest of the universe outside Pherix.</em>
+    </div>
+
+    <h3>The three options on the table</h3>
+
+    <div class="options">
+
+      <article class="opt pick">
+        <span class="badge">Picked · (a)</span>
+        <div class="label">string name</div>
+        <h4>Reference the compensator by registered tool name.</h4>
+        <p><code>@tool(resource="http", reversible=False, compensator="refund_charge")</code>. The name is a string in the journal. The compensator is itself another <code>@tool</code> in the registry — when fired, it's journalled, policy-checked, audited like any other call.</p>
+        <div class="crit">
+          <div class="name">Journal-able</div><div class="val v-yes">✓ plain str</div>
+          <div class="name">Replaceable</div><div class="val v-yes">✓ registry-driven</div>
+          <div class="name">Decoupling</div><div class="val v-yes">✓ different modules ok</div>
+        </div>
+      </article>
+
+      <article class="opt rej">
+        <span class="badge">Rejected · (b)</span>
+        <div class="label">direct callable</div>
+        <h4>Reference the compensator as a function object.</h4>
+        <p><code>compensator=refund_charge</code>. The decorator holds a reference to the function itself.</p>
+        <div class="crit">
+          <div class="name">Journal-able</div><div class="val v-no">✗ unpicklable</div>
+          <div class="name">Replaceable</div><div class="val v-no">✗ frozen at decoration</div>
+          <div class="name">Decoupling</div><div class="val v-no">✗ import ordering</div>
+        </div>
+      </article>
+
+      <article class="opt rej">
+        <span class="badge">Rejected · (c)</span>
+        <div class="label">second decorator</div>
+        <h4>A separate <code>@compensator(for_tool=...)</code> machinery.</h4>
+        <p>The compensator is decorated with a different decorator; the registry holds a second mapping (tool → compensator).</p>
+        <div class="crit">
+          <div class="name">Journal-able</div><div class="val v-yes">✓</div>
+          <div class="name">Replaceable</div><div class="val v-yes">✓</div>
+          <div class="name">Decoupling</div><div class="val v-mid">two vocabularies</div>
+        </div>
+      </article>
+
+    </div>
+
+    <h3>What lands in the journal — the deciding axis</h3>
+
+    <figure class="figure" aria-label="Name reference vs direct reference: what the journal sees">
+      <svg viewBox="0 0 880 280" role="img" aria-label="Journal entries side by side">
+        <defs>
+          <marker id="d2Arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-soft"/>
+          </marker>
+        </defs>
+
+        <text x="20" y="20" class="h">The audit journal is durable, JSON-encoded, replayed across processes.</text>
+
+        <!-- LEFT: name ref -->
+        <g transform="translate(20, 40)">
+          <rect x="0" y="0" width="400" height="220" rx="10" class="svg-fill-accent-soft" stroke-width="1.4" style="stroke: var(--accent);"/>
+          <text x="14" y="22" class="h" style="fill: var(--accent);">(a) Name reference — picked</text>
+          <text x="14" y="38" class="lbl">@tool(compensator="refund_charge")</text>
+
+          <!-- journal row mock -->
+          <rect x="14" y="50" width="372" height="100" rx="6" class="svg-fill-panel2" stroke-width="1" style="stroke: var(--accent);"/>
+          <text x="26" y="68"  style="font-family: var(--mono); fill: var(--ink);">{</text>
+          <text x="36" y="84"  style="font-family: var(--mono);">"effect_id":   "a7c3...",</text>
+          <text x="36" y="98"  style="font-family: var(--mono);">"tool":        "charge_card",</text>
+          <text x="36" y="112" style="font-family: var(--mono);">"compensator": <tspan style="fill: var(--accent);">"refund_charge"</tspan>,</text>
+          <text x="36" y="126" style="font-family: var(--mono);">"status":      "STAGED"</text>
+          <text x="26" y="142" style="font-family: var(--mono); fill: var(--ink);">}</text>
+
+          <text x="14" y="170" class="lbl" style="fill: var(--accent);">✓ FULL JSON ROUND-TRIP</text>
+          <text x="14" y="186" style="fill: var(--accent);">✓ replay across processes / restarts</text>
+          <text x="14" y="202" style="fill: var(--accent);">✓ compensator can be replaced in the registry</text>
+        </g>
+
+        <!-- RIGHT: direct ref -->
+        <g transform="translate(440, 40)">
+          <rect x="0" y="0" width="420" height="220" rx="10" class="svg-fill-reject-soft" stroke-width="1.4" style="stroke: var(--reject); stroke-dasharray: 4 3;"/>
+          <text x="14" y="22" class="h" style="fill: var(--reject);">(b) Direct callable — rejected</text>
+          <text x="14" y="38" class="lbl">@tool(compensator=refund_charge)</text>
+
+          <rect x="14" y="50" width="392" height="100" rx="6" class="svg-fill-panel2" stroke-width="1" style="stroke: var(--reject);"/>
+          <text x="26" y="68"  style="font-family: var(--mono); fill: var(--ink);">{</text>
+          <text x="36" y="84"  style="font-family: var(--mono);">"effect_id":   "a7c3...",</text>
+          <text x="36" y="98"  style="font-family: var(--mono);">"tool":        "charge_card",</text>
+          <text x="36" y="112" style="font-family: var(--mono);">"compensator": <tspan style="fill: var(--reject);">&lt;function 0x108ab0&gt;</tspan></text>
+          <text x="36" y="126" style="font-family: var(--mono); fill: var(--reject);">              <tspan>↑ TypeError: not JSON-able</tspan></text>
+          <text x="26" y="142" style="font-family: var(--mono); fill: var(--ink);">}</text>
+
+          <text x="14" y="170" class="lbl" style="fill: var(--reject);">✗ DOES NOT SERIALISE</text>
+          <text x="14" y="186" style="fill: var(--reject);">✗ replay = re-import the same module layout</text>
+          <text x="14" y="202" style="fill: var(--reject);">✗ swapping compensator requires redecoration</text>
+        </g>
+      </svg>
+      <figcaption>A string name survives a JSON dump, a process restart, and a registry replacement. A bare function object survives none of those. The journal demands the cheaper representation.</figcaption>
+    </figure>
+
+    <div class="verdict">
+      <div class="tag">Why (a) wins</div>
+      <p class="pick">Every tool already has a string name — the registry is keyed by it. Compensators reusing that vocabulary means no new abstraction is introduced; the journal entry stays a plain JSON object; replay (Slice 5) can resolve <code>compensator: "refund_charge"</code> against a fresh registry at the moment of replay, not the moment of decoration.</p>
+      <p class="why">A compensator is structurally another tool, so it gets the entire <code>@tool</code> apparatus for free: policy checks when it fires, journal entries when it runs, audit when it completes. (c) adds vocabulary without earning it; (b) is incompatible with the audit journal Pherix already has.</p>
+    </div>
+
+    <details class="deep">
+      <summary>The runtime detail — what fires when, and what the journal shows.</summary>
+      <div class="body">
+        <p>When an irreversible effect with a compensator commits successfully, Pherix records the pairing — <em>the compensator is registered as "available," not invoked.</em> The actual firing of the compensator happens only on <code>rollback</code> after commit, or (D5) on partial-commit recovery. So:</p>
+<pre class="code"><span class="c"># at commit:</span>
+charge_card  → APPLIED   <span class="c"># real HTTP call fires</span>
+                         <span class="c"># compensator "refund_charge" recorded but NOT invoked</span>
+
+<span class="c"># at rollback-after-commit (or partial-commit unwind):</span>
+refund_charge → APPLIED  <span class="c"># compensator fires as its own journalled effect</span>
+charge_card  → COMPENSATED   <span class="c"># original status updated</span></pre>
+        <p>The compensator firing is itself a journal row. The pairing is visible. Audit reads as a story: <em>"we charged, then we refunded, here are both rows."</em></p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============== D3 ============== -->
+  <section class="decision" id="d3">
+    <div class="d-head">
+      <div class="d-id">D3</div>
+      <div class="d-title">
+        <h2>How does an irreversible effect with no compensator get approved?</h2>
+        <p class="q">The gate is the predicate at commit-time. The approver lives outside Pherix. The wiring between them is the design question.</p>
+      </div>
+    </div>
+
+    <p>
+      Some irreversible tools genuinely have no compensator — there's no
+      "un-send" for an email to <code>noreply@regulator.gov</code>. For those,
+      the gate refuses to commit unless an explicit, per-effect approval has
+      been recorded. Pherix's job is to <em>record the verdict</em>; the
+      approver — a human pressing a button, a deterministic policy, an AI
+      guardrail vendor — runs outside Pherix's walls. Pherix doesn't generate
+      approvals; it accepts them.
+    </p>
+
+    <h3>The three options on the table</h3>
+
+    <div class="options">
+
+      <article class="opt pick">
+        <span class="badge">Picked · (a)</span>
+        <div class="label">txn-context pre-approval</div>
+        <h4><code>txn.approve_irreversible(effect_id)</code></h4>
+        <p>Approval is a method on the active transaction context, taking a specific effect_id. Called any time after staging, before commit. Each call is journalled as an "approval" event. Per-effect granularity.</p>
+        <div class="crit">
+          <div class="name">Granularity</div><div class="val v-yes">✓ per-effect</div>
+          <div class="name">Out-of-band</div><div class="val v-yes">✓ approver-agnostic</div>
+          <div class="name">Auditable</div><div class="val v-yes">✓ journal row</div>
+        </div>
+      </article>
+
+      <article class="opt rej">
+        <span class="badge">Rejected · (b)</span>
+        <div class="label">blanket commit-flag</div>
+        <h4><code>commit(approve_irreversible=True)</code></h4>
+        <p>A single boolean on the commit call that waives all gates for the transaction at once.</p>
+        <div class="crit">
+          <div class="name">Granularity</div><div class="val v-no">✗ all-or-none</div>
+          <div class="name">Out-of-band</div><div class="val v-mid">conflated</div>
+          <div class="name">Auditable</div><div class="val v-mid">one row</div>
+        </div>
+      </article>
+
+      <article class="opt rej">
+        <span class="badge">Rejected · (c)</span>
+        <div class="label">callback-on-context-manager</div>
+        <h4><code>agent_txn(approver=fn)</code></h4>
+        <p>An approver callback is registered with the context manager; commit invokes the callback per staged effect.</p>
+        <div class="crit">
+          <div class="name">Granularity</div><div class="val v-yes">✓ per-effect</div>
+          <div class="name">Out-of-band</div><div class="val v-no">✗ in-runtime</div>
+          <div class="name">Auditable</div><div class="val v-mid">callback-result</div>
+        </div>
+      </article>
+
+    </div>
+
+    <figure class="figure" aria-label="Approval-then-commit sequence">
+      <svg viewBox="0 0 880 460" role="img" aria-label="Approval and gate sequence diagrams">
+        <defs>
+          <marker id="d3Arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-soft"/>
+          </marker>
+          <marker id="d3ArrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-accent"/>
+          </marker>
+          <marker id="d3ArrR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-reject"/>
+          </marker>
+        </defs>
+
+        <text x="20" y="18" class="h">Variant 1 — approval recorded, commit fires.</text>
+
+        <!-- swim lanes for variant 1 -->
+        <g transform="translate(0, 30)">
+          <!-- columns -->
+          <text x="80"  y="14" text-anchor="middle" class="h">agent</text>
+          <text x="280" y="14" text-anchor="middle" class="h">approver</text>
+          <text x="280" y="28" text-anchor="middle" class="lbl">(human / policy / guardrail)</text>
+          <text x="540" y="14" text-anchor="middle" class="h">Pherix runtime</text>
+          <text x="780" y="14" text-anchor="middle" class="h">resource</text>
+
+          <line x1="80"  y1="36" x2="80"  y2="190" stroke-width="1" stroke-dasharray="2 3" class="svg-stroke-rule"/>
+          <line x1="280" y1="36" x2="280" y2="190" stroke-width="1" stroke-dasharray="2 3" class="svg-stroke-rule"/>
+          <line x1="540" y1="36" x2="540" y2="190" stroke-width="1" stroke-dasharray="2 3" class="svg-stroke-rule"/>
+          <line x1="780" y1="36" x2="780" y2="190" stroke-width="1" stroke-dasharray="2 3" class="svg-stroke-rule"/>
+
+          <!-- step 1: stage -->
+          <path d="M80,54 L540,54" stroke-width="1.4" class="svg-stroke-ink" marker-end="url(#d3Arr)" fill="none"/>
+          <text x="310" y="48" text-anchor="middle" class="lbl">send_email_to_regulator(...)</text>
+          <text x="555" y="68" class="lbl" style="fill: var(--warn);">→ STAGED · effect_id=e2</text>
+          <path d="M540,80 L84,80"  stroke-width="1.4" class="svg-stroke-warn" marker-end="url(#d3Arr)" fill="none"/>
+          <text x="310" y="74" text-anchor="middle" class="lbl">StagedResult(effect_id="e2")</text>
+
+          <!-- step 2: approval -->
+          <path d="M280,110 L540,110" stroke-width="1.4" class="svg-stroke-accent" marker-end="url(#d3ArrA)" fill="none"/>
+          <text x="410" y="104" text-anchor="middle" class="lbl" style="fill: var(--accent);">txn.approve_irreversible("e2")</text>
+          <text x="555" y="124" class="lbl" style="fill: var(--accent);">→ APPROVAL journalled</text>
+
+          <!-- step 3: commit -->
+          <path d="M80,148 L540,148" stroke-width="1.4" class="svg-stroke-ink" marker-end="url(#d3Arr)" fill="none"/>
+          <text x="310" y="142" text-anchor="middle" class="lbl">commit()</text>
+          <text x="555" y="162" class="lbl">gate check: ✓ approved</text>
+          <path d="M540,180 L780,180" stroke-width="1.4" class="svg-stroke-accent" marker-end="url(#d3ArrA)" fill="none"/>
+          <text x="660" y="174" text-anchor="middle" class="lbl" style="fill: var(--accent);">HTTP POST · email sent</text>
+        </g>
+
+        <!-- divider -->
+        <line x1="20" y1="240" x2="860" y2="240" stroke-width="1" class="svg-stroke-rule"/>
+
+        <text x="20" y="262" class="h" style="fill: var(--reject);">Variant 2 — no approval, commit blocks with a precise error.</text>
+
+        <g transform="translate(0, 274)">
+          <text x="80"  y="14" text-anchor="middle" class="h">agent</text>
+          <text x="280" y="14" text-anchor="middle" class="h">approver</text>
+          <text x="280" y="28" text-anchor="middle" class="lbl">(absent)</text>
+          <text x="540" y="14" text-anchor="middle" class="h">Pherix runtime</text>
+          <text x="780" y="14" text-anchor="middle" class="h">resource</text>
+
+          <line x1="80"  y1="36" x2="80"  y2="170" stroke-width="1" stroke-dasharray="2 3" class="svg-stroke-rule"/>
+          <line x1="280" y1="36" x2="280" y2="170" stroke-width="1" stroke-dasharray="2 3" class="svg-stroke-rule"/>
+          <line x1="540" y1="36" x2="540" y2="170" stroke-width="1" stroke-dasharray="2 3" class="svg-stroke-rule"/>
+          <line x1="780" y1="36" x2="780" y2="170" stroke-width="1" stroke-dasharray="2 3" class="svg-stroke-rule"/>
+
+          <path d="M80,54 L540,54" stroke-width="1.4" class="svg-stroke-ink" marker-end="url(#d3Arr)" fill="none"/>
+          <text x="310" y="48" text-anchor="middle" class="lbl">send_email_to_regulator(...)</text>
+          <text x="555" y="68" class="lbl" style="fill: var(--warn);">→ STAGED · effect_id=e2</text>
+          <path d="M540,80 L84,80"  stroke-width="1.4" class="svg-stroke-warn" marker-end="url(#d3Arr)" fill="none"/>
+          <text x="310" y="74" text-anchor="middle" class="lbl">StagedResult(effect_id="e2")</text>
+
+          <!-- skip approval -->
+          <text x="280" y="110" text-anchor="middle" class="lbl" style="fill: var(--ink-faint);">(no approval call)</text>
+
+          <path d="M80,140 L540,140" stroke-width="1.4" class="svg-stroke-ink" marker-end="url(#d3Arr)" fill="none"/>
+          <text x="310" y="134" text-anchor="middle" class="lbl">commit()</text>
+          <path d="M540,164 L84,164"  stroke-width="1.6" class="svg-stroke-reject" marker-end="url(#d3ArrR)" fill="none"/>
+          <text x="310" y="158" text-anchor="middle" class="lbl" style="fill: var(--reject);">raise GateBlocked("e2 send_email needs approval")</text>
+        </g>
+      </svg>
+      <figcaption>Per-effect, pre-approval. The approver is whoever you want it to be — the runtime cares only that the verdict was recorded against the specific effect_id before commit() ran.</figcaption>
+    </figure>
+
+    <div class="verdict">
+      <div class="tag">Why (a) wins</div>
+      <p class="pick">Per-effect pre-approval treats approval as a <em>first-class event in the journal</em>, not a parameter to commit. That's the right shape because the approver is outside Pherix: a human pressing a button, an external policy server, an AI guardrail vendor. Whichever one it is, the act of approving becomes a recorded fact ("at <code>t=…</code>, <code>effect_id=e2</code> was approved by <code>…</code>"), auditable forever.</p>
+      <p class="why">(b) collapses N effects into one boolean, losing the granularity that makes the gate meaningful. (c) entangles the approver into Pherix's call signature, harder to model the "human approves out-of-band" case cleanly. (a) handles human, deterministic, and AI-guardrail approvers identically — Pherix records, doesn't generate.</p>
+    </div>
+
+    <div class="callout">
+      <span class="tag">project ethos</span>
+      Pherix is not an AI wrapper. Where an AI guardrail vendor (e.g. a model-based approver) is in the loop, it sits <em>outside</em> Pherix and calls <code>approve_irreversible</code> just like any other approver. The LLM integration lives in the customer's code, not Pherix's. We record the verdict; we don't generate it.
+    </div>
+
+    <details class="deep">
+      <summary>What the approval row looks like in the journal.</summary>
+      <div class="body">
+<pre class="code"><span class="c"># pseudo-row from the audit table</span>
+{
+  <span class="s">"kind"</span>:      <span class="s">"approval"</span>,
+  <span class="s">"txn_id"</span>:    <span class="s">"txn-7c39b21e1a4f"</span>,
+  <span class="s">"effect_id"</span>: <span class="s">"e2"</span>,
+  <span class="s">"approver"</span>:  <span class="s">"luke@pherix.io"</span>,    <span class="c"># developer-supplied, opaque to Pherix</span>
+  <span class="s">"ts"</span>:        <span class="s">"2026-05-17T11:22:09Z"</span>
+}</pre>
+        <p>The approver string is whatever the caller passes — a username, a service identity, an LLM session id. Pherix does not validate it; it preserves it. Audit (Slice 6+, real policy) can read the journal and assert "every approval has a recognisable approver."</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============== D4 ============== -->
+  <section class="decision" id="d4">
+    <div class="d-head">
+      <div class="d-id">D4</div>
+      <div class="d-title">
+        <h2>When is policy actually checked?</h2>
+        <p class="q">Slice 1 checks at stage-time. The data model promises a re-check at commit-time. Wire it now, even though the current policy is stateless.</p>
+      </div>
+    </div>
+
+    <p>
+      Slice 1's allow-list policy is a <em>pure predicate of the tool name</em>:
+      its verdict doesn't depend on world state. Re-checking it at commit-time
+      gives the same answer as checking at stage-time. So why bother?
+    </p>
+
+    <p>
+      Because Slice 6 introduces state-dependent policy — spend caps, content
+      rules, rate limits — and at that point the answers diverge. State changes
+      between stage and commit. Building the second check now means it costs ~1
+      function call today, ~0 lines tomorrow.
+    </p>
+
+    <h3>The two options on the table</h3>
+
+    <div class="twoup">
+      <div class="panel rej">
+        <span class="ribbon">Rejected</span>
+        <h4>(a) Stage-time only</h4>
+        <p>What Slice 1 does today. Policy is evaluated once when the effect is added to the journal. If state changes before commit, the runtime acts on the stale check.</p>
+        <p style="font-size: 13.5px; color: var(--ink-faint);"><b>Failure mode:</b> by Slice 6, a TOCTOU window opens for every staged effect. The longer the txn, the wider the window. Closing it later is a retrofit through every adapter — bad.</p>
+      </div>
+      <div class="panel pick">
+        <span class="ribbon">Picked</span>
+        <h4>(b) Stage-time and commit-time</h4>
+        <p>Every staged effect's <code>policy.check()</code> runs again at commit start. For Slice 1's stateless policy, the second call is a constant-time pure function returning the same verdict. The cost is negligible; the structural correctness is permanent.</p>
+        <p style="font-size: 13.5px; color: var(--ink-faint);"><b>Why:</b> the hook is in the right place for Slice 6 with no retrofit. Policy becomes a <em>function of (effect, world-state-at-commit)</em> from day one.</p>
+      </div>
+    </div>
+
+    <figure class="figure" aria-label="TOCTOU window between stage-time and commit-time">
+      <svg viewBox="0 0 880 280" role="img" aria-label="TOCTOU diagram for stage-time vs commit-time policy">
+        <defs>
+          <marker id="d4Arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-soft"/>
+          </marker>
+        </defs>
+
+        <text x="20" y="20" class="h">A spend cap of £100 / day · concurrent transactions move the world while ours is staged.</text>
+
+        <!-- time axis -->
+        <line x1="60" y1="180" x2="820" y2="180" stroke-width="1.4" class="svg-stroke-ink"/>
+        <path d="M820,180 L815,176 L815,184 z" class="svg-fill-ink"/>
+        <text x="828" y="184" class="lbl">time →</text>
+
+        <!-- ticks -->
+        <g class="svg-stroke-rule">
+          <line x1="120" y1="175" x2="120" y2="185"/>
+          <line x1="380" y1="175" x2="380" y2="185"/>
+          <line x1="640" y1="175" x2="640" y2="185"/>
+        </g>
+
+        <text x="120" y="200" text-anchor="middle" class="lbl">t₀ · stage</text>
+        <text x="380" y="200" text-anchor="middle" class="lbl">other txns commit</text>
+        <text x="640" y="200" text-anchor="middle" class="lbl">t₁ · OUR commit</text>
+
+        <!-- world-state bar -->
+        <g transform="translate(60, 90)">
+          <text x="0" y="-8" class="lbl">world.spend_today</text>
+
+          <!-- segment 1: 40/100 ok -->
+          <rect x="60"  y="0" width="260" height="32" rx="4" class="svg-fill-accent-soft" stroke-width="1" class="svg-stroke-accent" style="stroke: var(--accent);"/>
+          <text x="190" y="20" text-anchor="middle" class="h" style="fill: var(--accent);">£40 / £100  ✓ under cap</text>
+
+          <!-- arrow up -->
+          <path d="M320,16 L320,30 L385,30" fill="none" stroke-width="1.6" stroke-dasharray="3 3" class="svg-stroke-warn"/>
+          <text x="352" y="56" class="lbl" style="fill: var(--warn);">+£75 from other txns</text>
+
+          <!-- segment 2: 115/100 over -->
+          <rect x="380" y="0" width="380" height="32" rx="4" class="svg-fill-reject-soft" stroke-width="1" style="stroke: var(--reject);"/>
+          <text x="570" y="20" text-anchor="middle" class="h" style="fill: var(--reject);">£115 / £100  ✗ OVER CAP</text>
+        </g>
+
+        <!-- check markers -->
+        <g>
+          <circle cx="120" cy="180" r="9" class="svg-fill-accent" stroke-width="1" style="stroke: var(--accent);"/>
+          <text x="120" y="184" text-anchor="middle" style="fill: white; font-family: var(--mono); font-size: 10px;">✓</text>
+          <text x="120" y="232" text-anchor="middle" class="lbl">policy.check passes</text>
+          <text x="120" y="246" text-anchor="middle" class="lbl">(£40 + our £20 ok)</text>
+
+          <circle cx="640" cy="180" r="9" class="svg-fill-reject" stroke-width="1" style="stroke: var(--reject);"/>
+          <text x="640" y="184" text-anchor="middle" style="fill: white; font-family: var(--mono); font-size: 10px;">✗</text>
+          <text x="640" y="232" text-anchor="middle" class="lbl" style="fill: var(--reject);">RE-CHECK fails</text>
+          <text x="640" y="246" text-anchor="middle" class="lbl" style="fill: var(--reject);">(£115 + our £20 over)</text>
+        </g>
+
+        <!-- the gap that matters -->
+        <path d="M132,162 L628,162" stroke-width="1" stroke-dasharray="2 2" class="svg-stroke-warn"/>
+        <text x="380" y="156" text-anchor="middle" class="lbl" style="fill: var(--warn);">TOCTOU window — state moves while we're staged</text>
+      </svg>
+      <figcaption>Stage-time only check: the cap looks fine when we stage; by the time we commit, other transactions have eaten the budget and our £20 charge tips us over. The second check at commit-time is what makes "the gate is real" hold even under contention.</figcaption>
+    </figure>
+
+    <div class="verdict">
+      <div class="tag">Why two checks</div>
+      <p class="pick">Policy is, formally, a predicate <code>P(effect, world_state)</code>. Slice 1's allow-list is the degenerate case <code>P(effect)</code> — no <code>world_state</code> dependence. As soon as Slice 6's spend-cap, content, or rate-limit rules arrive, <code>P</code> genuinely takes both arguments. A single check at <code>S₀</code> only suffices when <code>P</code> is stage-invariant; in general it isn't.</p>
+      <p class="why">The structural cost today is ~5 lines in <code>runtime.commit()</code>. The structural cost of retrofitting it later is "audit every adapter and every test that relied on the one-check invariant." Build the hook now.</p>
+    </div>
+
+    <details class="deep">
+      <summary>The commit-time loop, with the new check.</summary>
+      <div class="body">
+<pre class="code"><span class="c"># core/runtime.py — commit()</span>
+<span class="k">def</span> <span class="n">commit</span>(<span class="k">self</span>) -> <span class="t">None</span>:
+    <span class="k">self</span>._guard_open()
+
+    <span class="c"># D4 — re-evaluate policy on every staged effect at commit time.</span>
+    <span class="c"># For Slice 1's stateless policy this is a no-op; for Slice 6 it's load-bearing.</span>
+    <span class="k">for</span> effect <span class="k">in</span> <span class="k">self</span>.txn.effects:
+        <span class="k">if</span> effect.status <span class="k">is</span> EffectStatus.STAGED:
+            <span class="k">self</span>._policy.check(effect.tool, effect.args)   <span class="c"># raises on denial</span>
+
+    <span class="c"># ... then proceed to gate check, fire staged effects, transactional commit ...</span></pre>
+        <p>The policy interface gains an optional <code>args</code> parameter (already part of <code>Effect</code>). Slice 1's <code>allow_all()</code> / allow-list ignore it; Slice 6's content rules will read it.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============== D5 — OPEN ============== -->
+  <section class="decision" id="d5">
+    <div class="d-head">
+      <div class="d-id open">D5</div>
+      <div class="d-title">
+        <h2>What happens when commit fires effect 1, fires effect 2, and effect 3 fails?<span class="status open">locked · option (b)</span></h2>
+        <p class="q">A 3-effect transaction enters commit. Two side effects land in the world. The third raises. Now what?</p>
+      </div>
+    </div>
+
+    <p>
+      This is the genuine open call. The scenario is concrete: a transaction
+      with three irreversible effects — <code>charge_card</code> (compensator
+      <code>refund_charge</code>), <code>send_email</code> (no compensator,
+      pre-approved), <code>write_audit_record</code> (compensator
+      <code>delete_audit_record</code>). The first two land. The third fails
+      with a 5xx. The transaction is now in
+      <code>TxnState.PARTIAL</code> — a state Slice 1 defined as dormant.
+    </p>
+
+    <h3>The three options</h3>
+
+    <div class="options">
+
+      <article class="opt rej">
+        <span class="badge">Option · (a)</span>
+        <div class="label">MVP — leave STUCK</div>
+        <h4>Don't auto-unwind. Transaction enters <code>STUCK</code>; operator handles it.</h4>
+        <p>Compensators are <em>registered</em> in the journal — discoverable and replayable — but Pherix does not automatically fire them on partial failure. The operator (or a future tool) walks the journal and decides.</p>
+        <div class="crit">
+          <div class="name">Slice scope</div><div class="val v-yes">smallest</div>
+          <div class="name">Correctness gap</div><div class="val v-no">✗ wide</div>
+          <div class="name">Story to user</div><div class="val v-no">"call us"</div>
+        </div>
+      </article>
+
+      <article class="opt rec">
+        <span class="badge">Option · (b)</span>
+        <div class="label">recommended</div>
+        <h4>Auto-fire compensators backwards over the fired effects.</h4>
+        <p>When effect 3 fails: refund the charge (effect 1's compensator), delete the email-related state if possible, fail loudly on any effect that lacks a compensator (those remain in the world; txn → <code>STUCK</code>).</p>
+        <div class="crit">
+          <div class="name">Slice scope</div><div class="val v-mid">+1 unwind loop</div>
+          <div class="name">Correctness gap</div><div class="val v-yes">closed</div>
+          <div class="name">Story to user</div><div class="val v-yes">saga semantics</div>
+        </div>
+      </article>
+
+      <article class="opt rej">
+        <span class="badge">Option · (c)</span>
+        <div class="label">defer to Slice 5</div>
+        <h4>Linear-fire only; recovery arrives with replay.</h4>
+        <p>Slice 3 commits effects in order; on failure, the txn is marked <code>PARTIAL</code> and left for Slice 5's replay / recovery work to clean up.</p>
+        <div class="crit">
+          <div class="name">Slice scope</div><div class="val v-yes">cleanest</div>
+          <div class="name">Correctness gap</div><div class="val v-no">✗ until Slice 5</div>
+          <div class="name">Story to user</div><div class="val v-mid">"wait"</div>
+        </div>
+      </article>
+
+    </div>
+
+    <h3>Interactive — step through the failure and see each option's end-state</h3>
+
+    <figure class="figure" aria-label="Interactive partial-commit walkthrough">
+      <div class="mode-row" role="group" aria-label="Recovery strategy">
+        <span class="lbl-pre">Recovery strategy:</span>
+        <button id="d5-mode-a">(a) STUCK · MVP</button>
+        <button id="d5-mode-b" class="active-mode">(b) auto-compensate · recommended</button>
+        <button id="d5-mode-c">(c) defer to Slice 5</button>
+      </div>
+
+      <svg viewBox="0 0 880 240" id="d5svg" role="img" aria-label="Three-effect transaction lanes">
+        <defs>
+          <marker id="d5Arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-soft"/>
+          </marker>
+        </defs>
+
+        <!-- commit cut -->
+        <line x1="200" y1="20" x2="200" y2="230" stroke-width="1" stroke-dasharray="3 3" class="svg-stroke-rule"/>
+        <text x="200" y="14" text-anchor="middle" class="lbl">commit() begins</text>
+
+        <!-- agent left side -->
+        <text x="20"  y="40" class="h">staged</text>
+        <text x="20"  y="56" class="lbl">(before commit)</text>
+
+        <text x="240" y="40" class="h">at commit — fire in order →</text>
+
+        <!-- three effect rows -->
+        <!-- row 1: charge_card -->
+        <g transform="translate(0, 80)" class="d5-row" data-row="1">
+          <rect class="d5-staged" x="20" y="0" width="160" height="40" rx="6" class="svg-fill-warn-soft" stroke-width="1.4" style="stroke: var(--warn);"/>
+          <text x="100" y="20" text-anchor="middle" class="h">e1 charge_card</text>
+          <text x="100" y="34" text-anchor="middle" class="lbl">+ refund_charge</text>
+
+          <path d="M180,20 L240,20" stroke-width="1.4" class="svg-stroke-warn" marker-end="url(#d5Arr)" fill="none"/>
+
+          <rect class="d5-result" x="240" y="0" width="180" height="40" rx="6" stroke-width="1.4" style="fill: var(--panel); stroke: var(--ink-soft);"/>
+          <text class="d5-status" x="330" y="24" text-anchor="middle" class="h"></text>
+
+          <!-- compensator firing arrow (b only) -->
+          <path class="d5-comp-arrow" d="M420,30 C520,55 600,55 700,30" stroke-width="1.4" stroke-dasharray="3 3" fill="none" style="stroke: none;"/>
+          <rect class="d5-comp" x="700" y="0" width="160" height="40" rx="6" stroke-width="1.4" style="fill: var(--panel); stroke: var(--ink-soft); display: none;"/>
+          <text class="d5-comp-text" x="780" y="24" text-anchor="middle" class="h"></text>
+        </g>
+
+        <!-- row 2: send_email -->
+        <g transform="translate(0, 132)" class="d5-row" data-row="2">
+          <rect class="d5-staged" x="20" y="0" width="160" height="40" rx="6" class="svg-fill-warn-soft" stroke-width="1.4" style="stroke: var(--warn);"/>
+          <text x="100" y="20" text-anchor="middle" class="h">e2 send_email</text>
+          <text x="100" y="34" text-anchor="middle" class="lbl">(approved, no comp.)</text>
+
+          <path d="M180,20 L240,20" stroke-width="1.4" class="svg-stroke-warn" marker-end="url(#d5Arr)" fill="none"/>
+
+          <rect class="d5-result" x="240" y="0" width="180" height="40" rx="6" stroke-width="1.4" style="fill: var(--panel); stroke: var(--ink-soft);"/>
+          <text class="d5-status" x="330" y="24" text-anchor="middle" class="h"></text>
+
+          <path class="d5-comp-arrow" d="M420,30 C520,55 600,55 700,30" stroke-width="1.4" stroke-dasharray="3 3" fill="none" style="stroke: none;"/>
+          <rect class="d5-comp" x="700" y="0" width="160" height="40" rx="6" stroke-width="1.4" style="fill: var(--panel); stroke: var(--ink-soft); display: none;"/>
+          <text class="d5-comp-text" x="780" y="24" text-anchor="middle" class="h"></text>
+        </g>
+
+        <!-- row 3: write_audit_record -->
+        <g transform="translate(0, 184)" class="d5-row" data-row="3">
+          <rect class="d5-staged" x="20" y="0" width="160" height="40" rx="6" class="svg-fill-warn-soft" stroke-width="1.4" style="stroke: var(--warn);"/>
+          <text x="100" y="20" text-anchor="middle" class="h">e3 write_audit_record</text>
+          <text x="100" y="34" text-anchor="middle" class="lbl">+ delete_audit_record</text>
+
+          <path d="M180,20 L240,20" stroke-width="1.4" class="svg-stroke-warn" marker-end="url(#d5Arr)" fill="none"/>
+
+          <rect class="d5-result" x="240" y="0" width="180" height="40" rx="6" stroke-width="1.4" style="fill: var(--panel); stroke: var(--ink-soft);"/>
+          <text class="d5-status" x="330" y="24" text-anchor="middle" class="h"></text>
+        </g>
+      </svg>
+
+      <div class="ctrl" role="group" aria-label="Step controls">
+        <button id="d5-step" class="primary">Step ▸</button>
+        <button id="d5-reset">Reset</button>
+        <div class="step-readout">step <b id="d5-step-num">0</b> / 4 · txn state: <b id="d5-state">OPEN</b></div>
+      </div>
+
+      <div class="journal" id="d5-journal" aria-live="polite">
+        <div class="empty" id="d5-empty">// journal is empty — pick a strategy above, then click "Step"</div>
+      </div>
+
+      <div class="world" id="d5-world">
+        <div class="cell not-fired" data-key="card"><div class="ttl">customer's card</div><div class="val">£0 charged</div></div>
+        <div class="cell not-fired" data-key="email"><div class="ttl">recipient inbox</div><div class="val">no email</div></div>
+        <div class="cell not-fired" data-key="audit"><div class="ttl">audit ledger</div><div class="val">no record</div></div>
+      </div>
+
+      <div class="endstate" id="d5-endstate">
+        <div class="row1">
+          <span class="txn-state" id="d5-final-state">—</span>
+          <span class="verdict-line" id="d5-final-text">Pick a strategy above and step through to see what survives.</span>
+        </div>
+        <div class="gap" id="d5-final-gap"></div>
+      </div>
+
+      <figcaption>Three effects, fire in order. Effect 3 fails. Switch strategies above to compare how (a), (b), and (c) leave the world — what's still active, what got compensated, and what state the transaction ends in.</figcaption>
+    </figure>
+
+    <div class="verdict open">
+      <div class="tag">Recommendation — (b)</div>
+      <p class="pick">Auto-fire compensators backwards over the fired effects. Saga semantics are what CLAUDE.md describes; (b) delivers them, closes the correctness gap, and produces a fully readable audit trail (charge, refund, both visible). Effects without compensators remain in the world and the txn ends in <code>STUCK</code> — Pherix is honest about what it cannot undo, which is exactly the project ethos.</p>
+      <p class="why">(a) is faster to ship but leaves a real money-on-the-table gap between Slice 3 and Slice 5. (c) is the cleanest scope but punts work that CLAUDE.md explicitly puts in Slice 3 ("compensation registry"). (b) is the right amount of work to actually deliver the slice's promise.</p>
+    </div>
+
+    <details class="deep">
+      <summary>The compensator-unwind loop, as it would look.</summary>
+      <div class="body">
+<pre class="code"><span class="c"># core/runtime.py — commit() — recommended (b) path</span>
+fired: <span class="t">list</span>[Effect] = []
+<span class="k">for</span> effect <span class="k">in</span> staged_effects:
+    <span class="k">try</span>:
+        adapter.apply(effect, spec.fn)
+        effect.status = EffectStatus.APPLIED
+        fired.append(effect)
+    <span class="k">except</span> <span class="t">Exception</span>:
+        effect.status = EffectStatus.FAILED
+        <span class="c"># unwind: fire compensators newest-first over already-fired effects</span>
+        <span class="k">for</span> prior <span class="k">in</span> <span class="n">reversed</span>(fired):
+            <span class="k">if</span> prior.compensator <span class="k">is None</span>:
+                <span class="k">self</span>.txn.transition(TxnState.STUCK)   <span class="c"># honest about what we can't undo</span>
+                <span class="k">raise</span> PartialCommitStuck(prior.effect_id)
+            comp_spec = REGISTRY.get(prior.compensator)
+            adapter.apply(prior_comp_effect, comp_spec.fn)
+            prior.status = EffectStatus.COMPENSATED
+        <span class="k">self</span>.txn.transition(TxnState.ROLLED_BACK)   <span class="c"># or PARTIAL if some failed</span>
+        <span class="k">raise</span></pre>
+        <p>The loop walks the fired list backward, firing each compensator. When a compensator is missing, the txn enters <code>STUCK</code> and the operator gets a precise error naming the un-undoable effect. When every compensator succeeds, the txn ends in <code>ROLLED_BACK</code> — the same end state as a clean rollback.</p>
+      </div>
+    </details>
+
+    <div class="callout">
+      <span class="tag">where this is now</span>
+      <code>TxnState.STUCK</code> is already defined in <code>pherix/core/transaction.py</code>. The <code>_ALLOWED_TRANSITIONS</code> table needs three new edges (<code>OPEN→PARTIAL</code>, <code>PARTIAL→ROLLED_BACK</code>, <code>PARTIAL→STUCK</code>) and the commit loop needs the unwind block above. No new types; pure orchestration.
+    </div>
+  </section>
+
+  <!-- ============== CLOSING JOURNAL ============== -->
+  <section class="decision" id="journal">
+    <div class="d-head">
+      <div class="d-id">§</div>
+      <div class="d-title">
+        <h2>Everything still lives in the journal.</h2>
+        <p class="q">A staged irreversible effect's <em>full life</em> — stage, approval, fire, compensate — is six rows. Six readable rows.</p>
+      </div>
+    </div>
+
+    <p>
+      The closing claim is the project's central claim restated under Slice 3's
+      load: the engine doesn't grow. The journal grows. <code>commit</code> is
+      still the fold-forward; <code>rollback</code> is still the fold-backward;
+      partial-commit recovery (D5·b) is still just a fold-backward over the
+      already-fired prefix.
+    </p>
+
+    <figure class="figure" aria-label="Full life of an irreversible effect in the journal">
+      <svg viewBox="0 0 880 290" role="img" aria-label="Six journal rows for one effect">
+        <defs>
+          <marker id="clArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="svg-fill-soft"/>
+          </marker>
+        </defs>
+
+        <text x="20" y="20" class="h">Audit journal — one staged charge_card, end to end.</text>
+
+        <!-- single column of journal rows -->
+        <g transform="translate(20, 36)">
+          <!-- row 1 STAGED -->
+          <rect x="0" y="0" width="840" height="34" rx="5" stroke-width="1" style="fill: var(--panel); stroke: var(--rule-strong);"/>
+          <text x="14" y="22" style="font-family: var(--mono); fill: var(--warn);">[1] effect · charge_card · status=STAGED · compensator="refund_charge"</text>
+
+          <!-- row 2 APPROVAL (if no comp; for charge_card there IS a comp so it's auto, but we'll show the alt path note) -->
+          <rect x="0" y="40" width="840" height="34" rx="5" stroke-width="1" style="fill: var(--panel); stroke: var(--rule-strong);"/>
+          <text x="14" y="62" style="font-family: var(--mono); fill: var(--accent);">[2] policy · check(charge_card, args) · verdict=ALLOW · phase=commit</text>
+
+          <!-- row 3 fire -->
+          <rect x="0" y="80" width="840" height="34" rx="5" stroke-width="1" style="fill: var(--panel); stroke: var(--rule-strong);"/>
+          <text x="14" y="102" style="font-family: var(--mono); fill: var(--accent);">[3] effect · charge_card · status=APPLIED · result={"receipt_id":"…"}</text>
+
+          <!-- row 4 something fails downstream -->
+          <rect x="0" y="120" width="840" height="34" rx="5" stroke-width="1" style="fill: var(--panel); stroke: var(--rule-strong);"/>
+          <text x="14" y="142" style="font-family: var(--mono); fill: var(--reject);">[4] effect · write_audit_record · status=FAILED · err="5xx"</text>
+
+          <!-- row 5 compensator -->
+          <rect x="0" y="160" width="840" height="34" rx="5" stroke-width="1" style="fill: var(--panel); stroke: var(--rule-strong);"/>
+          <text x="14" y="182" style="font-family: var(--mono); fill: var(--warn);">[5] effect · refund_charge · status=APPLIED · result={"refunded":true}</text>
+
+          <!-- row 6 update original -->
+          <rect x="0" y="200" width="840" height="34" rx="5" stroke-width="1" style="fill: var(--panel); stroke: var(--rule-strong);"/>
+          <text x="14" y="222" style="font-family: var(--mono); fill: var(--reject);">[6] effect · charge_card · status=COMPENSATED  (pointer to row [5])</text>
+        </g>
+
+        <text x="20" y="282" class="lbl">Read top to bottom: charged, refunded, both visible. Same engine. More rows.</text>
+      </svg>
+      <figcaption>The same fold operations the reversible lane uses — write a row, transition status, never delete — carry the irreversible lane too. The lane changes; the journal does not.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============== Why ============== -->
+  <section class="decision" id="why">
+    <div class="d-head">
+      <div class="d-id">∴</div>
+      <div class="d-title">
+        <h2>Why these four — plus D5 — are the slice.</h2>
+        <p class="q">Slice 3 isn't "add HTTP." It's "make irreversibility containable."</p>
+      </div>
+    </div>
+    <p>
+      D1 fixes the agent contract: <em>a staged tool returns a promise, not a result</em>. D2 picks the cheapest, most replayable shape for compensator wiring: <em>strings, in the registry, journalled like any other call</em>. D3 keeps Pherix on the right side of its own scope: <em>we record the approval verdict; somebody else generates it</em>. D4 closes the TOCTOU door before it's ever opened: <em>policy is a function of effect and world-state, even when the world-state argument is currently unused</em>.
+    </p>
+    <p>
+      D5 is what decides whether Slice 3 ships with saga semantics or without. (b) is the recommendation: do the unwind loop now, while the engine is already being touched, and the project can credibly say "Pherix delivers the correctness story it claims." (a) and (c) are real options, but each leaves a gap the operator (you) will end up explaining to a user.
+    </p>
+    <p>
+      Either way: same engine, more rows in the journal. The irreversible lane lights up; nothing else changes shape.
+    </p>
+  </section>
+
+  <footer class="foot">
+    <span>Pherix · docs/slice-3-decisions.html</span>
+    <span>pre-implementation · D1–D5 locked · D5 → option (b) · ready for /work slice-3</span>
+  </footer>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  // ---------- TOC active-section highlight ----------
+  const tocLinks = Array.from(document.querySelectorAll('nav.toc a'));
+  const idMap = new Map(tocLinks.map(a => [a.getAttribute('href').slice(1), a]));
+  const sectionIds = Array.from(idMap.keys());
+  const sections = sectionIds.map(id => document.getElementById(id)).filter(Boolean);
+
+  function syncToc() {
+    const y = window.scrollY + 120;
+    let active = sections[0];
+    for (const s of sections) {
+      if (s.offsetTop <= y) active = s;
+    }
+    tocLinks.forEach(a => a.classList.remove('is-active'));
+    if (active) {
+      const link = idMap.get(active.id);
+      if (link) link.classList.add('is-active');
+    }
+  }
+  window.addEventListener('scroll', syncToc, { passive: true });
+  syncToc();
+
+  // ---------- D5 — partial-commit walkthrough ----------
+  //
+  // Three effects, in order. e3 fails. The end-state depends on the
+  // selected recovery strategy.
+  //
+  //   e1 charge_card        compensator: refund_charge      (auto-pair)
+  //   e2 send_email         no compensator, pre-approved    (gate-passed)
+  //   e3 write_audit_record compensator: delete_audit_record (auto-pair) — FAILS
+  //
+  // Steps:
+  //   1: fire e1
+  //   2: fire e2
+  //   3: fire e3 → FAIL
+  //   4: strategy-specific cleanup
+  //
+  const effects = [
+    { id: 1, tool: 'charge_card',         comp: 'refund_charge',       worldKey: 'card',  worldFired: '£20 charged',
+      worldUnwound: '£20 refunded',  worldNoComp: '£20 still charged' },
+    { id: 2, tool: 'send_email',          comp: null,                  worldKey: 'email', worldFired: 'email sent',
+      worldUnwound: null,            worldNoComp: 'email still in inbox' },
+    { id: 3, tool: 'write_audit_record',  comp: 'delete_audit_record', worldKey: 'audit', worldFired: 'record written',
+      worldUnwound: 'record deleted', worldNoComp: 'record still present' }
+  ];
+
+  let mode = 'b';           // 'a' | 'b' | 'c'
+  let step = 0;             // 0..4
+  const modeButtons = {
+    a: document.getElementById('d5-mode-a'),
+    b: document.getElementById('d5-mode-b'),
+    c: document.getElementById('d5-mode-c')
+  };
+  const stepBtn = document.getElementById('d5-step');
+  const resetBtn = document.getElementById('d5-reset');
+  const stepNumEl = document.getElementById('d5-step-num');
+  const stateEl = document.getElementById('d5-state');
+  const journalEl = document.getElementById('d5-journal');
+  const emptyEl = document.getElementById('d5-empty');
+  const finalStateEl = document.getElementById('d5-final-state');
+  const finalTextEl = document.getElementById('d5-final-text');
+  const finalGapEl = document.getElementById('d5-final-gap');
+  const worldCells = {
+    card:  document.querySelector('#d5-world .cell[data-key="card"]'),
+    email: document.querySelector('#d5-world .cell[data-key="email"]'),
+    audit: document.querySelector('#d5-world .cell[data-key="audit"]')
+  };
+  const svgRows = Array.from(document.querySelectorAll('#d5svg .d5-row'));
+
+  function setMode(m) {
+    mode = m;
+    for (const k of Object.keys(modeButtons)) {
+      modeButtons[k].classList.toggle('active-mode', k === m);
+    }
+    render();
+  }
+  modeButtons.a.addEventListener('click', () => { reset(); setMode('a'); });
+  modeButtons.b.addEventListener('click', () => { reset(); setMode('b'); });
+  modeButtons.c.addEventListener('click', () => { reset(); setMode('c'); });
+
+  function reset() {
+    step = 0;
+    render();
+  }
+  resetBtn.addEventListener('click', reset);
+
+  stepBtn.addEventListener('click', () => {
+    if (step < 4) {
+      step += 1;
+      render();
+    }
+  });
+
+  function txnStateForStep() {
+    if (step === 0) return 'OPEN';
+    if (step <= 2) return 'OPEN';          // mid-commit
+    if (step === 3) return 'PARTIAL';      // after e3 fails
+    // step 4 — strategy-specific end
+    if (mode === 'a') return 'STUCK';
+    if (mode === 'b') {
+      // (b) unwinds e1 and e3-comp; e2 has no compensator so STUCK if it fired
+      return 'STUCK';   // because e2 (sent email) has no compensator
+    }
+    if (mode === 'c') return 'PARTIAL';    // left for Slice 5
+    return 'OPEN';
+  }
+
+  // build journal rows for current step + mode
+  function journalRows() {
+    const rows = [];
+
+    // stage rows (always present once the txn runs)
+    if (step >= 1) {
+      rows.push({ idx: 's1', kind: 'effect', text: 'charge_card · STAGED · compensator="refund_charge"',  status: 'STAGED' });
+      rows.push({ idx: 's2', kind: 'effect', text: 'send_email · STAGED · approved=true',                 status: 'STAGED' });
+      rows.push({ idx: 's3', kind: 'effect', text: 'write_audit_record · STAGED · compensator="delete_audit_record"', status: 'STAGED' });
+    }
+
+    if (step >= 1) rows.push({ idx: 1, kind: 'effect', text: 'charge_card · APPLIED · result={"receipt_id":"…"}', status: 'APPLIED' });
+    if (step >= 2) rows.push({ idx: 2, kind: 'effect', text: 'send_email · APPLIED · result={"msg_id":"…"}',       status: 'APPLIED' });
+    if (step >= 3) rows.push({ idx: 3, kind: 'effect', text: 'write_audit_record · FAILED · err="5xx upstream"',   status: 'FAILED' });
+
+    // step 4 — strategy-specific
+    if (step >= 4) {
+      if (mode === 'a') {
+        rows.push({ idx: '!', kind: 'txn',    text: 'txn transition → STUCK · operator must run compensators manually', status: 'STUCK' });
+      } else if (mode === 'b') {
+        // walk backward over fired: e2 has no comp → STUCK marker; e1 has comp → fire it
+        rows.push({ idx: 4, kind: 'effect', text: 'send_email · compensator MISSING — cannot auto-unwind',           status: 'FAILED', struck: false });
+        rows.push({ idx: 5, kind: 'effect', text: 'refund_charge · APPLIED · result={"refunded":true}',               status: 'APPLIED' });
+        rows.push({ idx: 6, kind: 'effect', text: 'charge_card · COMPENSATED (linked to [5])',                        status: 'COMPENSATED', struck: true });
+        rows.push({ idx: '!', kind: 'txn',  text: 'txn transition → STUCK · email cannot be unsent; charge refunded', status: 'STUCK' });
+      } else if (mode === 'c') {
+        rows.push({ idx: '!', kind: 'txn', text: 'txn transition → PARTIAL · awaiting Slice 5 replay/recovery', status: 'PARTIAL' });
+      }
+    }
+
+    return rows;
+  }
+
+  function worldState() {
+    // returns { card: 'state', email: 'state', audit: 'state', class: { card: 'class', ... } }
+    const w = {
+      card:  { val: effects[0].worldFired === '£20 charged' ? '£0 charged' : '', cls: 'not-fired' },
+      email: { val: 'no email',     cls: 'not-fired' },
+      audit: { val: 'no record',    cls: 'not-fired' }
+    };
+
+    if (step >= 1) { w.card = { val: '£20 charged', cls: 'fired' }; }
+    if (step >= 2) { w.email = { val: 'email sent',    cls: 'fired' }; }
+    if (step >= 3) {
+      // e3 failed — audit not written
+      w.audit = { val: 'write failed', cls: 'not-fired' };
+    }
+
+    if (step >= 4) {
+      if (mode === 'a') {
+        // STUCK — leave as-is
+      } else if (mode === 'b') {
+        // refund fires; email still sent (no compensator)
+        w.card  = { val: '£20 refunded', cls: 'refunded' };
+        w.email = { val: 'still in inbox · STUCK', cls: 'stuck' };
+      } else if (mode === 'c') {
+        // PARTIAL — leave as-is, deferred
+      }
+    }
+
+    return w;
+  }
+
+  function finalState() {
+    if (step < 4) {
+      return { state: txnStateForStep(), text: 'Step through to see how this strategy ends.', gap: '', gapClass: '' };
+    }
+    if (mode === 'a') {
+      return {
+        state: 'STUCK',
+        text: 'Two side effects in the world; nothing was unwound. Operator must walk the journal and decide.',
+        gap: '⚠ correctness gap: £20 charged and an email sent that the txn did not intend to commit to. No automatic recovery.',
+        gapClass: ''
+      };
+    }
+    if (mode === 'b') {
+      return {
+        state: 'STUCK',
+        text: 'Charge was refunded automatically. Email cannot be unsent — txn ends STUCK on that effect specifically.',
+        gap: '✓ correctness gap closed for compensated effects · ⚠ STUCK is honest: send_email has no compensator, so the email remains in the world by design.',
+        gapClass: 'ok'
+      };
+    }
+    if (mode === 'c') {
+      return {
+        state: 'PARTIAL',
+        text: 'Txn left in PARTIAL · two side effects live, waiting for Slice 5 to provide recovery.',
+        gap: '⚠ correctness gap until Slice 5 ships: charge + email both in the world, no automated cleanup path.',
+        gapClass: ''
+      };
+    }
+  }
+
+  function render() {
+    stepNumEl.textContent = step;
+    const tState = txnStateForStep();
+    stateEl.textContent = tState;
+    stateEl.style.color = ({
+      OPEN:        'var(--ink)',
+      PARTIAL:     'var(--warn)',
+      STUCK:       'var(--reject)',
+      COMMITTED:   'var(--accent)',
+      ROLLED_BACK: 'var(--reject)'
+    })[tState] || 'var(--ink)';
+
+    // SVG rows — fill effect outcomes
+    svgRows.forEach((g, i) => {
+      const row = i + 1;
+      const resultBox = g.querySelector('.d5-result');
+      const statusText = g.querySelector('.d5-status');
+      const compBox = g.querySelector('.d5-comp');
+      const compText = g.querySelector('.d5-comp-text');
+      const compArrow = g.querySelector('.d5-comp-arrow');
+
+      // default reset
+      resultBox.setAttribute('style', 'fill: var(--panel); stroke: var(--rule); stroke-width: 1.2;');
+      statusText.textContent = '';
+      statusText.setAttribute('style', '');
+      compBox.setAttribute('style', 'display: none;');
+      compText.textContent = '';
+      compArrow.setAttribute('style', 'stroke: none;');
+
+      const fired = step >= row && !(row === 3 && step >= 3);  // e3 fails, not fired
+      const failed = row === 3 && step >= 3;
+
+      if (fired) {
+        resultBox.setAttribute('style', 'fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4;');
+        statusText.textContent = 'APPLIED';
+        statusText.setAttribute('style', 'fill: var(--accent);');
+      }
+      if (failed) {
+        resultBox.setAttribute('style', 'fill: var(--reject-soft); stroke: var(--reject); stroke-width: 1.4;');
+        statusText.textContent = 'FAILED';
+        statusText.setAttribute('style', 'fill: var(--reject);');
+      }
+
+      // step 4 — show compensator/unwind action
+      if (step >= 4 && mode === 'b') {
+        if (row === 1 && fired) {
+          // compensator fires for e1
+          compBox.setAttribute('style', 'fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.4; display: inline;');
+          compText.textContent = 'refund_charge · APPLIED';
+          compText.setAttribute('style', 'fill: var(--warn);');
+          compArrow.setAttribute('style', 'stroke: var(--warn);');
+          // update status to COMPENSATED
+          statusText.textContent = 'COMPENSATED';
+          statusText.setAttribute('style', 'fill: var(--reject); text-decoration: line-through;');
+          resultBox.setAttribute('style', 'fill: var(--reject-soft); stroke: var(--reject); stroke-width: 1.2; stroke-dasharray: 3 3;');
+        }
+        if (row === 2 && fired) {
+          // no comp — STUCK indicator
+          compBox.setAttribute('style', 'fill: var(--reject-soft); stroke: var(--reject); stroke-width: 1.4; display: inline;');
+          compText.textContent = 'no comp · STUCK';
+          compText.setAttribute('style', 'fill: var(--reject);');
+          compArrow.setAttribute('style', 'stroke: var(--reject); stroke-dasharray: 2 4;');
+        }
+      }
+    });
+
+    // journal
+    journalEl.querySelectorAll('.row').forEach(n => n.remove());
+    const rows = journalRows();
+    if (rows.length === 0) {
+      emptyEl.style.display = 'block';
+    } else {
+      emptyEl.style.display = 'none';
+      for (const r of rows) {
+        const el = document.createElement('div');
+        el.className = 'row show' + (r.struck ? ' struck' : '');
+        const statusClass = ({
+          STAGED: 'stat-st',
+          APPLIED: 'stat-ap',
+          COMPENSATED: 'stat-co',
+          GATED: 'stat-ga',
+          FAILED: 'stat-fa',
+          STUCK: 'stat-fa',
+          PARTIAL: 'stat-st'
+        })[r.status] || 'stat-st';
+        el.innerHTML =
+          '<span class="idx">[' + r.idx + ']</span>' +
+          '<span>' + r.text + '</span>' +
+          '<span class="' + statusClass + '">' + r.status + '</span>' +
+          '<span class="idx">' + (r.kind === 'effect' ? 'effect' : 'txn') + '</span>';
+        journalEl.appendChild(el);
+      }
+    }
+
+    // world cells
+    const w = worldState();
+    for (const k of Object.keys(worldCells)) {
+      const cell = worldCells[k];
+      cell.classList.remove('fired', 'refunded', 'not-fired', 'stuck');
+      cell.classList.add(w[k].cls);
+      cell.querySelector('.val').textContent = w[k].val;
+    }
+
+    // final-state panel
+    const f = finalState();
+    finalStateEl.textContent = f.state;
+    finalStateEl.className = 'txn-state ' + f.state.toLowerCase();
+    finalTextEl.textContent = f.text;
+    finalGapEl.textContent = f.gap;
+    finalGapEl.className = 'gap ' + (f.gapClass || '');
+  }
+
+  // initial state
+  setMode('b');
+})();
+</script>
+</body>
+</html>

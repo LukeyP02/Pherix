@@ -23,6 +23,9 @@
     --future-bg: #efefe9;
     --warn: #b54708;
     --link: #1f5fa8;
+    --spec: #6d5aa3;
+    --spec-bg: #efeaf6;
+    --spec-ink: #4b3d77;
     --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   }
@@ -45,6 +48,9 @@
       --future-bg: #1f1f21;
       --warn: #f0b35a;
       --link: #6aa7e6;
+      --spec: #a99ad6;
+      --spec-bg: #221e30;
+      --spec-ink: #c8bce8;
     }
   }
 
@@ -87,13 +93,15 @@
   .swatch.queued { background: var(--queued); }
   .swatch.future { background: var(--future); }
   .swatch.followup { background: var(--warn); border-radius: 50%; }
+  .swatch.followup-resolved { background: var(--done); border-radius: 50%; opacity: 0.7; }
+  .swatch.spec { background: var(--spec); border-style: dashed; }
 
   /* Timeline SVG */
   .timeline-wrap {
     background: var(--panel); border: 1px solid var(--rule); border-radius: 8px;
     padding: 18px 8px 8px; overflow-x: auto;
   }
-  .timeline-wrap svg { display: block; width: 100%; min-width: 980px; height: 360px; }
+  .timeline-wrap svg { display: block; width: 100%; min-width: 980px; height: 560px; }
 
   /* node hover state via JS class */
   .node-card { transition: transform 120ms ease; cursor: pointer; }
@@ -110,6 +118,14 @@
   .slice.active { border-left: 3px solid var(--active); box-shadow: 0 0 0 1px var(--active) inset; }
   .slice.queued { border-left: 3px solid var(--queued); }
   .slice.future { border-left: 3px solid var(--future); }
+  .slice.spec {
+    border: 1px dashed var(--spec);
+    border-left: 3px dashed var(--spec);
+    background: linear-gradient(180deg, var(--panel) 0%, var(--spec-bg) 220%);
+    opacity: 0.92;
+  }
+  .slice.spec h3 { color: var(--ink); }
+  .slice.spec .one-liner { color: var(--ink-soft); }
   .slice h3 { margin: 0 0 4px; font-size: 14.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
   .slice .num { font-family: var(--mono); color: var(--ink-faint); font-size: 12px; }
   .slice .one-liner { color: var(--ink-soft); font-size: 13px; margin: 0 0 10px; }
@@ -124,6 +140,7 @@
   .badge.queued { background: var(--queued-bg); color: var(--queued); }
   .badge.future { background: var(--future-bg); color: var(--future); }
   .badge.dim { background: transparent; color: var(--ink-faint); border: 1px solid var(--rule-strong); }
+  .badge.spec { background: var(--spec-bg); color: var(--spec-ink); border: 1px dashed var(--spec); }
 
   details { margin-top: 6px; border-top: 1px dashed var(--rule); padding-top: 8px; }
   details > summary {
@@ -160,6 +177,10 @@
   .followup.nit { border-left-color: var(--ink-faint); }
   .followup.nit .fu-id { background: var(--ink-faint); }
   .followup.nit .fu-gate { color: var(--ink-soft); background: var(--future-bg); }
+  .followup.resolved { border-left-color: var(--done); opacity: 0.78; }
+  .followup.resolved .fu-id { background: var(--done); }
+  .followup.resolved .fu-title { text-decoration: line-through; text-decoration-thickness: 1px; color: var(--ink-soft); }
+  .followup.resolved .fu-gate { color: var(--done); background: var(--done-bg); border: 1px solid var(--done); }
 
   /* Side-by-side */
   .compare {
@@ -177,6 +198,66 @@
   .insight {
     background: var(--panel); border: 1px solid var(--rule); border-radius: 8px;
     padding: 16px 18px; max-width: 820px;
+  }
+
+  /* Beyond Slice 8 — speculative zone */
+  .spec-zone-header {
+    display: flex; align-items: baseline; gap: 12px; margin: 0 0 6px;
+  }
+  .spec-zone-header h2 { margin: 0; }
+  .spec-zone-header .spec-tag {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: var(--spec-bg); color: var(--spec-ink);
+    border: 1px dashed var(--spec); font-family: var(--mono); letter-spacing: 0.04em;
+  }
+  .spec-lede {
+    color: var(--ink-soft); margin: 0 0 16px; max-width: 760px;
+    border-left: 2px dashed var(--spec); padding-left: 12px;
+  }
+  .bootstrap-callout {
+    display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: start;
+    background: var(--panel); border: 1px dashed var(--spec); border-left: 4px solid var(--spec);
+    border-radius: 8px; padding: 14px 18px; margin: 0 0 18px; max-width: 920px;
+  }
+  .bootstrap-callout .bc-icon {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--spec-bg); color: var(--spec-ink);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 13px; font-weight: 600;
+    border: 1px solid var(--spec);
+  }
+  .bootstrap-callout h4 {
+    margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--ink);
+  }
+  .bootstrap-callout h4 .free-tag {
+    font-size: 11px; padding: 1px 8px; border-radius: 999px;
+    background: var(--done-bg); color: var(--done); margin-left: 8px; font-weight: 500;
+    border: 1px solid var(--done);
+  }
+  .bootstrap-callout p { margin: 0; font-size: 13px; color: var(--ink-soft); }
+  .bootstrap-callout p + p { margin-top: 6px; }
+
+  .trilogy-callout {
+    border: 1px dashed var(--spec); border-radius: 8px;
+    background: linear-gradient(180deg, var(--panel), var(--spec-bg) 220%);
+    padding: 16px 20px; margin: 0 0 14px; max-width: 920px;
+    display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center;
+  }
+  .trilogy-callout .tc-eq {
+    font-family: var(--mono); font-size: 15px; font-weight: 600;
+    display: inline-flex; gap: 10px; align-items: center;
+    color: var(--spec-ink); white-space: nowrap;
+  }
+  .trilogy-callout .tc-term {
+    background: var(--spec-bg); border: 1px solid var(--spec); border-radius: 6px;
+    padding: 4px 10px; color: var(--ink);
+  }
+  .trilogy-callout .tc-plus { color: var(--spec-ink); font-weight: 400; }
+  .trilogy-callout p { margin: 0; font-size: 13px; color: var(--ink-soft); }
+  .trilogy-callout strong { color: var(--ink); font-weight: 600; }
+  @media (max-width: 720px) {
+    .trilogy-callout { grid-template-columns: 1fr; gap: 10px; }
+    .trilogy-callout .tc-eq { font-size: 13px; }
   }
   .insight p { margin: 0 0 8px; }
   .insight p:last-child { margin-bottom: 0; }
@@ -218,10 +299,10 @@
   <h1>Pherix — Build Roadmap</h1>
   <div class="sub">A visual map of the eight-slice build. Each slice ships something demoable; the system gets <em>deeper</em>, not just wider. Hover the timeline, expand a card, follow a thread.</div>
   <div class="meta">
-    <span><b>Status:</b> Slice 1 merged · Slice 2 in worktree</span>
-    <span><b>Tests on <code>main</code>:</b> 69 passing</span>
-    <span><b>Last merge:</b> <code>ad4e9c0</code></span>
-    <span><b>Today:</b> 2026-05-17</span>
+    <span><b>Status:</b> Slices 1–2 merged · Slice 3 in design</span>
+    <span><b>Tests on <code>main</code>:</b> 103 passing</span>
+    <span><b>Last merge:</b> <code>c926f97</code></span>
+    <span><b>Today:</b> 2026-05-18</span>
   </div>
 </header>
 
@@ -230,7 +311,8 @@
   <a href="#timeline">Timeline</a><span class="sep">·</span>
   <a href="#slices">Slice detail</a><span class="sep">·</span>
   <a href="#followups">Slice-1 follow-ups</a><span class="sep">·</span>
-  <a href="#you-are-here">Where am I?</a>
+  <a href="#you-are-here">Where am I?</a><span class="sep">·</span>
+  <a href="#beyond">Beyond Slice 8</a>
 </nav>
 
 <main>
@@ -253,8 +335,8 @@
       <tbody>
         <tr><td>Commit</td><td>fold <span class="pill">forward</span>, <span class="mono">adapter.apply</span> each effect</td><td><span class="badge done">1 done</span></td></tr>
         <tr><td>Rollback</td><td>fold <span class="pill">backward</span>, <span class="mono">adapter.restore</span> or run compensator</td><td><span class="badge done">1 done</span></td></tr>
-        <tr><td>Mixed-resource txn</td><td>same fold, dispatched by the adapter map</td><td><span class="badge active">2 next</span></td></tr>
-        <tr><td>Irreversible safety</td><td>stage now, fold forward only at commit; compensator on rollback</td><td><span class="badge queued">3</span></td></tr>
+        <tr><td>Mixed-resource txn</td><td>same fold, dispatched by the adapter map</td><td><span class="badge done">2 done</span></td></tr>
+        <tr><td>Irreversible safety</td><td>stage now, fold forward only at commit; compensator on rollback</td><td><span class="badge active">3 active</span></td></tr>
         <tr><td>Isolation</td><td><span class="pill">diff</span> read/write keys + versions against the journal</td><td><span class="badge queued">4</span></td></tr>
         <tr><td>Replay</td><td>fold <span class="pill">forward</span> against fresh state, assert identical results</td><td><span class="badge future">5</span></td></tr>
         <tr><td>Policy (commit-time)</td><td>walk the journal again at commit, re-evaluate every effect</td><td><span class="badge future">6</span></td></tr>
@@ -274,11 +356,13 @@
       <span class="legend-item"><span class="swatch queued"></span> queued · spec-ready</span>
       <span class="legend-item"><span class="swatch future"></span> future · not yet specced</span>
       <span class="legend-item"><span class="swatch followup"></span> Slice-1 follow-up gated here</span>
+      <span class="legend-item"><span class="swatch followup-resolved"></span> follow-up resolved</span>
+      <span class="legend-item"><span class="swatch spec"></span> speculative · beyond Slice 8</span>
     </div>
 
     <div class="timeline-wrap" id="timeline-wrap">
       <!-- inline SVG dependency graph -->
-      <svg viewBox="0 0 1100 360" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Pherix build slice dependency graph">
+      <svg viewBox="0 0 1100 560" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Pherix build slice dependency graph">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
@@ -288,11 +372,11 @@
           </pattern>
         </defs>
 
-        <!-- "you are here" band between slice 1 and slice 2 -->
+        <!-- "you are here" band between slice 2 and slice 3 -->
         <g>
-          <rect x="160" y="40" width="40" height="240" fill="url(#diag)" color="var(--active)" />
-          <text x="180" y="32" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">you are here</text>
-          <path d="M180 36 L180 44" stroke="var(--active)" stroke-width="1.5"/>
+          <rect x="350" y="40" width="30" height="240" fill="url(#diag)" color="var(--active)" />
+          <text x="365" y="32" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">you are here</text>
+          <path d="M365 36 L365 44" stroke="var(--active)" stroke-width="1.5"/>
         </g>
 
         <!-- main backbone arrows -->
@@ -328,31 +412,32 @@
           <text x="55" y="116" text-anchor="middle" font-size="9" font-family="ui-monospace,monospace" fill="var(--ink-faint)">ad4e9c0</text>
         </g>
 
-        <!-- SLICE 2 (active) -->
+        <!-- SLICE 2 (done) -->
         <g class="node-card" data-slice="2" transform="translate(225,100)">
-          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--active-bg)" stroke="var(--active)" stroke-width="2"/>
-          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">SLICE 2</text>
+          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--done-bg)" stroke="var(--done)" stroke-width="1.5"/>
+          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--done)">SLICE 2</text>
           <text x="60" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Filesystem</text>
           <text x="60" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">copy-on-write</text>
-          <text x="60" y="80" text-anchor="middle" font-size="11" fill="var(--ink-soft)">D1·D2·D3</text>
-          <text x="60" y="103" text-anchor="middle" font-size="10" fill="var(--active)">⟳ in worktree</text>
-          <text x="60" y="116" text-anchor="middle" font-size="9" font-family="ui-monospace,monospace" fill="var(--ink-faint)">../Pherix-slice-2</text>
-          <!-- follow-up #2 dot - lifecycle, gated before slice 2 -->
-          <g class="followup-dot" data-fu="2">
-            <circle cx="115" cy="10" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
+          <text x="60" y="80" text-anchor="middle" font-size="11" fill="var(--ink-soft)">+ mixed-resource</text>
+          <text x="60" y="103" text-anchor="middle" font-size="10" fill="var(--done)">✓ merged</text>
+          <text x="60" y="116" text-anchor="middle" font-size="9" font-family="ui-monospace,monospace" fill="var(--ink-faint)">c926f97</text>
+          <!-- follow-up #2 dot - lifecycle, RESOLVED by Slice 2 D1 -->
+          <g class="followup-dot" data-fu="2" opacity="0.55">
+            <circle cx="115" cy="10" r="9" fill="var(--done)" stroke="var(--panel)" stroke-width="2"/>
             <text x="115" y="13.5" text-anchor="middle" font-size="10" font-weight="700" fill="white">2</text>
-            <title>Follow-up #2 — Adapter lifecycle should be in the protocol (gates Slice 2). Resolved by D1.</title>
+            <title>Follow-up #2 — Adapter lifecycle should be in the protocol. RESOLVED by D1 (TransactionalResourceAdapter sub-protocol).</title>
           </g>
         </g>
 
-        <!-- SLICE 3 -->
+        <!-- SLICE 3 (active) -->
         <g class="node-card" data-slice="3" transform="translate(385,100)">
-          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--queued-bg)" stroke="var(--queued)" stroke-width="1.5"/>
-          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--queued)">SLICE 3</text>
+          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--active-bg)" stroke="var(--active)" stroke-width="2"/>
+          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">SLICE 3</text>
           <text x="60" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">HTTP /</text>
           <text x="60" y="60" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">irreversible</text>
           <text x="60" y="78" text-anchor="middle" font-size="11" fill="var(--ink-soft)">stage · gate · comp</text>
-          <text x="60" y="100" text-anchor="middle" font-size="10" fill="var(--queued)">queued</text>
+          <text x="60" y="100" text-anchor="middle" font-size="10" fill="var(--active)">⟳ in design</text>
+          <text x="60" y="113" text-anchor="middle" font-size="9" font-family="ui-monospace,monospace" fill="var(--ink-faint)">D1–D4 locked · D5 open</text>
           <!-- follow-up #1 dot - serialization (gated before slice 3) -->
           <g class="followup-dot" data-fu="1">
             <circle cx="115" cy="10" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
@@ -427,29 +512,123 @@
         <text x="200" y="306" text-anchor="middle" font-size="11" fill="var(--ink-faint)" font-family="ui-monospace,monospace">— reversible path —</text>
         <text x="585" y="306" text-anchor="middle" font-size="11" fill="var(--ink-faint)" font-family="ui-monospace,monospace">— irreversible + concurrency —</text>
         <text x="925" y="346" text-anchor="middle" font-size="11" fill="var(--ink-faint)" font-family="ui-monospace,monospace">— enforcement &amp; surfaces —</text>
+
+        <!-- ================================================ -->
+        <!-- BEYOND SLICE 8 — speculative zone (faded/dashed) -->
+        <!-- Two pillars derived from the journal: Memory + Audit -->
+        <!-- ================================================ -->
+        <g opacity="0.92">
+          <!-- separator -->
+          <line x1="20" y1="370" x2="1080" y2="370" stroke="var(--spec)" stroke-width="1" stroke-dasharray="3 5" opacity="0.55"/>
+          <text x="40" y="364" font-size="10" font-family="ui-monospace,monospace" fill="var(--spec)" letter-spacing="0.1em">BEYOND SLICE 8 · TWO PILLARS OVER THE SAME JOURNAL · SPECULATIVE</text>
+
+          <!-- dashed bounding box for the zone -->
+          <rect x="20" y="378" width="1060" height="170" rx="10" fill="none" stroke="var(--spec)" stroke-width="1" stroke-dasharray="4 6" opacity="0.45"/>
+
+          <!-- spec arrowhead marker -->
+          <defs>
+            <marker id="arrow-spec" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <!-- branch arrows: Memory pillar from Slices 3, 4, 6, 8 -->
+          <g fill="none" stroke="var(--spec)" stroke-width="1.3" stroke-dasharray="5 4" color="var(--spec)" opacity="0.7">
+            <!-- Slice 3 bottom (445, 220) -> Memory pillar (300, 395) -->
+            <path d="M445 220 C 445 310, 300 310, 300 388" marker-end="url(#arrow-spec)"/>
+            <!-- Slice 4 bottom (605, 220) -> Memory pillar (300, 395) -->
+            <path d="M605 220 C 605 305, 300 320, 300 388" opacity="0.55"/>
+            <!-- Slice 6 bottom (925, 220) -> Memory pillar (300, 395) -->
+            <path d="M925 220 C 925 320, 300 330, 300 388" opacity="0.45"/>
+            <!-- Slice 8 right (125, 275) -> Memory pillar bottom-left (240, 470) -->
+            <path d="M125 275 C 180 320, 200 380, 240 470" opacity="0.5"/>
+          </g>
+
+          <!-- branch arrows: Audit pillar from Slices 1, 5, 6 -->
+          <g fill="none" stroke="var(--spec)" stroke-width="1.3" stroke-dasharray="5 4" color="var(--spec)" opacity="0.7">
+            <!-- Slice 1 bottom (70, 220) — drop straight then bend right into Audit pillar (800, 395) -->
+            <path d="M70 220 C 70 350, 500 350, 800 388" opacity="0.5"/>
+            <!-- Slice 5 bottom (765, 220) -> Audit pillar (800, 395) -->
+            <path d="M765 220 C 765 310, 800 310, 800 388" marker-end="url(#arrow-spec)"/>
+            <!-- Slice 6 bottom (925, 220) -> Audit pillar (800, 395) -->
+            <path d="M925 220 C 925 305, 800 320, 800 388" opacity="0.55"/>
+          </g>
+
+          <!-- =============== MEMORY PILLAR (left) =============== -->
+          <g class="node-card spec-node" data-slice="memory" transform="translate(60,390)">
+            <rect class="node-bg" width="480" height="148" rx="10"
+                  fill="var(--spec-bg)" stroke="var(--spec)" stroke-width="1.5"
+                  stroke-dasharray="4 3"/>
+            <text x="240" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--spec-ink)" letter-spacing="0.08em">PILLAR · MEMORY SUBSTRATE</text>
+            <text x="240" y="46" text-anchor="middle" font-size="15" font-weight="600" fill="var(--ink)">Index the journal</text>
+            <text x="240" y="68" text-anchor="middle" font-size="11" fill="var(--ink-soft)" font-style="italic">journal as ground truth; embeddings as lossy indices over it</text>
+            <!-- three sub-blocks inside -->
+            <g font-size="10.5" font-family="ui-monospace,monospace" fill="var(--spec-ink)">
+              <rect x="14" y="82" width="142" height="50" rx="6" fill="none" stroke="var(--spec)" stroke-dasharray="3 3" opacity="0.7"/>
+              <text x="85" y="100" text-anchor="middle" fill="var(--ink)" font-weight="600">VectorAdapter</text>
+              <text x="85" y="116" text-anchor="middle" fill="var(--ink-soft)">vector · KV · summary</text>
+
+              <rect x="170" y="82" width="142" height="50" rx="6" fill="none" stroke="var(--spec)" stroke-dasharray="3 3" opacity="0.7"/>
+              <text x="241" y="100" text-anchor="middle" fill="var(--ink)" font-weight="600">Memory policy</text>
+              <text x="241" y="116" text-anchor="middle" fill="var(--ink-soft)">PII · decay · scope</text>
+
+              <rect x="326" y="82" width="142" height="50" rx="6" fill="none" stroke="var(--spec)" stroke-dasharray="3 3" opacity="0.7"/>
+              <text x="397" y="100" text-anchor="middle" fill="var(--ink)" font-weight="600">Frontend</text>
+              <text x="397" y="116" text-anchor="middle" fill="var(--ink-soft)">LangMem · Letta · LC</text>
+            </g>
+            <text x="240" y="142" text-anchor="middle" font-size="9.5" fill="var(--spec-ink)" font-family="ui-monospace,monospace">depends on Slices 3 · 4 · 6 · 8</text>
+          </g>
+
+          <!-- =============== AUDIT PILLAR (right) =============== -->
+          <g class="node-card spec-node" data-slice="audit" transform="translate(560,390)">
+            <rect class="node-bg" width="480" height="148" rx="10"
+                  fill="var(--spec-bg)" stroke="var(--spec)" stroke-width="1.5"
+                  stroke-dasharray="4 3"/>
+            <text x="240" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--spec-ink)" letter-spacing="0.08em">PILLAR · OBSERVABILITY / AUDIT</text>
+            <text x="240" y="46" text-anchor="middle" font-size="15" font-weight="600" fill="var(--ink)">Query the journal</text>
+            <text x="240" y="68" text-anchor="middle" font-size="11" fill="var(--ink-soft)" font-style="italic">the journal IS the audit log — this pillar exposes it</text>
+            <g font-size="10.5" font-family="ui-monospace,monospace" fill="var(--spec-ink)">
+              <rect x="14" y="82" width="142" height="50" rx="6" fill="none" stroke="var(--spec)" stroke-dasharray="3 3" opacity="0.7"/>
+              <text x="85" y="100" text-anchor="middle" fill="var(--ink)" font-weight="600">Query surface</text>
+              <text x="85" y="116" text-anchor="middle" fill="var(--ink-soft)">predicates · windows</text>
+
+              <rect x="170" y="82" width="142" height="50" rx="6" fill="none" stroke="var(--spec)" stroke-dasharray="3 3" opacity="0.7"/>
+              <text x="241" y="100" text-anchor="middle" fill="var(--ink)" font-weight="600">Replay / inspect</text>
+              <text x="241" y="116" text-anchor="middle" fill="var(--ink-soft)">step a txn · diff state</text>
+
+              <rect x="326" y="82" width="142" height="50" rx="6" fill="none" stroke="var(--spec)" stroke-dasharray="3 3" opacity="0.7"/>
+              <text x="397" y="100" text-anchor="middle" fill="var(--ink)" font-weight="600">Compliance views</text>
+              <text x="397" y="116" text-anchor="middle" fill="var(--ink-soft)">exports · regulator-fit</text>
+            </g>
+            <text x="240" y="142" text-anchor="middle" font-size="9.5" fill="var(--spec-ink)" font-family="ui-monospace,monospace">depends on Slices 1 · 5 · 6</text>
+          </g>
+
+          <!-- bootstrap milestone flag — pinned near Slice 2 column -->
+          <g opacity="0.9">
+            <path d="M230 220 C 230 280, 130 320, 130 376" fill="none" stroke="var(--spec)" stroke-width="1" stroke-dasharray="2 4" opacity="0.55"/>
+            <g transform="translate(45,378)">
+              <rect width="170" height="22" rx="11" fill="var(--spec-bg)" stroke="var(--spec)" stroke-width="1" stroke-dasharray="3 3"/>
+              <text x="85" y="15" text-anchor="middle" font-size="10.5" fill="var(--spec-ink)" font-family="ui-monospace,monospace">Slice 2 → first dogfood</text>
+            </g>
+          </g>
+        </g>
       </svg>
     </div>
   </section>
 
   <!-- =========================================== -->
   <section id="you-are-here">
-    <h2>Where am I? <span class="hint">— between Slice 1 and Slice 2</span></h2>
+    <h2>Where am I? <span class="hint">— between Slice 2 and Slice 3</span></h2>
     <div class="compare">
       <div>
-        <h4>What's behind you <span class="tag now">Slice 1, merged</span></h4>
-        The reversible-path skeleton: <code>Transaction</code> as an ordered list of <code>Effect</code>s, the
-        <code>ResourceAdapter</code> protocol with one real implementation (SQLite via <code>SAVEPOINT</code> / <code>ROLLBACK TO SAVEPOINT</code>),
-        <code>@tool</code> interception through a <code>ContextVar</code>, an <code>agent_txn()</code> context manager,
-        a SQLite append-only audit journal, and a stage-time allow-list policy. The whole thing is offline-testable; 69 tests green.
+        <h4>What's behind you <span class="tag now">Slices 1–2, merged</span></h4>
+        The reversible path, end-to-end and stress-tested. Slice 1 (<code>ad4e9c0</code>) shipped the engine: <code>Transaction</code> as an ordered <code>Effect</code> list, the <code>ResourceAdapter</code> protocol, the <code>SQLiteAdapter</code> doing real <code>SAVEPOINT</code> / <code>ROLLBACK TO SAVEPOINT</code>, <code>@tool</code> interception via <code>ContextVar</code>, the SQLite audit journal, and a stage-time allow-list.
+        Slice 2 (<code>c926f97</code>) proved the protocol is a real abstraction, not an SQLite-shaped hole: the <code>FilesystemAdapter</code> with copy-on-write, the <code>TransactionalResourceAdapter</code> sub-protocol (D1) for typed lifecycle dispatch, the rooted+lazy <code>FsHandle</code> (D2) — first-touch snapshotting with <code>Path.resolve()</code> + <code>is_relative_to</code> as the symlink/traversal defence — and the mixed-resource demo (D3) as the acceptance bar. <strong>103 tests green</strong> (+34 over Slice 1), zero runtime changes beyond the D1 swap.
       </div>
       <div>
-        <h4>What's in flight <span class="tag next">Slice 2, in worktree</span></h4>
-        <code>FilesystemAdapter</code> with copy-on-write. The point isn't filesystem-in-isolation — it's the
-        <em>protocol stress test</em>: a structurally different backend (file copies, not savepoints) must satisfy the same
-        <code>snapshot → apply → restore</code> interface, and the engine must route a mixed SQL+FS transaction with
-        <em>no special-case code</em>. Three locked decisions: <strong>D1</strong> add a
-        <code>TransactionalResourceAdapter</code> sub-protocol, <strong>D2</strong> rooted-and-lazy <code>FsHandle</code>,
-        <strong>D3</strong> the mixed-resource demo is the acceptance bar.
+        <h4>What's in flight <span class="tag next">Slice 3, in design</span></h4>
+        The HTTP / irreversible adapter — where snapshot/restore stops working and Pherix has to be honest. Effects no longer fold forward live; they ride in <code>EffectStatus.STAGED</code> until <code>commit()</code>, with the agent receiving a <code>StagedResult</code> sentinel carrying just the <code>effect_id</code>. Compensators are registered <em>by name</em> via <code>@tool</code> and act as the <em>semantic left-inverse</em> of an irreversible — <code>compensator ∘ tool ≈ identity</code> at the resource level. Un-compensated irreversibles gate at commit-time via <code>approve_irreversible(effect_id)</code>, a pre-approval predicate the policy engine consults. Policy is re-evaluated at commit (TOCTOU-safe): the predicate <code>P(effect, world_state)</code> is folded over the journal twice because <code>world_state</code> may have moved between stage and commit.
+        <strong>D1–D4 locked</strong>; <strong>D5 open</strong> (partial-commit recovery scope). Decision aid: <a href="slice-3-decisions.html">slice-3-decisions.html</a>.
       </div>
     </div>
   </section>
@@ -488,44 +667,53 @@
       </article>
 
       <!-- SLICE 2 -->
-      <article class="slice active">
+      <article class="slice done">
         <h3><span class="num">02</span> Filesystem adapter (copy-on-write)</h3>
         <div class="badges">
-          <span class="badge active">active · in worktree</span>
-          <span class="badge dim">../Pherix-slice-2</span>
-          <span class="badge dim">D1 · D2 · D3</span>
+          <span class="badge done">done · merged</span>
+          <span class="badge dim">c926f97</span>
+          <span class="badge dim">103 tests · +34</span>
         </div>
-        <p class="one-liner">A structurally different backend that must satisfy the same protocol. Acceptance: a mixed SQL+FS transaction works with no engine special-cases.</p>
+        <p class="one-liner">The protocol stress-test passed: file copies and database savepoints share no implementation but the same interface, and a mixed SQL+FS transaction rolls back through both with no runtime special-cases.</p>
         <details>
-          <summary>Scope, decisions, done-when</summary>
+          <summary>What shipped, decisions, evidence</summary>
           <div class="body">
-            <p><span class="label">The point.</span> Slice 2 is the first real test of whether <code>ResourceAdapter</code> is a genuine abstraction or an SQLite-shaped hole. File copies and database savepoints share <em>no implementation</em>; if they share a <em>protocol</em>, the engine survives. If the runtime needs special-case code for FS, the protocol is the wrong shape — and that's the more interesting bug.</p>
-            <p><span class="label">Locked decisions.</span></p>
+            <p><span class="label">The point, in retrospect.</span> Slice 2 was the first real test of whether <code>ResourceAdapter</code> was a genuine abstraction or an SQLite-shaped hole. File copies and database savepoints share <em>no implementation</em>; if they share a <em>protocol</em>, the engine survives. The runtime needed no special-case code for FS — the protocol held its shape.</p>
+            <p><span class="label">Shipped (decisions, locked then realised).</span></p>
             <ul>
-              <li><span class="label">D1.</span> Introduce <code>TransactionalResourceAdapter(ResourceAdapter, Protocol)</code> — a sub-protocol that adds <code>begin/commit/rollback</code>. The runtime switches from <code>hasattr</code>-sniffing to <code>isinstance</code> dispatch. Also closes Slice-1 follow-up #2.</li>
-              <li><span class="label">D2.</span> <code>FilesystemAdapter(root: Path)</code>; tools take an <code>FsHandle</code> first arg (same shape as SQL's <code>conn</code> injection). Path traversal rejected (raises <code>ValueError</code>). Snapshots are <em>lazy</em> — first touch of a path inside an effect backs it up; subsequent touches in the same effect don't.</li>
-              <li><span class="label">D3.</span> The acceptance bar is <em>mixed-resource</em>: one <code>agent_txn</code> with <code>{"sql": SQLiteAdapter, "fs": FilesystemAdapter}</code>, an agent calling both kinds of tools, rollback wiping both, commit persisting both.</li>
+              <li><span class="label">D1 — <code>TransactionalResourceAdapter</code> sub-protocol.</span> A <code>Protocol</code> an adapter <em>opts into</em> by declaring <code>begin/commit/rollback</code> alongside the base <code>snapshot/apply/restore</code>. The runtime swapped <code>hasattr</code>-sniffing for <code>isinstance</code> dispatch — typo'd <code>begin</code> now fails at type-check rather than silently no-op'ing. Closed Slice-1 follow-up #2.</li>
+              <li><span class="label">D2 — <code>FsHandle</code>: rooted + lazy snapshot.</span> <code>FilesystemAdapter(root: Path)</code>; tools receive an <code>FsHandle</code> first arg (same shape as SQL's <code>conn</code> injection). Path-traversal and symlink escape rejected via <code>Path.resolve()</code> + <code>is_relative_to(root)</code> — defence at the handle boundary, not after the write. Snapshots are <em>lazy</em>: backup is taken at <em>first touch</em> of a path inside an effect; subsequent touches in the same effect don't re-snapshot.</li>
+              <li><span class="label">D3 — mixed-resource demo as the acceptance bar.</span> One <code>agent_txn</code> carrying <code>{"sql": SQLiteAdapter, "fs": FilesystemAdapter}</code>, an agent calling both kinds of tools, rollback wiping both, commit persisting both. Zero runtime changes beyond the D1 swap.</li>
             </ul>
-            <p><span class="label">Out of scope.</span> Staging, gating, compensators, isolation, replay, dry-run, MCP. The <code>read_keys</code> / <code>write_keys</code> slots stay inert.</p>
-            <p><span class="label">Done when.</span> Round-trip restore semantics verified (including the file-didn't-exist and file-was-deleted edge cases), path traversal rejected, backup tempdir cleaned up on every path, the D3 mixed-resource test passes, and the 69 Slice-1 tests stay green.</p>
+            <p><span class="label">Out of scope (as planned).</span> Staging, gating, compensators, isolation, replay, dry-run, MCP. The <code>read_keys</code> / <code>write_keys</code> slots stayed inert, awaiting Slice 4.</p>
+            <p><span class="label">Evidence.</span> <code>pytest -q</code> → 103 passing, +34 over Slice 1. Round-trip restore verified for the file-didn't-exist, file-existed, and file-was-deleted edge cases. Path-traversal / symlink-escape rejected. Backup tempdir cleaned up on every path. Mixed-resource demo passes.</p>
           </div>
         </details>
       </article>
 
       <!-- SLICE 3 -->
-      <article class="slice queued">
+      <article class="slice active">
         <h3><span class="num">03</span> HTTP / irreversible adapter</h3>
-        <div class="badges"><span class="badge queued">queued</span><span class="badge dim">depends on FU#1</span></div>
-        <p class="one-liner">Effects that cannot be undone. Pherix's answer: stage them, only fire at commit, and gate or compensate.</p>
+        <div class="badges">
+          <span class="badge active">in design</span>
+          <span class="badge dim">D1–D4 locked · D5 open</span>
+          <span class="badge dim">depends on FU#1</span>
+        </div>
+        <p class="one-liner">Effects that cannot be undone. The runtime stops folding forward live; effects ride in <code>STAGED</code> until commit. Compensators act as semantic left-inverses; un-compensated irreversibles gate.</p>
         <details>
-          <summary>Why this changes the model</summary>
+          <summary>Why this changes the model · decisions</summary>
           <div class="body">
-            <p>Slices 1–2 work because the underlying resources support snapshot+restore. HTTP doesn't — you can't un-send a webhook. The runtime stops <em>applying live</em> and starts <em>staging</em>: the agent gets a <code>StagedResult</code> placeholder, the effect's real fire-time is moved to <code>commit()</code>. Two sub-cases:</p>
+            <p><span class="label">The shift.</span> Slices 1–2 worked because the underlying resources support a true snapshot+restore pair. HTTP doesn't — you can't un-send a webhook, can't un-charge a card. The runtime stops <em>applying live</em> and starts <em>staging</em>: every irreversible effect is held in <code>EffectStatus.STAGED</code>, the agent receives a <code>StagedResult</code> placeholder, and the effect's real fire-time moves to <code>commit()</code>. The journal is still the ground truth — staging is just a pause in the forward fold.</p>
+            <p><span class="label">Locked decisions.</span></p>
             <ul>
-              <li><span class="label">Has compensator.</span> Auto-commits at commit-time; on rollback, the compensator runs (e.g. <code>refund(charge_id)</code> for <code>charge(amount)</code>).</li>
-              <li><span class="label">No compensator.</span> Commit <em>blocks</em> on explicit <code>approve_irreversible()</code> — a gate, a human-in-the-loop hook.</li>
+              <li><span class="label">D1 — <code>StagedResult</code> sentinel.</span> A single-field token carrying just the <code>effect_id</code>. No semantic payload — it's a name for a future point in the journal, not a value to compute on. Agents that try to do arithmetic on it are asking a question outside the model.</li>
+              <li><span class="label">D2 — Compensators as <code>@tool</code>-registered names.</span> A compensator is the <em>semantic left-inverse</em> of an irreversible: <code>compensator ∘ tool ≈ identity</code> at the resource level (a refund undoes a charge to the user-observable state, even though the original event remains in the merchant's books). Registered by name on the tool; recorded as "available" on successful commit; invoked only on post-commit rollback or D5 partial-commit recovery.</li>
+              <li><span class="label">D3 — Pre-approval via <code>approve_irreversible(effect_id)</code>.</span> An out-of-band approver records a verdict against a specific staged effect <em>before</em> commit. Pherix consults the verdict at commit-time; it doesn't generate one. Un-compensated irreversibles without a verdict cause <code>commit()</code> to block — the gate is explicit, not implicit.</li>
+              <li><span class="label">D4 — TOCTOU-safe policy re-evaluation at commit.</span> Policy is a predicate <code>P(effect, world_state)</code>. Because <code>world_state</code> may evolve between stage-time and commit-time (other staged effects spending the same budget, an approval revoked, content reclassified), Pherix folds <code>P</code> over the journal <em>twice</em>: stage-time for fail-fast feedback, commit-time for actual enforcement. The window between check and use is closed by construction.</li>
             </ul>
-            <p>Idempotency keys (the <code>effect_id</code> hash) become load-bearing here — replays of staged effects must not double-fire. This is why Slice-1 follow-up #1 (silent <code>str()</code> coercion of non-serializable args) must be resolved before Slice 3 starts.</p>
+            <p><span class="label">D5 — open.</span> How much partial-commit recovery sits in Slice 3 vs. later. Mid-commit a sequence of irreversibles can fail after some have fired; the question is whether the journal auto-walks backward through registered compensators, or surfaces a <code>PARTIAL</code> state and asks the operator. See <a href="slice-3-decisions.html">slice-3-decisions.html</a> for the framing.</p>
+            <p><span class="label">Why FU#1 first.</span> Idempotency keys (the <code>effect_id</code> hash) become load-bearing in Slice 3 — replays of staged effects must not double-fire. Silent <code>str()</code>-coercion of non-serializable args can collide distinct objects onto the same key. Resolve before Slice 3 starts.</p>
+            <p><span class="label">Decision aid.</span> Interactive walkthrough of D1–D5 with diagrams: <a href="slice-3-decisions.html">slice-3-decisions.html</a>.</p>
           </div>
         </details>
       </article>
@@ -602,10 +790,11 @@
 
   <!-- =========================================== -->
   <section id="followups">
-    <h2>Slice-1 review follow-ups <span class="hint">— four items, each gated to the slice it must be resolved before</span></h2>
+    <h2>Slice-1 review follow-ups <span class="hint">— four items; #2 resolved by Slice 2 D1, three remain open</span></h2>
     <p class="lede">
       Captured in <code>docs/ROADMAP.md</code>. None blocked Slice 1's correctness — they were intentional simplifications.
-      Each is now attached to the slice that promotes the simplification from "fine for now" to "actively wrong."
+      Each is attached to the slice that promotes the simplification from "fine for now" to "actively wrong."
+      <strong>#2 (adapter lifecycle is duck-typed)</strong> was resolved in Slice 2 by the <code>TransactionalResourceAdapter</code> sub-protocol (D1).
     </p>
 
     <div class="followups-list">
@@ -623,17 +812,17 @@
         <span class="fu-gate">gates Slice 3</span>
       </div>
 
-      <div class="followup">
+      <div class="followup resolved">
         <span class="fu-id">2</span>
         <div>
           <h4 class="fu-title">Adapter lifecycle is duck-typed, not in the protocol</h4>
           <p class="fu-body">
-            <code>runtime.py</code> currently does <code>hasattr(adapter, "begin")</code> to decide whether to call <code>begin/commit/rollback</code>.
-            The <code>ResourceAdapter</code> protocol in <code>adapters/base.py</code> only declares <code>snapshot/apply/restore/supports_rollback</code>.
-            A typo in an adapter's method name silently no-ops. <strong>Resolved by D1</strong> in Slice 2: introduce <code>TransactionalResourceAdapter</code> sub-protocol and dispatch with <code>isinstance</code>.
+            <code>runtime.py</code> was doing <code>hasattr(adapter, "begin")</code> to decide whether to call <code>begin/commit/rollback</code>;
+            the <code>ResourceAdapter</code> protocol in <code>adapters/base.py</code> only declared <code>snapshot/apply/restore/supports_rollback</code>,
+            so a typo silently no-op'd. <strong>Resolved by Slice 2 D1</strong> (<code>0b7040f</code>): <code>TransactionalResourceAdapter(ResourceAdapter, Protocol)</code> sub-protocol now declares the lifecycle, and the runtime dispatches via <code>isinstance</code>. A typo'd <code>begin</code> fails at type-check rather than silently skipping.
           </p>
         </div>
-        <span class="fu-gate">gates Slice 2 · D1</span>
+        <span class="fu-gate">resolved · Slice 2 D1</span>
       </div>
 
       <div class="followup nit">
@@ -662,6 +851,116 @@
   </section>
 
   <!-- =========================================== -->
+  <section id="beyond">
+    <div class="spec-zone-header">
+      <h2>Beyond Slice 8 — the trilogy</h2>
+      <span class="spec-tag">SPECULATIVE</span>
+    </div>
+    <p class="spec-lede">
+      By the end of Slice 8 the <strong>engine</strong> is complete — snapshot/rollback (Slices 1–3), isolation (Slice 4),
+      replay (Slice 5), policy (Slice 6), dry-run (Slice 7), and a language-agnostic gateway (Slice 8). Past that line
+      sit two parallel pillars over the same substrate. They aren't sequels to the determinism pillar; they're
+      <em>different traversals of the same journal</em>.
+    </p>
+
+    <div class="trilogy-callout" role="note" aria-label="Trilogy callout">
+      <div class="tc-eq">
+        <span class="tc-term">Determinism</span>
+        <span class="tc-plus">+</span>
+        <span class="tc-term">Memory</span>
+        <span class="tc-plus">+</span>
+        <span class="tc-term">Audit</span>
+      </div>
+      <p>
+        All three derived from the same substrate. Walk the journal forward / backward = <strong>determinism</strong>.
+        Index the journal = <strong>memory</strong>. Query the journal = <strong>audit</strong>.
+        One substrate, three faces.
+      </p>
+    </div>
+
+    <div class="bootstrap-callout">
+      <span class="bc-icon">S2</span>
+      <div>
+        <h4>Bootstrap milestone — Slice 2 already makes one face real <span class="free-tag">free with Slice 2</span></h4>
+        <p>
+          With <code>FilesystemAdapter</code> merged (<code>c926f97</code>), Claude Code's own memory directory is already a Pherix-transactable resource. Saving a memory inside an <code>agent_txn</code> and rolling back when the conversation goes sideways is the first honest dogfood of the memory face — no new adapter required.
+        </p>
+        <p>
+          And because every staged effect is journalled before it fires, the audit face is similarly free: the journal we already persist <em>is</em> the audit log. Beyond Slice 8 isn't a hand-wave — both pillars are partially observable in the engine today.
+        </p>
+      </div>
+    </div>
+
+    <div class="slices">
+
+      <!-- PILLAR: MEMORY SUBSTRATE -->
+      <article class="slice spec">
+        <h3><span class="num">M</span> Memory substrate</h3>
+        <div class="badges">
+          <span class="badge spec">pillar · beyond Slice 8</span>
+          <span class="badge dim">depends on 3 · 4 · 6 · 8</span>
+        </div>
+        <p class="one-liner">
+          Index the journal. <code>VectorAdapter</code> family + memory-specific policy vocabulary + agent-memory frontend.
+          The journal is the ground truth; embeddings are lossy indices over it.
+        </p>
+        <details>
+          <summary>The three components &amp; why each upstream slice matters</summary>
+          <div class="body">
+            <p><span class="label">What.</span> A complete memory layer over the journal, in three components:</p>
+            <ul>
+              <li><span class="label">VectorAdapter family.</span> Adapters for the data shapes agent memory actually uses — vector stores (HNSW-style indices where "write" rebalances the graph and "read" is a top-k similarity query), KV stores with time-to-live and decay, summarisation-aware stores where the <em>history</em> of a value matters as much as its current contents. Each needs <code>snapshot/apply/restore</code> respecting the backend's real semantics — savepoints don't help when the structure is an approximate-nearest-neighbour index.</li>
+              <li><span class="label">Memory policy vocabulary.</span> A library of predicates over memory effects: PII classifiers, temporal decay rules ("decay PII after 30 days; never decay user-stated preferences"), scope rules over multi-agent visibility, consensus rules ("this memory commits only if N agents agree"). Each is a function the Slice 6 engine can call at stage-time and commit-time.</li>
+              <li><span class="label">Agent-memory frontend.</span> The same architectural move as Slice 8's MCP gateway, pointed at agent frameworks — LangChain, Letta, LangMem, Claude Code itself. The framework keeps its API; Pherix provides the transactional, journalled, isolated, policy-gated guarantees underneath.</li>
+            </ul>
+            <p><span class="label">Why these upstream slices.</span></p>
+            <ul>
+              <li><span class="label">Slice 3</span> — memory stores are mostly remote and mostly approximate; they live in the irreversible regime. Staging, compensators, idempotency keys are the machinery memory adapters reuse.</li>
+              <li><span class="label">Slice 4</span> — agent memory is concurrent by construction (multi-agent reads, asynchronous writes). Without read/write-set tracking, shared memory is a race condition.</li>
+              <li><span class="label">Slice 6</span> — without the policy engine, there is nowhere to plug PII/decay/scope predicates in. Generic capability grants aren't enough to govern shared memory.</li>
+              <li><span class="label">Slice 8</span> — the front-end-agnostic discipline has to have held before claiming a memory frontend on top of the same core.</li>
+            </ul>
+            <p><span class="label">The framing.</span> The journal records every memory effect — every save, every recall, every decay. An embedding index is then just a fold over the journal into approximate-nearest-neighbour space. If the embedding is lost, it can be rebuilt by re-folding. The journal is ground truth; the index is a lossy observable.</p>
+          </div>
+        </details>
+      </article>
+
+      <!-- PILLAR: OBSERVABILITY / AUDIT -->
+      <article class="slice spec">
+        <h3><span class="num">A</span> Observability / audit</h3>
+        <div class="badges">
+          <span class="badge spec">pillar · beyond Slice 8</span>
+          <span class="badge dim">depends on 1 · 5 · 6</span>
+        </div>
+        <p class="one-liner">
+          Query the journal. The journal IS the audit log — this pillar exposes it. A query interface,
+          transaction replay/inspection, compliance views, regulator-friendly exports.
+        </p>
+        <details>
+          <summary>What this is, and what it isn't</summary>
+          <div class="body">
+            <p><span class="label">What.</span> The audit pillar surfaces the journal as a queryable, inspectable, exportable object. Three components:</p>
+            <ul>
+              <li><span class="label">Query surface.</span> Predicates over the effect journal — by transaction, by tool, by resource, by time window, by policy verdict. The journal already has the structure; this is the layer that exposes it as a first-class API rather than a SQLite file you have to know about.</li>
+              <li><span class="label">Replay / inspection.</span> Step a committed transaction effect-by-effect against a forked copy of state; diff the state before and after each effect; see exactly which predicate held and which didn't. Slice 5 already builds replay as a fold-forward; this pillar wraps it in an operator-facing surface.</li>
+              <li><span class="label">Compliance views &amp; exports.</span> Regulator-friendly projections of the journal — who did what, when, against which resource, under which policy verdict, with which approval. Append-only, immutable, signed. The artefact a compliance officer or external auditor can ingest without needing to understand Pherix internals.</li>
+            </ul>
+            <p><span class="label">What this is NOT.</span> This pillar does <em>not</em> watch LLM traces, score model outputs, or compete with LangSmith / Langfuse / Arize at the observability-of-the-model layer. Pherix sits at the tool-call layer and audits <em>effects on the world</em>. AI-signal-based predicates (toxicity scores, alignment classifiers, jailbreak detectors) plug into <strong>Slice 6's policy engine</strong> as score-based predicate hooks — they are <em>consumed</em> as one of many predicate types, not produced as a Pherix slice direction. Pherix wraps tool calls; it doesn't run LLMs.</p>
+            <p><span class="label">Why these upstream slices.</span></p>
+            <ul>
+              <li><span class="label">Slice 1</span> — the SQLite audit journal that already exists is the substrate. The journal is the product; this pillar is the surface.</li>
+              <li><span class="label">Slice 5</span> — replay is the operator's primary inspection tool. "Show me exactly what this transaction did, step by step" reduces to fold-forward-against-fresh-state.</li>
+              <li><span class="label">Slice 6</span> — every audit row carries the policy verdict that held over it. Without a real policy engine, there's nothing meaningful to audit — every effect is just "allowed because nothing said no."</li>
+            </ul>
+            <p><span class="label">The framing.</span> Determinism and audit fall out of the same property of the journal: it's an append-only, totally-ordered record of effects with adapter-resolved before/after states. Determinism is the journal walked forward to enforce; audit is the same journal walked forward to <em>explain</em>.</p>
+          </div>
+        </details>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- =========================================== -->
   <section id="closing">
     <h2>Reading the map</h2>
     <div class="insight">
@@ -673,6 +972,9 @@
       </p>
       <p>
         Every follow-up dot on the timeline is a Slice-1 simplification whose interest-rate becomes due at a specific later slice. Resolving them on time is how Pherix stays the shape it was designed to be.
+      </p>
+      <p>
+        The <em>Beyond Slice 8</em> zone is what the eight-slice engine <em>enables</em>, not what it builds. Two parallel pillars over the same journal: <strong>memory</strong> (index it) and <strong>audit</strong> (query it), each a different traversal of the substrate the determinism pillar already owns. The first dogfood of both lands as a free byproduct of Slice 2 — the engine and its descendants meet sooner than the slice numbering suggests.
       </p>
     </div>
   </section>

@@ -207,6 +207,26 @@
     color: var(--ink-2);
   }
   nav.toc a:hover { color: var(--accent); }
+  nav.toc ul.sub {
+    list-style: none;
+    padding: 2px 0 4px 22px;
+    margin: 2px 0 4px;
+    border-left: 1px solid var(--rule);
+    margin-left: 8px;
+  }
+  nav.toc ul.sub li {
+    counter-increment: none;
+    padding: 1px 0;
+    font-size: 11px;
+  }
+  nav.toc ul.sub li::before {
+    content: "⊥";
+    color: var(--accent);
+    margin-right: 8px;
+    font-family: var(--mono);
+  }
+  nav.toc ul.sub a { color: var(--ink-3); }
+  nav.toc ul.sub a:hover { color: var(--accent); }
   .toc-label {
     font-size: 10px;
     letter-spacing: 0.22em;
@@ -912,6 +932,368 @@
     margin-right: 4px;
     transform: translateY(-1px);
   }
+
+  /* ====================== ORTHOGONALITY ====================== */
+  .ortho-intro {
+    border-left: 2px solid var(--ink);
+    padding: 4px 0 4px 20px;
+    margin: 20px 0 32px;
+    max-width: 70ch;
+  }
+  .ortho-intro .perp {
+    font-family: var(--mono);
+    font-weight: 500;
+    color: var(--accent);
+  }
+  .ortho-intro b { font-weight: 500; color: var(--ink); }
+
+  .ortho-sub-head {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: baseline;
+    margin: 56px 0 18px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .ortho-sub-head .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    color: var(--accent);
+  }
+  .ortho-sub-head h3 {
+    margin: 0;
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-transform: none;
+  }
+  .ortho-sub-head h3 em { font-style: normal; color: var(--accent); }
+  .ortho-sub-head .tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* the matrix */
+  .matrix-wrap {
+    border: 1px solid var(--rule);
+    background: var(--paper-2);
+    margin: 18px 0 28px;
+    overflow-x: auto;
+  }
+  .matrix-head {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .matrix-head .fig { color: var(--accent); }
+  table.matrix {
+    border-collapse: collapse;
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    background: var(--paper);
+  }
+  table.matrix th, table.matrix td {
+    border: 1px solid var(--rule);
+    padding: 0;
+    text-align: center;
+    vertical-align: middle;
+  }
+  table.matrix thead th {
+    background: var(--paper-2);
+    color: var(--ink-3);
+    font-weight: 500;
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 12px 6px;
+    line-height: 1.25;
+    vertical-align: bottom;
+    min-width: 64px;
+  }
+  table.matrix thead th.row-label-h {
+    text-align: left;
+    padding: 12px 14px;
+    min-width: 160px;
+    color: var(--ink);
+  }
+  table.matrix tbody th {
+    text-align: left;
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink);
+    font-weight: 500;
+    background: var(--paper);
+    border-right: 1px solid var(--ink);
+  }
+  table.matrix tbody th small {
+    display: block;
+    font-weight: 400;
+    color: var(--ink-3);
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+  table.matrix td {
+    height: 38px;
+    color: var(--ink-3);
+    background: var(--paper);
+    position: relative;
+  }
+  table.matrix td.on {
+    background: var(--accent);
+    color: var(--paper);
+    font-weight: 500;
+    font-size: 13px;
+  }
+  table.matrix td.on::after { content: "●"; }
+  table.matrix td.off::after { content: "·"; color: var(--rule); }
+  table.matrix tbody tr:hover th { color: var(--accent); }
+  table.matrix tbody tr.muted th { color: var(--ink-3); font-style: italic; }
+  table.matrix tbody tr.muted td.on { background: var(--ink-3); }
+
+  .matrix-foot {
+    padding: 12px 18px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-2);
+    line-height: 1.6;
+  }
+  .matrix-foot .lemma {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .matrix-foot .perp { color: var(--accent); }
+
+  /* categorisation strip */
+  .cat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 18px 0 32px;
+  }
+  @media (max-width: 880px) { .cat-grid { grid-template-columns: 1fr; } }
+  .cat-cell {
+    background: var(--paper);
+    padding: 22px 22px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .cat-cell .cat-rank {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .cat-cell .cat-rank i {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+  .cat-cell.necessary .cat-rank i { background: var(--green); }
+  .cat-cell.kind .cat-rank i { background: var(--accent); }
+  .cat-cell.bet .cat-rank i { background: var(--ink); }
+  .cat-cell.convention .cat-rank i { background: transparent; border: 1px solid var(--ink-3); }
+  .cat-cell h4 {
+    margin: 0;
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 18px;
+    color: var(--ink);
+  }
+  .cat-cell h4 em { font-style: normal; }
+  .cat-cell.necessary h4 em { color: var(--green); }
+  .cat-cell.kind h4 em { color: var(--accent); }
+  .cat-cell.bet h4 em { color: var(--ink); border-bottom: 2px solid var(--accent); padding-bottom: 1px; }
+  .cat-cell.convention h4 em { color: var(--ink-3); }
+  .cat-cell ul.splits {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0 0;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.65;
+  }
+  .cat-cell ul.splits li {
+    padding: 5px 0;
+    border-top: 1px solid var(--rule);
+    color: var(--ink-2);
+  }
+  .cat-cell ul.splits li:first-child { border-top: none; }
+  .cat-cell ul.splits li .perp { color: var(--accent); }
+  .cat-cell ul.splits li .perp-mute { color: var(--ink-3); }
+  .cat-cell .gloss {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 13.5px;
+    color: var(--ink-2);
+    line-height: 1.5;
+    margin: 2px 0 0;
+  }
+  .cat-cell.bet { grid-column: 1 / -1; background: var(--paper-2); }
+  .cat-cell.convention { grid-column: 1 / -1; background: var(--paper); }
+  @media (max-width: 880px) {
+    .cat-cell.bet, .cat-cell.convention { grid-column: 1; }
+  }
+
+  /* the three numbered orthogonality arguments */
+  .arg-list {
+    margin: 8px 0 28px;
+    display: grid;
+    gap: 14px;
+  }
+  .arg-item {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 18px;
+    padding: 18px 22px 18px 18px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    border-left: 3px solid var(--green);
+  }
+  .arg-item .arg-n {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 500;
+    color: var(--green);
+    line-height: 1;
+    font-feature-settings: "tnum";
+  }
+  .arg-item .arg-n small {
+    display: block;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-top: 6px;
+    font-weight: 500;
+  }
+  .arg-item h5 {
+    margin: 0 0 6px;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .arg-item h5 .perp { color: var(--accent); }
+  .arg-item h5 .v {
+    color: var(--ink-3);
+    margin: 0 6px;
+  }
+  .arg-item p {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 15.5px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: none;
+  }
+  .arg-item p em { color: var(--ink); font-style: italic; }
+  .arg-item.sharp { border-left-color: var(--accent); }
+  .arg-item.sharp .arg-n { color: var(--accent); }
+
+  /* the closing line */
+  .ortho-close {
+    margin: 36px 0 0;
+    padding: 24px 28px;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--accent);
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 19px;
+    line-height: 1.5;
+    color: var(--ink);
+    max-width: none;
+  }
+  .ortho-close strong { font-style: normal; color: var(--accent); font-weight: 500; }
+  .ortho-close .perp { font-family: var(--mono); font-style: normal; color: var(--accent); }
+
+  /* honest concession block */
+  .concession {
+    margin: 24px 0;
+    padding: 18px 22px;
+    border: 1px dashed var(--rule);
+    background: var(--paper);
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 70ch;
+  }
+  .concession .lbl {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 8px;
+  }
+  .concession ul {
+    margin: 8px 0 0;
+    padding-left: 18px;
+  }
+  .concession ul li { margin-bottom: 6px; }
+  .concession b { color: var(--ink); font-weight: 500; }
+
+  /* the annotated overlay diagram */
+  .overlay-wrap {
+    border: 1px solid var(--rule);
+    background: var(--paper-2);
+    margin: 18px 0 28px;
+  }
+  .overlay-wrap .overlay-head {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: flex;
+    justify-content: space-between;
+  }
+  .overlay-wrap .overlay-head .fig { color: var(--accent); }
+  .overlay-wrap .overlay-body { padding: 24px 22px; }
+  .overlay-wrap svg { width: 100%; height: auto; display: block; }
+  .overlay-foot {
+    padding: 10px 18px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+    line-height: 1.6;
+  }
+  .overlay-foot .perp { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -977,7 +1359,12 @@
       <ol>
         <li><a href="#shipped">What got shipped</a></li>
         <li><a href="#model">The mental model</a></li>
-        <li><a href="#architecture">Architecture</a></li>
+        <li>
+          <a href="#architecture">Architecture</a>
+          <ul class="sub">
+            <li><a href="#orthogonality">Why these splits?</a></li>
+          </ul>
+        </li>
         <li><a href="#data">Data structures</a></li>
         <li><a href="#state">State machine</a></li>
         <li><a href="#lifecycle">Effect lifecycle</a></li>
@@ -1193,6 +1580,318 @@
 
       <h3>How a tool call flows through it</h3>
       <p>The agent calls a decorated function. <span class="ident">tools.py</span> sees an active <span class="ident">TxnContext</span> in its <span class="ident">ContextVar</span> &mdash; Python&rsquo;s async&#8209;safe analogue of thread&#8209;local state &mdash; and routes the call to <span class="ident">ctx.record_tool_call(...)</span> instead of executing the raw function. <span class="ident">runtime.py</span> then resolves the adapter from <span class="ident">spec.resource</span>, builds the <span class="ident">Effect</span>, appends it to the journal, asks the adapter to <span class="ident">snapshot()</span>, then to <span class="ident">apply()</span>, and finally writes the result to the audit journal. Outside <span class="ident">agent_txn()</span> the <span class="ident">@tool</span> wrapper is a transparent passthrough &mdash; tools work un&#8209;journalled, no transaction awareness needed at the call&#8209;site.</p>
+
+      <!-- ============== 3.b. ORTHOGONALITY ============== -->
+      <div id="orthogonality">
+
+      <div class="ortho-sub-head">
+        <span class="num">§ 03 &middot; b</span>
+        <h3>Why these splits? &mdash; the <em>orthogonality</em> argument</h3>
+        <span class="tag">a deepening, not a restating</span>
+      </div>
+
+      <p class="ortho-intro">
+        Nine modules to support a transaction that, in the end, decides whether some
+        writes happen or unhappen, is a fair thing to push back on. The defensible
+        test is <b>orthogonality</b>: two things belong in different modules
+        <em>iff</em> they need to vary independently. Borrowing the notation from
+        linear algebra &mdash; <span class="perp">A &perp; B</span> reads &ldquo;A is
+        independent of B&rdquo; &mdash; the claim is that each module corresponds to
+        exactly one axis of variation, and no two modules share an axis. That is
+        why the splits are the splits.
+      </p>
+
+      <p>The pitch &mdash; one engine handling five hard problems as different traversals of a single journal &mdash; forces a specific set of axes. Read across the matrix: each row owns a column nothing else owns.</p>
+
+      <!-- THE MATRIX -->
+      <div class="matrix-wrap">
+        <div class="matrix-head">
+          <span><span class="fig">fig 4.</span> Module &times; axis &mdash; ownership matrix</span>
+          <span>each row owns its column &middot; no two rows share an axis</span>
+        </div>
+        <table class="matrix" aria-label="Module by axis ownership matrix">
+          <thead>
+            <tr>
+              <th class="row-label-h">module</th>
+              <th>data<br/>shape</th>
+              <th>state<br/>transitions</th>
+              <th>resource<br/>protocol</th>
+              <th>concrete<br/>resource</th>
+              <th>interception</th>
+              <th>authorisation</th>
+              <th>orchestration</th>
+              <th>audit<br/>persistence</th>
+              <th>frontend<br/>choice</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th>effects.py<small>journal cell</small></th>
+              <td class="on"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td>
+            </tr>
+            <tr>
+              <th>transaction.py<small>lifecycle</small></th>
+              <td class="off"></td><td class="on"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td>
+            </tr>
+            <tr>
+              <th>adapters/base.py<small>protocol</small></th>
+              <td class="off"></td><td class="off"></td><td class="on"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td>
+            </tr>
+            <tr>
+              <th>adapters/sql.py<small>concrete</small></th>
+              <td class="off"></td><td class="off"></td><td class="off"></td><td class="on"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td>
+            </tr>
+            <tr>
+              <th>tools.py<small>metaprogramming</small></th>
+              <td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="on"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td>
+            </tr>
+            <tr>
+              <th>policy.py<small>predicate logic</small></th>
+              <td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="on"></td><td class="off"></td><td class="off"></td><td class="off"></td>
+            </tr>
+            <tr>
+              <th>runtime.py<small>driver</small></th>
+              <td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="on"></td><td class="off"></td><td class="off"></td>
+            </tr>
+            <tr>
+              <th>audit.py<small>separate db</small></th>
+              <td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="on"></td><td class="off"></td>
+            </tr>
+            <tr>
+              <th>frontends/library.py<small>re-export</small></th>
+              <td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="off"></td><td class="on"></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="matrix-foot">
+          <span class="lemma">Each row owns exactly one column. No two rows share one.</span>
+          &nbsp;&nbsp;That is what &ldquo;<span class="perp">module&#8201;&perp;&#8201;module</span>&rdquo; means concretely: collapsing any two rows would have to merge their columns &mdash; mixing two axes of variation back into one file.
+        </div>
+      </div>
+
+      <!-- THE CATEGORISATION -->
+      <p>Not every split is defensible on the same grounds. Three categories, plus an honest concession:</p>
+
+      <div class="cat-grid">
+        <div class="cat-cell necessary">
+          <div class="cat-rank"><i></i> A &middot; logically necessary</div>
+          <h4>splits that <em>must</em> exist</h4>
+          <p class="gloss">Future capabilities (replay, isolation, dry&#8209;run) demand these axes vary independently. Collapsing them would produce a category error, not just a clutter.</p>
+          <ul class="splits">
+            <li>journal <span class="perp">&perp;</span> state&nbsp;machine</li>
+            <li>protocol <span class="perp">&perp;</span> concrete&nbsp;adapter</li>
+            <li>audit&nbsp;state <span class="perp">&perp;</span> resource&nbsp;state</li>
+          </ul>
+        </div>
+        <div class="cat-cell kind">
+          <div class="cat-rank"><i></i> B &middot; categorically different work</div>
+          <h4>splits that <em>earn their keep</em></h4>
+          <p class="gloss">Coherent only by accident if combined &mdash; they share no shape. Metaprogramming, predicate logic, and orchestration do not belong in the same file.</p>
+          <ul class="splits">
+            <li>tools.py &mdash; <em>metaprogramming</em></li>
+            <li>policy.py &mdash; <em>predicate logic</em></li>
+            <li>runtime.py &mdash; <em>orchestration</em></li>
+          </ul>
+        </div>
+        <div class="cat-cell bet">
+          <div class="cat-rank"><i></i> C &middot; the architectural bet</div>
+          <h4>the <em>one split</em> the whole roadmap depends on</h4>
+          <ul class="splits">
+            <li><span class="perp">frontends/&#8201;&perp;&#8201;core/</span> &mdash; library frontend (in-process decorator) and MCP gateway (Slice&nbsp;8) share the same engine; the engine must depend on neither. Collapse this split and Slice&nbsp;8 becomes a rewrite, not a re-skin. This is <em>why</em> <span class="ident">frontends/</span> exists as a top-level package on day one &mdash; it is not decoration.</li>
+          </ul>
+        </div>
+        <div class="cat-cell convention">
+          <div class="cat-rank"><i></i> D &middot; honest concession</div>
+          <h4><em>not every split earns it on logic alone</em></h4>
+          <ul class="splits">
+            <li><span class="perp-mute">pherix/__init__.py</span> separate from <span class="perp-mute">library.py</span> &mdash; Python convention (re-exports). Not necessity.</li>
+            <li><span class="perp-mute">policy.py</span> as its own ~50&#8209;line module <em>for Slice&nbsp;1</em> &mdash; defensible by trajectory (Slice&nbsp;6 grows it into capability grants, spend caps, content&#8209;aware rules) but honestly it could have lived inside <span class="ident">runtime.py</span> today. The one forward&#8209;leaning case.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- THE THREE LOGICALLY NECESSARY -->
+      <h3 style="margin-top: 36px;">The three that <em>logically must</em> be split</h3>
+      <p style="font-style: italic; color: var(--ink-2); margin-top: 8px;">Each of these is a real orthogonality &mdash; future capabilities demand the axes vary independently. The third is the sharpest.</p>
+
+      <div class="arg-list">
+
+        <div class="arg-item">
+          <div class="arg-n">01<small>journal &perp; state</small></div>
+          <div>
+            <h5>effects.py <span class="v">&perp;</span> transaction.py &nbsp; <span class="perp">(journal &perp; state machine)</span></h5>
+            <p>The journal is data that future capabilities &mdash; <em>replay, dry&#8209;run, audit</em> &mdash; must walk <em>without</em> going through the state machine. Coupling them forces replay to depend on transitions it doesn&rsquo;t care about: replay isn&rsquo;t governed by <span class="ident">OPEN&nbsp;&rarr;&nbsp;COMMITTED</span>, it is a pure forward fold of <span class="ident">apply</span> over the effects. If the only way to walk the list ran through a state machine, you would be re&#8209;running a state machine just to read data.</p>
+          </div>
+        </div>
+
+        <div class="arg-item">
+          <div class="arg-n">02<small>protocol &perp; impl</small></div>
+          <div>
+            <h5>adapters/base.py <span class="v">&perp;</span> adapters/sql.py &nbsp; <span class="perp">(protocol &perp; concrete adapter)</span></h5>
+            <p>The same journal must drive multiple adapters &mdash; SQL today, filesystem in Slice&nbsp;2, HTTP in Slice&nbsp;3. The protocol &mdash; <em>who</em> can be an adapter &mdash; must live separate from any one concrete implementation. Putting the protocol inside the SQL file would couple the abstraction to its first implementation. That is exactly the bug abstractions are meant to prevent: the interface should outlive the implementation that motivated it.</p>
+          </div>
+        </div>
+
+        <div class="arg-item sharp">
+          <div class="arg-n">03<small>audit &perp; state</small></div>
+          <div>
+            <h5>audit.py <span class="v">&perp;</span> any adapter&rsquo;s store &nbsp; <span class="perp">(audit persistence &perp; resource state)</span></h5>
+            <p>The sharpest one. <span class="ident">audit.py</span> writes to its <em>own</em> SQLite database, separate from any adapter&rsquo;s. If audit lived in the same database the transaction is transacting, then <span class="ident">rollback()</span> would roll back the audit too &mdash; and you would lose the record of what happened. Audit <em>must</em> live in separate persistence to be honest about &ldquo;rolled back&rdquo; vs. &ldquo;never happened&rdquo;. That is logical necessity, not convention. A failed transaction whose audit trail also vanished is indistinguishable from a transaction that was never attempted &mdash; which is the whole thing Pherix is built to make distinguishable.</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TIE-BACK TO MAIN DIAGRAM via overlay -->
+      <p>Map the four categories back onto the dependency graph in fig.&nbsp;1 &mdash; the same nine modules, now coloured by which kind of split they are:</p>
+
+      <div class="overlay-wrap">
+        <div class="overlay-head">
+          <span><span class="fig">fig 5.</span> Same modules, coloured by orthogonality category</span>
+          <span>read alongside fig 1</span>
+        </div>
+        <div class="overlay-body">
+          <svg viewBox="0 0 980 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Modules coloured by orthogonality category">
+            <defs>
+              <marker id="arr-o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-3)"/>
+              </marker>
+            </defs>
+
+            <!-- group: core -->
+            <rect x="20" y="40" width="700" height="460" fill="none" stroke="var(--rule)" stroke-dasharray="3 4"/>
+            <text x="32" y="32" font-family="JetBrains Mono" font-size="10" letter-spacing="2" fill="var(--ink-3)">PHERIX / CORE</text>
+
+            <!-- group: frontends -->
+            <rect x="760" y="200" width="200" height="140" fill="none" stroke="var(--accent)" stroke-width="1.4" stroke-dasharray="3 4"/>
+            <text x="772" y="192" font-family="JetBrains Mono" font-size="10" letter-spacing="2" fill="var(--accent)">FRONTENDS &middot; THE BET</text>
+
+            <!-- effects (necessary green) -->
+            <g transform="translate(50,80)">
+              <rect width="160" height="64" rx="2" fill="var(--paper)" stroke="var(--green)" stroke-width="2"/>
+              <text x="14" y="24" font-family="JetBrains Mono" font-size="12" fill="var(--ink)" font-weight="500">effects.py</text>
+              <text x="14" y="42" font-family="JetBrains Mono" font-size="9" fill="var(--green)" letter-spacing="1">A &middot; DATA SHAPE</text>
+              <text x="14" y="56" font-family="JetBrains Mono" font-size="9" fill="var(--ink-3)">⊥ state machine</text>
+            </g>
+            <!-- transaction (necessary green) -->
+            <g transform="translate(290,80)">
+              <rect width="160" height="64" rx="2" fill="var(--paper)" stroke="var(--green)" stroke-width="2"/>
+              <text x="14" y="24" font-family="JetBrains Mono" font-size="12" fill="var(--ink)" font-weight="500">transaction.py</text>
+              <text x="14" y="42" font-family="JetBrains Mono" font-size="9" fill="var(--green)" letter-spacing="1">A &middot; TRANSITIONS</text>
+              <text x="14" y="56" font-family="JetBrains Mono" font-size="9" fill="var(--ink-3)">⊥ journal</text>
+            </g>
+            <!-- adapters/base (necessary green) -->
+            <g transform="translate(50,200)">
+              <rect width="160" height="64" rx="2" fill="var(--paper)" stroke="var(--green)" stroke-width="2"/>
+              <text x="14" y="24" font-family="JetBrains Mono" font-size="12" fill="var(--ink)" font-weight="500">adapters/base.py</text>
+              <text x="14" y="42" font-family="JetBrains Mono" font-size="9" fill="var(--green)" letter-spacing="1">A &middot; PROTOCOL</text>
+              <text x="14" y="56" font-family="JetBrains Mono" font-size="9" fill="var(--ink-3)">⊥ impl</text>
+            </g>
+            <!-- adapters/sql (necessary green) -->
+            <g transform="translate(290,200)">
+              <rect width="160" height="64" rx="2" fill="var(--paper)" stroke="var(--green)" stroke-width="2"/>
+              <text x="14" y="24" font-family="JetBrains Mono" font-size="12" fill="var(--ink)" font-weight="500">adapters/sql.py</text>
+              <text x="14" y="42" font-family="JetBrains Mono" font-size="9" fill="var(--green)" letter-spacing="1">A &middot; CONCRETE</text>
+              <text x="14" y="56" font-family="JetBrains Mono" font-size="9" fill="var(--ink-3)">⊥ protocol</text>
+            </g>
+            <!-- tools (kind / rust) -->
+            <g transform="translate(530,80)">
+              <rect width="160" height="64" rx="2" fill="var(--paper)" stroke="var(--accent)" stroke-width="2"/>
+              <text x="14" y="24" font-family="JetBrains Mono" font-size="12" fill="var(--ink)" font-weight="500">tools.py</text>
+              <text x="14" y="42" font-family="JetBrains Mono" font-size="9" fill="var(--accent)" letter-spacing="1">B &middot; METAPROGRAMMING</text>
+              <text x="14" y="56" font-family="JetBrains Mono" font-size="9" fill="var(--ink-3)">ContextVar interception</text>
+            </g>
+            <!-- policy (kind, but marked as the convention concession) -->
+            <g transform="translate(530,200)">
+              <rect width="160" height="64" rx="2" fill="var(--paper)" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 3"/>
+              <text x="14" y="24" font-family="JetBrains Mono" font-size="12" fill="var(--ink)" font-weight="500">policy.py</text>
+              <text x="14" y="42" font-family="JetBrains Mono" font-size="9" fill="var(--accent)" letter-spacing="1">B &middot; PREDICATE LOGIC</text>
+              <text x="14" y="56" font-family="JetBrains Mono" font-size="9" fill="var(--ink-3)">+ D &middot; forward-leaning</text>
+            </g>
+            <!-- audit (necessary green, sharpest) -->
+            <g transform="translate(50,320)">
+              <rect width="160" height="64" rx="2" fill="var(--paper)" stroke="var(--green)" stroke-width="2.5"/>
+              <text x="14" y="24" font-family="JetBrains Mono" font-size="12" fill="var(--ink)" font-weight="500">audit.py</text>
+              <text x="14" y="42" font-family="JetBrains Mono" font-size="9" fill="var(--green)" letter-spacing="1">A &middot; SEPARATE STORE ★</text>
+              <text x="14" y="56" font-family="JetBrains Mono" font-size="9" fill="var(--ink-3)">⊥ adapter state</text>
+            </g>
+            <!-- runtime (kind / rust) -->
+            <g transform="translate(290,400)">
+              <rect width="220" height="76" rx="2" fill="var(--paper)" stroke="var(--accent)" stroke-width="2"/>
+              <text x="14" y="26" font-family="JetBrains Mono" font-size="13" fill="var(--ink)" font-weight="700">runtime.py</text>
+              <text x="14" y="48" font-family="JetBrains Mono" font-size="10" fill="var(--accent)" letter-spacing="1.5">B &middot; ORCHESTRATION</text>
+              <text x="14" y="66" font-family="JetBrains Mono" font-size="9" fill="var(--ink-3)">drives state, calls adapter, writes audit</text>
+            </g>
+            <!-- library (the bet) -->
+            <g transform="translate(780,240)">
+              <rect width="160" height="64" rx="2" fill="var(--paper)" stroke="var(--ink)" stroke-width="2.5"/>
+              <text x="14" y="24" font-family="JetBrains Mono" font-size="12" fill="var(--ink)" font-weight="500">library.py</text>
+              <text x="14" y="42" font-family="JetBrains Mono" font-size="9" fill="var(--ink)" letter-spacing="1">C &middot; THE BET</text>
+              <text x="14" y="56" font-family="JetBrains Mono" font-size="9" fill="var(--ink-3)">frontends/ ⊥ core/</text>
+            </g>
+
+            <!-- subtle dependency edges -->
+            <path d="M 290 112 L 210 112" fill="none" stroke="var(--ink-3)" stroke-width="0.8" opacity="0.5" marker-end="url(#arr-o)"/>
+            <path d="M 130 200 L 130 144" fill="none" stroke="var(--ink-3)" stroke-width="0.8" opacity="0.5" marker-end="url(#arr-o)"/>
+            <path d="M 290 232 L 210 232" fill="none" stroke="var(--ink-3)" stroke-width="0.8" opacity="0.5" marker-end="url(#arr-o)"/>
+            <path d="M 130 320 L 130 144" fill="none" stroke="var(--ink-3)" stroke-width="0.8" opacity="0.5" marker-end="url(#arr-o)"/>
+
+            <!-- the architectural bet boundary callout -->
+            <path d="M 730 270 C 750 270, 760 270, 778 270" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="2 3"/>
+            <text x="725" y="262" font-family="JetBrains Mono" font-size="9" fill="var(--accent)" text-anchor="end">⊥ boundary</text>
+
+            <!-- the audit-isolation callout -->
+            <text x="218" y="370" font-family="JetBrains Mono" font-size="9.5" fill="var(--green)">★ sharpest: audit must outlive rollback</text>
+            <path d="M 210 360 C 240 350, 270 348, 290 352" fill="none" stroke="var(--green)" stroke-width="1" stroke-dasharray="2 3"/>
+
+            <!-- legend for the category swatches, inline -->
+            <g transform="translate(540,340)">
+              <rect width="200" height="156" rx="2" fill="var(--paper-2)" stroke="var(--rule)" stroke-width="1"/>
+              <text x="14" y="22" font-family="JetBrains Mono" font-size="9" letter-spacing="2" fill="var(--ink-3)">KEY</text>
+
+              <rect x="14" y="32" width="14" height="10" fill="none" stroke="var(--green)" stroke-width="2"/>
+              <text x="36" y="42" font-family="JetBrains Mono" font-size="10" fill="var(--ink-2)">A &middot; logically necessary</text>
+
+              <rect x="14" y="52" width="14" height="10" fill="none" stroke="var(--accent)" stroke-width="2"/>
+              <text x="36" y="62" font-family="JetBrains Mono" font-size="10" fill="var(--ink-2)">B &middot; categorically different</text>
+
+              <rect x="14" y="72" width="14" height="10" fill="none" stroke="var(--ink)" stroke-width="2.5"/>
+              <text x="36" y="82" font-family="JetBrains Mono" font-size="10" fill="var(--ink-2)">C &middot; the architectural bet</text>
+
+              <rect x="14" y="92" width="14" height="10" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 3"/>
+              <text x="36" y="102" font-family="JetBrains Mono" font-size="10" fill="var(--ink-2)">D &middot; convention / forward-leaning</text>
+
+              <text x="14" y="124" font-family="Fraunces" font-style="italic" font-size="11" fill="var(--ink-3)">Outline colour = category.</text>
+              <text x="14" y="140" font-family="Fraunces" font-style="italic" font-size="11" fill="var(--ink-3)">Dashed = honest concession.</text>
+            </g>
+          </svg>
+        </div>
+        <div class="overlay-foot">
+          The bet (<span class="perp">frontends/&#8201;&perp;&#8201;core/</span>) is the only edge that runs <em>out</em> of the core box. Everything in core is colour&#8209;coded by which category earns its split. <span class="perp">audit.py</span> gets the extra weight because of the writes-its-own-DB property &mdash; it is the only module whose persistence layer is independent of the system it observes.
+        </div>
+      </div>
+
+      <!-- HONEST CONCESSION -->
+      <div class="concession">
+        <span class="lbl">honest concession</span>
+        <p style="margin: 0;">Two of the nine splits do <em>not</em> survive the orthogonality test on logic alone:</p>
+        <ul>
+          <li><b>pherix/__init__.py</b> separate from <span class="ident">library.py</span> &mdash; Python convention (the package re&#8209;exports its frontend). Not necessity. A flatter project layout could collapse them and lose nothing.</li>
+          <li><b>policy.py</b> as its own module <em>for Slice&nbsp;1</em> &mdash; ~50 lines, one allow/deny check. Defensible by trajectory (Slice&nbsp;6 grows it into capability grants, spend caps, content&#8209;aware rules, commit&#8209;time re&#8209;evaluation) but in Slice&nbsp;1 alone it could honestly have lived inside <span class="ident">runtime.py</span>. That is the one forward&#8209;leaning case &mdash; and naming it as such is what keeps the rest of the argument credible.</li>
+        </ul>
+      </div>
+
+      <!-- THE CLOSING LINE -->
+      <p class="ortho-close">
+        The framework is defensible to the degree splits correspond to real
+        orthogonalities &mdash; <strong>most do</strong>. It is over&#8209;engineered to the
+        degree splits anticipate growth that hasn&rsquo;t happened yet &mdash; and
+        <span class="perp">policy.py</span> is the one honest case of that. No
+        others.
+      </p>
+
+      </div>
+      <!-- /orthogonality -->
     </section>
 
     <!-- ============== 4. DATA STRUCTURES ============== -->
