@@ -824,13 +824,14 @@
       transactions, not inside one. You cannot sum it from per-agent guarantees.
       Two agents that are individually flawless can lose updates against each
       other the moment their reads and writes interleave on shared state. Slice
-      4 closes that gap. <strong>Four decisions are locked. D5 is the open
-      call</strong> — the question is how wide a circle of arbitration to draw
-      around the journal at this slice.
+      4 closes that gap. <strong>All five decisions are locked.</strong> D5 —
+      arbitration scope — chose option <b>(a)</b>: a single shared journal on a
+      single host as Slice 4's scope, with multi-process arbitration via the
+      Slice 8 gateway deferred to whenever the gateway lands.
     </p>
     <div class="meta-row">
       <span><b>Slice:</b> 4 — read/write-set tracking, conflict detection, resolution policy</span>
-      <span><b>Locked:</b> D1–D4 &nbsp;·&nbsp; <b>Open:</b> D5</span>
+      <span><b>Locked:</b> D1–D5 — D5 → option (a) single-host shared journal</span>
       <span><b>Slots already on the wire:</b> <code>Effect.read_keys</code>, <code>Effect.write_keys</code> (since Slice 1)</span>
     </div>
   </header>
@@ -843,7 +844,7 @@
     <a href="#d2">D2 — Versioning</a>
     <a href="#d3">D3 — When to detect</a>
     <a href="#d4">D4 — Resolution policy</a>
-    <a href="#d5">D5 — Arbitration scope<span class="open-tag">open</span></a>
+    <a href="#d5">D5 — Arbitration scope<span class="open-tag">locked · a</span></a>
     <a href="#interactive">Interactive</a>
     <a href="#closing">Serializability</a>
   </nav>
@@ -875,7 +876,7 @@
         <p class="one">Resolution is a function <em>f : conflict → {abort, retry, serialise}</em>. The operator chooses <em>f</em> per <code>agent_txn()</code>. Pherix provides the mechanism, not the policy.</p>
       </div>
       <div class="card open">
-        <div class="id">D5 · OPEN</div>
+        <div class="id">D5 · LOCKED → (a)</div>
         <div class="title">Arbitration scope.</div>
         <p class="one">Single-host shared journal (Slice 4) — or punt to the Slice 8 gateway as multi-process arbiter? Recommendation: (a) now, (b) when the gateway lands.</p>
       </div>
@@ -1859,7 +1860,7 @@
     <div class="d-head">
       <div class="d-id open">D5</div>
       <div class="d-title">
-        <h2>How wide a circle of arbitration ships in Slice 4?<span class="status open">open · your call</span></h2>
+        <h2>How wide a circle of arbitration ships in Slice 4?<span class="status open">locked · option (a)</span></h2>
         <p class="q">Conflict detection requires somewhere with the global view of what's committed. Single host now and the gateway later — or fork toward distributed consensus?</p>
       </div>
     </div>
