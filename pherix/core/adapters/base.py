@@ -64,3 +64,47 @@ class TransactionalResourceAdapter(ResourceAdapter, Protocol):
     def begin(self) -> None: ...
     def commit(self) -> None: ...
     def rollback(self) -> None: ...
+
+
+class VersionedResourceAdapter(ResourceAdapter, Protocol):
+    """Adapters that participate in isolation (Slice 4).
+
+    Versions form a totally ordered tag space per key (monotonically
+    increasing for SQL counters, or content-addressed sha256 for the
+    filesystem). The commit-time isolation diff folds the journal:
+    for every read effect, it re-reads the version *now* and compares
+    against the version captured at read-time — a mismatch flags a
+    conflict.
+
+    Adapters that cannot honestly version their resource — e.g.
+    :class:`HTTPAdapter`, which is irreversible and *isolated by
+    construction* via the staging lane (irreversible effects defer
+    fire to commit, so two pre-commit stages of the same effect
+    cannot race) — do not conform.
+
+    This Protocol is intentionally **not** ``@runtime_checkable``.
+    ``isinstance`` against it would only check method presence, not
+    behavioural conformance. The runtime gates isolation work on
+    ``adapter.supports_rollback()`` instead — that is the honest
+    contract. The Protocol exists for typing and documentation.
+    """
+
+    def read_version(self, key: tuple) -> object:
+        """Return the current version tag for ``key``.
+
+        Returns a non-None sentinel when the key has never been
+        written / does not exist (``0`` for SQL counters, the literal
+        string ``"__missing__"`` for filesystem hashes). Using a
+        non-None sentinel means an "I read this as absent, then
+        someone created it" case correctly flags as a conflict at
+        commit time (sentinel != hash).
+        """
+        ...
+
+    def write_version(self, key: tuple) -> object:
+        """Bump (or recompute) the version tag for ``key`` and return it.
+
+        For SQL: monotonic counter bump (atomic UPSERT). For filesystem:
+        the sha256 of the on-disk content *after* the write.
+        """
+        ...

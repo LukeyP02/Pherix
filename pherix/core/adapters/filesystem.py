@@ -16,6 +16,7 @@ landing at the original.
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import tempfile
 import uuid
@@ -24,6 +25,12 @@ from typing import Any, Callable
 
 from pherix.core.adapters.base import SnapshotHandle
 from pherix.core.effects import Effect
+
+# Sentinel returned by ``read_version`` when the path does not exist.
+# Using a non-None marker means the commit-time isolation diff can
+# distinguish "I read this file as absent" from a sha256 hash via a
+# plain ``!=`` comparison — a later create then correctly conflicts.
+_FS_MISSING = "__missing__"
 
 
 class FsHandle:
@@ -34,14 +41,38 @@ class FsHandle:
     elsewhere), and records first-touch backups into the effect's backup
     subdirectory. Subsequent touches of the same path are pass-through writes
     — the pre-effect state is already captured.
+
+    Slice 4: every ``read`` records a read_key ``(path, content-hash)`` and
+    every ``write`` / ``delete`` records a write_key into the bound Effect.
+    Recording is a no-op when ``effect`` is ``None`` (the handle still
+    functions for raw unit tests outside ``agent_txn``). Per-handle dedupe
+    sets ensure re-reading or re-writing the same path inside one effect
+    does not bloat the journal — the first read's version is the one the
+    agent's logic branched on, which is what the commit-time isolation
+    diff needs to compare against.
     """
 
-    def __init__(self, root: Path, backup_dir: Path, touched: dict[str, dict]):
+    def __init__(
+        self,
+        root: Path,
+        backup_dir: Path,
+        touched: dict[str, dict],
+        effect: Any = None,
+        adapter: "FilesystemAdapter | None" = None,
+    ):
         # ``root`` is pre-resolved by the adapter; storing it resolved means
         # every safe-path check compares like-for-like.
         self._root = root
         self._backup_dir = backup_dir
         self._touched = touched
+        # Slice 4 isolation: the handle records into ``effect.read_keys`` /
+        # ``effect.write_keys``. ``adapter`` supplies ``read_version`` for
+        # content-hashing on read. Both may be None — the handle then
+        # short-circuits recording and behaves exactly as in Slice 2.
+        self._effect = effect
+        self._adapter = adapter
+        self._recorded_reads: set[str] = set()
+        self._recorded_writes: set[str] = set()
 
     # --- public API (tool-facing) -------------------------------------------
 
@@ -50,11 +81,14 @@ class FsHandle:
         self._record_first_touch(rel_path, target)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
+        self._record_write_key(rel_path)
 
     def read(self, rel_path: str) -> bytes:
         target = self._safe_path(rel_path)
         # Reads do not trigger backups — they don't change state.
-        return target.read_bytes()
+        data = target.read_bytes()
+        self._record_read_key(rel_path)
+        return data
 
     def delete(self, rel_path: str) -> None:
         target = self._safe_path(rel_path)
@@ -63,6 +97,7 @@ class FsHandle:
         # captured "existed: False" and we still want a hard error here —
         # the agent asked us to delete something that wasn't there.
         target.unlink()
+        self._record_write_key(rel_path)
 
     # --- internals ----------------------------------------------------------
 
@@ -87,6 +122,27 @@ class FsHandle:
             self._touched[rel_path] = {"backup": backup_name, "existed": True}
         else:
             self._touched[rel_path] = {"backup": None, "existed": False}
+
+    # --- Slice 4 isolation recording ----------------------------------------
+
+    def _record_read_key(self, rel_path: str) -> None:
+        # ``effect`` / ``adapter`` are None outside an agent_txn — recording
+        # is a no-op so the handle stays usable for raw unit tests.
+        if self._effect is None or self._adapter is None:
+            return
+        if rel_path in self._recorded_reads:
+            return
+        version = self._adapter.read_version((rel_path,))
+        self._effect.read_keys.append(("fs", (rel_path,), version))
+        self._recorded_reads.add(rel_path)
+
+    def _record_write_key(self, rel_path: str) -> None:
+        if self._effect is None:
+            return
+        if rel_path in self._recorded_writes:
+            return
+        self._effect.write_keys.append(("fs", (rel_path,)))
+        self._recorded_writes.add(rel_path)
 
 
 class FilesystemAdapter:
@@ -177,3 +233,34 @@ class FilesystemAdapter:
             backup_dir=Path(snapshot.payload["backup_dir"]),
             touched=snapshot.payload["touched"],
         )
+
+    # --- versioning (Slice 4 — VersionedResourceAdapter) -------------------
+
+    def _resolve_versioned(self, key: tuple) -> Path:
+        # Mirror FsHandle._safe_path's containment check so version lookups
+        # cannot be tricked into reading content outside the root.
+        if len(key) != 1:
+            raise ValueError(
+                f"FilesystemAdapter version key must be a 1-tuple "
+                f"(rel_path,); got {key!r}"
+            )
+        rel_path = key[0]
+        candidate = Path(rel_path)
+        if candidate.is_absolute():
+            raise ValueError(f"path {rel_path!r} is outside root {self._root}")
+        resolved = (self._root / candidate).resolve()
+        if not resolved.is_relative_to(self._root):
+            raise ValueError(f"path {rel_path!r} is outside root {self._root}")
+        return resolved
+
+    def read_version(self, key: tuple) -> str:
+        path = self._resolve_versioned(key)
+        if not path.exists():
+            return _FS_MISSING
+        # Slice 4 cases hold small files; reading the whole file is fine.
+        # A streaming hash is a trivial swap if the test corpus grows.
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def write_version(self, key: tuple) -> str:
+        # Compute from on-disk content *after* the write — no cache.
+        return self.read_version(key)
