@@ -10,24 +10,110 @@ staged tool calls), and the gate-related errors ``GateBlocked`` /
 ``CompensatorNotRegistered``. ``approve_irreversible`` lives on the
 ``TxnContext`` yielded by :func:`agent_txn`, not as a standalone function:
 approval is *per-transaction*, not global.
+
+Slice 4 adds isolation: the resolution policies (:class:`Abort`,
+:class:`Retry`, :class:`Serialize`), the :class:`IsolationConflict`
+exception, the in-process :data:`JournalRegistry` arbitration substrate,
+and :func:`run_txn` — the Pherix-driven entry point that makes
+:class:`Retry` mechanically honest by owning the callable Pherix may
+re-invoke on conflict.
 """
+
+from typing import Any, Callable
 
 from pherix.core.adapters.base import (
     ResourceAdapter,
     SnapshotHandle,
     TransactionalResourceAdapter,
+    VersionedResourceAdapter,
 )
 from pherix.core.adapters.filesystem import FilesystemAdapter
 from pherix.core.adapters.http import HTTPAdapter, IrreversibleAdapterError
 from pherix.core.adapters.sql import SQLiteAdapter
 from pherix.core.audit import AuditJournal
 from pherix.core.effects import StagedResult
+from pherix.core.isolation import (
+    REGISTRY as JournalRegistry,
+    Abort,
+    Conflict,
+    IsolationConflict,
+    Retry,
+    Serialize,
+    _RetrySignal,
+    _in_run_txn,
+)
 from pherix.core.policy import Policy, PolicyViolation
 from pherix.core.runtime import CompensatorNotRegistered, GateBlocked, agent_txn
 from pherix.core.tools import tool
 
+
+def run_txn(
+    fn: Callable[[Any], None],
+    adapters: dict[str, Any],
+    *,
+    policy: Policy | None = None,
+    audit: AuditJournal | None = None,
+    isolation: Any = None,
+) -> None:
+    """Pherix-driven transactional run — the entry point for :class:`Retry`.
+
+    ``fn(ctx)`` receives the :class:`TxnContext` and runs the agent body
+    exactly as it would inside ``with agent_txn(...) as ctx``. The
+    difference is that Pherix now owns the callable: under
+    ``isolation=Retry(N)``, if the commit-time diff flags a conflict
+    Pherix rolls back, opens a fresh transaction, and re-invokes ``fn``
+    up to ``N`` times.
+
+    Use this entry point when the resolution policy is :class:`Retry`.
+    Re-entering a ``with agent_txn(...)`` block from outside is
+    mechanically impossible (the body is not a callable Pherix owns), so
+    with the context-manager form :class:`Retry` degrades to
+    :class:`Abort` and the first conflict raises :class:`IsolationConflict`
+    immediately. The :data:`_in_run_txn` contextvar is what selects
+    between the two paths.
+
+    Default ``isolation=Abort()`` matches :func:`agent_txn`; ``run_txn``
+    with ``Abort`` is exactly equivalent to ``with agent_txn(...) as
+    ctx: fn(ctx)``.
+
+    Idempotency caveat: every replay re-invokes ``fn`` from the top
+    against a fresh :class:`TxnContext`. Effects routed through Pherix
+    (SQL via :func:`execute_isolated`, FS via :class:`FsHandle`, HTTP
+    staged effects) are unwound between attempts. Side effects that
+    bypass Pherix's seam — appending to a module-level list, raw
+    ``open()`` writes, unwrapped HTTP requests, mutating closure
+    variables — fire on *every* attempt. Design ``fn`` so a replay is
+    safe to repeat, or move the side effect through a Pherix tool.
+    """
+    isolation = isolation if isolation is not None else Abort()
+    max_attempts = isolation.max_attempts if isinstance(isolation, Retry) else 1
+    last_conflicts: list[Conflict] = []
+    # Flag the retry loop so Retry.resolve raises the internal
+    # _RetrySignal (which we catch) instead of the public
+    # IsolationConflict (which would short-circuit the loop). The
+    # contextvar is reset on every exit path, including exceptions.
+    token = _in_run_txn.set(True)
+    try:
+        for _ in range(max_attempts):
+            try:
+                with agent_txn(
+                    adapters, policy=policy, audit=audit, isolation=isolation
+                ) as ctx:
+                    fn(ctx)
+                return
+            except _RetrySignal as sig:
+                last_conflicts = sig.conflicts
+                continue
+        # Exhausted: convert the last retry signal into a real
+        # IsolationConflict so the caller sees a familiar exception type.
+        raise IsolationConflict(last_conflicts)
+    finally:
+        _in_run_txn.reset(token)
+
+
 __all__ = [
     "agent_txn",
+    "run_txn",
     "tool",
     "Policy",
     "PolicyViolation",
@@ -37,9 +123,16 @@ __all__ = [
     "AuditJournal",
     "ResourceAdapter",
     "TransactionalResourceAdapter",
+    "VersionedResourceAdapter",
     "SnapshotHandle",
     "StagedResult",
     "GateBlocked",
     "CompensatorNotRegistered",
     "IrreversibleAdapterError",
+    "Abort",
+    "Retry",
+    "Serialize",
+    "IsolationConflict",
+    "Conflict",
+    "JournalRegistry",
 ]

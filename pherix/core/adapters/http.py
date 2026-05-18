@@ -63,3 +63,26 @@ class HTTPAdapter:
             "before-state to restore. Irreversible effects are unwound via "
             "their registered compensator, not via snapshot/restore."
         )
+
+    # --- versioning (Slice 4) ----------------------------------------------
+    # HTTPAdapter does NOT conform to VersionedResourceAdapter: an external
+    # HTTP service has no notion of "version" Pherix can read honestly, and
+    # the runtime already isolates irreversible effects by construction (the
+    # staging lane defers their fire to commit, so two pre-commit stages of
+    # the same effect cannot race). These methods exist only to make an
+    # accidental call fail loudly — they are not part of the sub-protocol's
+    # behavioural contract. The contract: the runtime gates isolation work
+    # on ``adapter.supports_rollback()``; HTTPAdapter returns False there.
+
+    def read_version(self, key: tuple) -> object:
+        raise IrreversibleAdapterError(
+            "HTTPAdapter.read_version() must not be called: irreversible "
+            "effects are isolated-by-construction via staging — they defer "
+            "fire to commit, so two pre-commit stages of the same effect "
+            "cannot race. There is no version to read."
+        )
+
+    def write_version(self, key: tuple) -> object:
+        raise IrreversibleAdapterError(
+            "HTTPAdapter.write_version() must not be called: see read_version."
+        )

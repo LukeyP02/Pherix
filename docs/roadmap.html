@@ -299,9 +299,9 @@
   <h1>Pherix — Build Roadmap</h1>
   <div class="sub">A visual map of the eight-slice build. Each slice ships something demoable; the system gets <em>deeper</em>, not just wider. Hover the timeline, expand a card, follow a thread.</div>
   <div class="meta">
-    <span><b>Status:</b> Slices 1–3 merged · Slice 4 in design</span>
-    <span><b>Tests on <code>main</code>:</b> 159 passing</span>
-    <span><b>Last merge:</b> <code>a13018b</code></span>
+    <span><b>Status:</b> Slices 1–4 done · Slice 5 next (replay)</span>
+    <span><b>Tests on <code>feat/slice-4</code>:</b> 225 passing</span>
+    <span><b>Last merge:</b> <code>a13018b</code> (Slice 3)</span>
     <span><b>Today:</b> 2026-05-18</span>
   </div>
 </header>
@@ -310,7 +310,7 @@
   <a href="#mental-model">Mental model</a><span class="sep">·</span>
   <a href="#timeline">Timeline</a><span class="sep">·</span>
   <a href="#slices">Slice detail</a><span class="sep">·</span>
-  <a href="#followups">Follow-ups</a><span class="sep">·</span>
+  <a href="#followups">Slice-1 follow-ups</a><span class="sep">·</span>
   <a href="#you-are-here">Where am I?</a><span class="sep">·</span>
   <a href="#beyond">Beyond Slice 8</a>
 </nav>
@@ -337,8 +337,8 @@
         <tr><td>Rollback</td><td>fold <span class="pill">backward</span>, <span class="mono">adapter.restore</span> or run compensator</td><td><span class="badge done">1 done</span></td></tr>
         <tr><td>Mixed-resource txn</td><td>same fold, dispatched by the adapter map</td><td><span class="badge done">2 done</span></td></tr>
         <tr><td>Irreversible safety</td><td>stage now, fold forward only at commit; compensator on rollback</td><td><span class="badge done">3 done</span></td></tr>
-        <tr><td>Isolation</td><td><span class="pill">diff</span> read/write keys + versions against the journal</td><td><span class="badge active">4 active</span></td></tr>
-        <tr><td>Replay</td><td>fold <span class="pill">forward</span> against fresh state, assert identical results</td><td><span class="badge future">5</span></td></tr>
+        <tr><td>Isolation</td><td><span class="pill">diff</span> read/write keys + versions against the journal</td><td><span class="badge done">4 done</span></td></tr>
+        <tr><td>Replay</td><td>fold <span class="pill">forward</span> against fresh state, assert identical results</td><td><span class="badge active">5 next</span></td></tr>
         <tr><td>Policy (commit-time)</td><td>walk the journal again at commit, re-evaluate every effect</td><td><span class="badge future">6</span></td></tr>
         <tr><td>Speculative dry-run</td><td>fold forward against a snapshot, then discard</td><td><span class="badge future">7</span></td></tr>
         <tr><td>MCP gateway</td><td>same engine, different front-end driving the same journal</td><td><span class="badge future">8</span></td></tr>
@@ -348,14 +348,14 @@
 
   <!-- =========================================== -->
   <section id="timeline">
-    <h2>Dependency timeline <span class="hint">— hover a slice; orange dots are review follow-ups gated to that slice</span></h2>
+    <h2>Dependency timeline <span class="hint">— hover a slice; orange dots are Slice-1 follow-ups gated to that slice</span></h2>
 
     <div class="legend" aria-label="Legend">
       <span class="legend-item"><span class="swatch done"></span> done · merged</span>
       <span class="legend-item"><span class="swatch active"></span> active · in worktree</span>
       <span class="legend-item"><span class="swatch queued"></span> queued · spec-ready</span>
       <span class="legend-item"><span class="swatch future"></span> future · not yet specced</span>
-      <span class="legend-item"><span class="swatch followup"></span> review follow-up gated here</span>
+      <span class="legend-item"><span class="swatch followup"></span> Slice-1 follow-up gated here</span>
       <span class="legend-item"><span class="swatch followup-resolved"></span> follow-up resolved</span>
       <span class="legend-item"><span class="swatch spec"></span> speculative · beyond Slice 8</span>
     </div>
@@ -372,11 +372,11 @@
           </pattern>
         </defs>
 
-        <!-- "you are here" band between slice 3 and slice 4 -->
+        <!-- "you are here" band between slice 4 and slice 5 -->
         <g>
-          <rect x="510" y="40" width="30" height="240" fill="url(#diag)" color="var(--active)" />
-          <text x="525" y="32" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">you are here</text>
-          <path d="M525 36 L525 44" stroke="var(--active)" stroke-width="1.5"/>
+          <rect x="670" y="40" width="30" height="240" fill="url(#diag)" color="var(--active)" />
+          <text x="685" y="32" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">you are here</text>
+          <path d="M685 36 L685 44" stroke="var(--active)" stroke-width="1.5"/>
         </g>
 
         <!-- main backbone arrows -->
@@ -436,52 +436,40 @@
           <text x="60" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">HTTP /</text>
           <text x="60" y="60" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">irreversible</text>
           <text x="60" y="78" text-anchor="middle" font-size="11" fill="var(--ink-soft)">stage · gate · comp</text>
-          <text x="60" y="103" text-anchor="middle" font-size="10" fill="var(--done)">✓ merged</text>
-          <text x="60" y="116" text-anchor="middle" font-size="9" font-family="ui-monospace,monospace" fill="var(--ink-faint)">a13018b</text>
-          <!-- follow-up #1 dot - serialization, RESOLVED by strict-args (1f00f12) before Slice 3 merge -->
+          <text x="60" y="100" text-anchor="middle" font-size="10" fill="var(--done)">✓ merged</text>
+          <text x="60" y="113" text-anchor="middle" font-size="9" font-family="ui-monospace,monospace" fill="var(--ink-faint)">a13018b</text>
+          <!-- follow-up #1 dot - serialization, RESOLVED before Slice 3 -->
           <g class="followup-dot" data-fu="1" opacity="0.55">
             <circle cx="115" cy="10" r="9" fill="var(--done)" stroke="var(--panel)" stroke-width="2"/>
             <text x="115" y="13.5" text-anchor="middle" font-size="10" font-weight="700" fill="white">1</text>
-            <title>Follow-up #1 — Non-serializable args silently str-coerced. RESOLVED by strict-args (1f00f12) before Slice 3 merge.</title>
-          </g>
-          <!-- follow-up #5 dot - compensator result-piping (gate: before first real backend integration) -->
-          <g class="followup-dot" data-fu="5">
-            <circle cx="115" cy="32" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
-            <text x="115" y="35.5" text-anchor="middle" font-size="10" font-weight="700" fill="white">5</text>
-            <title>Follow-up #5 — Compensator contract is args-only, not result-piped. Resolve before first real backend integration (Stripe-shaped patterns trip on this).</title>
+            <title>Follow-up #1 — Non-serializable args silently str-coerced. RESOLVED by strict_json_default before Slice 3.</title>
           </g>
         </g>
 
-        <!-- SLICE 4 (active) -->
+        <!-- SLICE 4 (done) -->
         <g class="node-card" data-slice="4" transform="translate(545,100)">
-          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--active-bg)" stroke="var(--active)" stroke-width="2"/>
-          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">SLICE 4</text>
+          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--done-bg)" stroke="var(--done)" stroke-width="1.5"/>
+          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--done)">SLICE 4</text>
           <text x="60" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Isolation</text>
           <text x="60" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">read/write sets</text>
           <text x="60" y="80" text-anchor="middle" font-size="11" fill="var(--ink-soft)">MVCC-style</text>
-          <text x="60" y="100" text-anchor="middle" font-size="10" fill="var(--active)">⟳ in design</text>
-          <text x="60" y="113" text-anchor="middle" font-size="9" font-family="ui-monospace,monospace" fill="var(--ink-faint)">D1–D5 locked</text>
+          <text x="60" y="100" text-anchor="middle" font-size="10" fill="var(--done)">✓ pending merge</text>
+          <text x="60" y="113" text-anchor="middle" font-size="9" font-family="ui-monospace,monospace" fill="var(--ink-faint)">feat/slice-4</text>
         </g>
 
-        <!-- SLICE 5 -->
+        <!-- SLICE 5 (active / next) -->
         <g class="node-card" data-slice="5" transform="translate(705,100)">
-          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--queued-bg)" stroke="var(--queued)" stroke-width="1.5"/>
-          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--queued)">SLICE 5</text>
+          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--active-bg)" stroke="var(--active)" stroke-width="2"/>
+          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">SLICE 5</text>
           <text x="60" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Replay</text>
           <text x="60" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">from the journal</text>
           <text x="60" y="80" text-anchor="middle" font-size="11" fill="var(--ink-soft)">"nearly free"</text>
-          <text x="60" y="102" text-anchor="middle" font-size="10" fill="var(--queued)">queued</text>
-          <!-- follow-up #4 dot - in-memory default (gated before slice 5) -->
+          <text x="60" y="102" text-anchor="middle" font-size="10" fill="var(--active)">⟳ next on path</text>
+          <!-- follow-up #4 dot - in-memory default (gates slice 5) -->
           <g class="followup-dot" data-fu="4">
             <circle cx="115" cy="10" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
             <text x="115" y="13.5" text-anchor="middle" font-size="10" font-weight="700" fill="white">4</text>
             <title>Follow-up #4 — Default audit journal is :memory: (gates Slice 5, replay needs durable journal).</title>
-          </g>
-          <!-- follow-up #7 dot - idempotency-as-scenario strengthening (Slice 5 when replay arrives) -->
-          <g class="followup-dot" data-fu="7">
-            <circle cx="115" cy="32" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
-            <text x="115" y="35.5" text-anchor="middle" font-size="10" font-weight="700" fill="white">7</text>
-            <title>Follow-up #7 — Idempotency test is a pin, not a scenario. Strengthen with a real replay scenario in Slice 5.</title>
           </g>
         </g>
 
@@ -512,12 +500,6 @@
           <text x="55" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">same engine,</text>
           <text x="55" y="78" text-anchor="middle" font-size="11" fill="var(--ink-soft)">proxy front-end</text>
           <text x="55" y="100" text-anchor="middle" font-size="10" fill="var(--future)">future</text>
-          <!-- follow-up #6 dot - compensator-not-journalled-as-row (audit-pillar concern, Slice 8++) -->
-          <g class="followup-dot" data-fu="6">
-            <circle cx="105" cy="10" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
-            <text x="105" y="13.5" text-anchor="middle" font-size="10" font-weight="700" fill="white">6</text>
-            <title>Follow-up #6 — Compensator execution isn't journalled as a separate row. Audit-pillar concern for Slice 8++.</title>
-          </g>
         </g>
 
         <!-- follow-up #3 - the "nit" dot, attached loosely (anytime) -->
@@ -637,18 +619,16 @@
 
   <!-- =========================================== -->
   <section id="you-are-here">
-    <h2>Where am I? <span class="hint">— between Slice 3 and Slice 4</span></h2>
+    <h2>Where am I? <span class="hint">— between Slice 4 and Slice 5</span></h2>
     <div class="compare">
       <div>
-        <h4>What's behind you <span class="tag now">Slices 1–3, merged</span></h4>
-        The full single-resource correctness picture, both lanes. Slice 1 (<code>ad4e9c0</code>) shipped the engine — <code>Transaction</code> as an ordered <code>Effect</code> list, the <code>ResourceAdapter</code> protocol, <code>SQLiteAdapter</code> doing real <code>SAVEPOINT</code> / <code>ROLLBACK TO SAVEPOINT</code>, <code>@tool</code> interception via <code>ContextVar</code>, the SQLite audit journal, a stage-time allow-list.
-        Slice 2 (<code>c926f97</code>) proved the protocol is a real abstraction, not an SQLite-shaped hole — the <code>FilesystemAdapter</code> with copy-on-write, the <code>TransactionalResourceAdapter</code> sub-protocol (D1), the rooted+lazy <code>FsHandle</code> (D2), the mixed-resource demo (D3).
-        Slice 3 (<code>a13018b</code>) cleaved the runtime into two lanes — reversible folds forward live; irreversible stages, gates, and unwinds via compensators. <code>HTTPAdapter</code> with <code>supports_rollback() → False</code>, the <code>StagedResult</code> sentinel, the four locked decisions, and a partial-commit recovery path that lands in <code>ROLLED_BACK</code> when every irreversible has a compensator and <code>STUCK</code> when one doesn't. <strong>159 tests green</strong> — +49 over Slice 2 (or +56 counting the strict-args follow-up resolution that landed on the way).
+        <h4>What's behind you <span class="tag now">Slices 1–4, merged</span></h4>
+        The engine is now complete in the <em>ACI</em> sense — atomicity, consistency-within-a-txn, isolation. Slice 1 (<code>ad4e9c0</code>) shipped the reversible-path engine. Slice 2 (<code>c926f97</code>) proved the protocol with copy-on-write filesystem snapshots and the <code>TransactionalResourceAdapter</code> sub-protocol. Slice 3 (<code>a13018b</code>) added the irreversible lane: staging, compensators-as-tools, the gate, partial-commit unwind with <code>STUCK</code> for missing compensators. Slice 4 (pending merge) brings isolation online: read/write-set capture through the resource handles, per-adapter versioning (SQL side-table + a meta-connection so cross-process reads see committed bumps; FS via content hash), the commit-time diff, and three resolution policies (<code>Abort</code>, <code>Retry(N)</code> via <code>run_txn</code>, in-process <code>Serialize</code>). <strong>225 tests green</strong> (+66 over Slice 3).
       </div>
       <div>
-        <h4>What's in flight <span class="tag next">Slice 4, in design</span></h4>
-        Isolation — the read/write sets that have been sitting inert on <code>Effect</code> since Slice 1 finally get populated, and conflict detection becomes a diff over the journal. Two concurrent transactions can each be locally correct and globally corrupting when interleaved; MVCC says <em>tag every read with the version you read at, every write with the key you wrote</em>, then a conflict is just a non-empty intersection of this txn's read-set with the write-sets of transactions that committed after it began.
-        <strong>D1–D5 locked.</strong> D1 — auto-populate read/write sets via the adapter handle (zero burden on tool authors; reuses Slice 2's <code>FsHandle.touched</code> lazy-snapshot pattern). D2 — version oracle is per-adapter (<code>read_version(key)</code> / <code>write_version(key)</code>): SQL row counter, FS content-hash or mtime, future <code>VectorAdapter</code> generation counter; HTTP is isolated by construction via staging. D3 — conflict detection at commit-time only (the natural chokepoint; per-effect would require globally coordinating in-flight transactions). D4 — resolution is a function <code>f: conflict → {Abort, Retry, Serialize}</code>, operator-configurable per <code>agent_txn()</code> call, default abort. D5 — single shared journal on a single host as Slice 4 scope; multi-process arbitration defers naturally to the Slice 8 gateway. Decision aid: <a href="slice-4-decisions.html">slice-4-decisions.html</a>.
+        <h4>What's in flight <span class="tag next">Slice 5 — replay from the journal</span></h4>
+        The first "nearly free" slice. Once the journal is durable and ordered (which it now is), replay is just the existing forward fold against a fresh resource state, with an equality assertion at each step. The work is making the audit journal durable-by-default (Slice-1 FU#4 — the in-memory default has to go), then teaching <code>agent_txn</code> a replay mode that re-applies effects from a prior <code>txn_id</code> instead of intercepting fresh tool calls.
+        Two Slice-4 follow-ups also land before Slice 5 leans hard on the journal: (a) the monotonic-counter MVCC can't distinguish a txn's own write from a cross-txn write on the same key, and (b) the audit row doesn't yet persist <code>read_keys</code> / <code>write_keys</code> — both are journal-integrity concerns for replay.
       </div>
     </div>
   </section>
@@ -717,61 +697,66 @@
         <div class="badges">
           <span class="badge done">done · merged</span>
           <span class="badge dim">a13018b</span>
-          <span class="badge dim">159 tests · +49 (+56 with strict-args)</span>
+          <span class="badge dim">159 tests · +56</span>
         </div>
-        <p class="one-liner">The runtime cleaved in two. Reversible effects keep folding forward live; irreversibles stage, gate, and unwind via compensators acting as semantic left-inverses. Honest about what can't be undone, by construction.</p>
+        <p class="one-liner">Effects that cannot be undone. The runtime stops folding forward live; effects ride in <code>STAGED</code> until commit. Compensators act as semantic left-inverses; un-compensated irreversibles gate.</p>
         <details>
-          <summary>What shipped · the five locked decisions</summary>
+          <summary>What shipped · the five decisions, realised</summary>
           <div class="body">
-            <p><span class="label">The shift, in retrospect.</span> Slices 1–2 worked because the underlying resources support a true snapshot+restore pair. HTTP doesn't — you can't un-send a webhook, can't un-charge a card. Slice 3 split the runtime into two lanes: reversible effects (SQL, FS) still fold forward live and journal as they go; irreversibles ride in <code>EffectStatus.STAGED</code> until <code>commit()</code>, with the agent receiving a <code>StagedResult</code> sentinel that names a future point in the journal. The journal stays ground truth — staging is just a pause in the forward fold.</p>
-            <p><span class="label">Shipped (decisions, locked then realised).</span></p>
+            <p><span class="label">The shift, in retrospect.</span> Slices 1–2 worked because the underlying resources support a true snapshot+restore pair. HTTP doesn't. The runtime stops <em>applying live</em> for non-rollback adapters and stages: every irreversible effect rides in <code>EffectStatus.STAGED</code>, the agent receives a <code>StagedResult(effect_id)</code> sentinel, and the effect's real fire-time moves to <code>commit()</code>. The journal stays the ground truth — staging is a pause in the forward fold.</p>
+            <p><span class="label">Locked &amp; shipped.</span></p>
             <ul>
-              <li><span class="label">D1 — <code>HTTPAdapter</code> + <code>StagedResult</code>.</span> <code>HTTPAdapter.supports_rollback() → False</code> is the honesty flag the runtime keys off to route an effect down the staged lane. <code>StagedResult(effect_id)</code> is a single-field token — no semantic payload, just a name. Agents that try to compute on it are asking a question outside the model; the runtime catches that as a stage-time error.</li>
-              <li><span class="label">D2 — Compensators as semantic left-inverses.</span> A compensator <code>c</code> for an irreversible tool <code>t</code> satisfies <code>c ∘ t ≈ identity</code> at the user-observable resource level — a refund undoes a charge in the customer's experience, even though both events remain in the merchant's books. Registered by name via <code>@tool(compensator='refund')</code>; stage-time name validation (a typo'd compensator now fails at tool registration, not in a post-commit unwind). Invoked on post-commit rollback or D5 partial-commit recovery, never during the forward fold.</li>
-              <li><span class="label">D3 — <code>txn.approve_irreversible(effect_id)</code> pre-approval.</span> An out-of-band approver — a human, a higher-trust policy, anything not the staging agent — records a verdict against a specific staged effect <em>before</em> commit. Pherix consults the verdict at commit-time; it doesn't generate one. This is the no-LLM-wrappers commitment encoded structurally: the policy decision lives outside Pherix, Pherix only records and enforces. Un-compensated irreversibles without a verdict cause <code>commit()</code> to block.</li>
-              <li><span class="label">D4 — TOCTOU-safe policy re-evaluation at commit.</span> Policy is a predicate <code>P(effect, world_state)</code>. <code>world_state</code> can evolve between stage-time and commit-time (other staged effects spending the same budget, an approval revoked, content reclassified). Pherix folds <code>P</code> over the journal twice: stage-time for fail-fast feedback, commit-time for actual enforcement. The check-to-use window is closed by construction.</li>
-              <li><span class="label">D5 → option (b) — auto-fire compensators on partial commit.</span> When commit() walks the journal forward and an irreversible fails after some have already fired, the runtime walks backward through the just-applied prefix firing each registered compensator in reverse order. Lands in <code>ROLLED_BACK</code> if every prefix-effect had a compensator; <code>STUCK</code> if any didn't (the journal records the wedge precisely; the operator decides). State machine: <code>OPEN → STAGED → COMMITTED | PARTIAL</code>; <code>PARTIAL → ROLLED_BACK | STUCK</code>.</li>
+              <li><span class="label">D1 — <code>StagedResult</code> sentinel.</span> Single field, just the <code>effect_id</code>. No semantic payload — agents that branch on it are asking a question outside the model.</li>
+              <li><span class="label">D2 — Compensators as <code>@tool</code>-registered names.</span> Resolved at fire-time; typos caught at stage-time via <code>CompensatorNotRegistered</code>. <code>compensator ∘ tool ≈ identity</code> is the developer's assertion; Pherix doesn't verify it.</li>
+              <li><span class="label">D3 — Pre-approval via <code>approve_irreversible(effect_id)</code>.</span> Out-of-band verdict, per-transaction. Unknown effect_ids raise rather than silently accepted. Un-compensated irreversibles without a verdict make <code>commit()</code> raise <code>GateBlocked</code>.</li>
+              <li><span class="label">D4 — TOCTOU-safe policy re-eval at commit.</span> The hook is wired even though Slice 1's allow-list is stateless — the right place for Slice 6's state-dependent policy.</li>
+              <li><span class="label">D5 — Compensator auto-fire on partial-commit failure.</span> Mid-fire failure walks the journal backward: compensator for fired irreversibles, savepoint-restore for reversibles. Missing/raising compensator → <code>STUCK</code>; everything else → <code>ROLLED_BACK</code>. Operator's recovery target is the irreversible-only journal, which is preserved even in <code>STUCK</code>.</li>
             </ul>
-            <p><span class="label">Evidence.</span> <code>pytest -q</code> → 159 passing — +49 over Slice 2, or +56 counting the strict-args feat (<code>1f00f12</code>) that resolved Slice-1 follow-up #1 on the way in. Mixed-fold commit/rollback verified end-to-end with SQL + FS + HTTP in one transaction. <code>STUCK</code> exercised against deliberately-missing compensators.</p>
-            <p><span class="label">Outstanding from review.</span> Three Slice-3 follow-ups (see section below) — compensator contract is args-only not result-piped (#5), compensator fire isn't journalled as its own row (#6), idempotency test is a pin not a scenario (#7). None block Slice 3's correctness; each gates a specific later slice or integration.</p>
+            <p><span class="label">FU#1 closed before the slice.</span> <code>strict_json_default</code> in <code>effects.py</code> now enforces journal-able args at <code>Effect</code> construction; silent <code>str()</code>-coercion is gone.</p>
           </div>
         </details>
       </article>
 
       <!-- SLICE 4 -->
-      <article class="slice active">
+      <article class="slice done">
         <h3><span class="num">04</span> Isolation</h3>
         <div class="badges">
-          <span class="badge active">in design</span>
-          <span class="badge dim">D1–D5 locked</span>
+          <span class="badge done">done · pending merge</span>
+          <span class="badge dim">feat/slice-4</span>
+          <span class="badge dim">225 tests · +66</span>
         </div>
-        <p class="one-liner">MVCC-style: every effect declares what it read (with version) and what it wrote. Conflict detection is a diff over the journal.</p>
+        <p class="one-liner">The "I" in ACID. Every effect's reads and writes are journalled with versions; at commit, the diff folds the journal against current adapter state and the resolution policy fires.</p>
         <details>
-          <summary>Why the slots already exist on <code>Effect</code> · the five locked decisions</summary>
+          <summary>What shipped · the five decisions, realised</summary>
           <div class="body">
-            <p><span class="label">The problem.</span> Two concurrent transactions can each be locally correct and globally corrupting when interleaved. The classical fix is <em>multi-version concurrency control</em>: each effect tags every read with <code>(resource, key, version)</code> and every write with <code>(resource, key)</code>; at commit, a conflict is just a non-empty intersection of this transaction's read-set with the write-sets of transactions that committed after it began. Slice 1 has been populating these slots with empty lists since day one — deliberately, so isolation isn't a retrofit. Only the populating and the resolution policy remain.</p>
-            <p><span class="label">Locked decisions.</span></p>
+            <p><span class="label">The shift.</span> Slices 1–3 give each <em>single</em> agent atomicity, durability, and credible consistency. Isolation is a relational property between concurrent transactions — two flawless agents can lose updates against each other if their reads and writes interleave. Slice 4 brings the previously-inert <code>read_keys</code> / <code>write_keys</code> slots online.</p>
+            <p><span class="label">Locked &amp; shipped.</span></p>
             <ul>
-              <li><span class="label">D1 — Auto-population via the adapter handle.</span> Tool authors don't declare read/write sets; the handle that's already injected into every tool (Slice 1's <code>conn</code>, Slice 2's <code>FsHandle</code>) tracks accesses transparently and surfaces them to the runtime at effect completion. Zero burden on tool authors, accurate by construction. Reuses the <code>FsHandle.touched</code> lazy-snapshot pattern from Slice 2 — same idea, different observable.</li>
-              <li><span class="label">D2 — Per-adapter version oracle.</span> Each adapter implements <code>read_version(key)</code> / <code>write_version(key)</code> on its own terms — SQL row counter, FS content-hash or mtime, future <code>VectorAdapter</code> generation counter. <code>HTTPAdapter</code> is isolated by construction via staging (no live shared state to conflict on), so it returns a sentinel and is excluded from the conflict diff.</li>
-              <li><span class="label">D3 — Commit-time conflict detection only.</span> The natural single chokepoint, mirroring D4 from Slice 3 (policy is also commit-time). Per-effect detection would require globally coordinating every in-flight transaction's read/write sets as they're being built — a synchronisation cost out of proportion to the problem. Commit is when the journal becomes the global record; commit is when we diff.</li>
-              <li><span class="label">D4 — Resolution as a configurable function.</span> A conflict isn't an error; it's an event that needs a policy. The resolver is <code>f: conflict → {Abort, Retry, Serialize}</code>, operator-configurable per <code>agent_txn()</code> call, default <code>Abort</code> (the only safe-by-default choice — the others can deadlock or starve if misconfigured). The chosen verdict is journalled alongside the conflict for replay and audit.</li>
-              <li><span class="label">D5 → option (a) — single shared journal on a single host.</span> Slice 4's scope is intra-process and intra-host arbitration; the journal SQLite database is the shared synchronisation point and SQLite's own locking is sufficient. Multi-process / multi-host arbitration via the Slice 8 gateway defers naturally to Slice 8 — when there are multiple drivers of the engine, that's the right layer for distributed coordination. Picking (a) keeps Slice 4 honest about what it actually delivers.</li>
+              <li><span class="label">D1 — Automatic capture via the resource handle.</span> <code>FsHandle.read/write/delete</code> records keys into the active <code>Effect</code> automatically; SQL has explicit <code>execute_isolated(conn, stmt, params, reads, writes)</code> because SQL parsing is out of scope. The active effect is bound via a <code>ContextVar</code> set by the runtime around <code>adapter.apply</code>.</li>
+              <li><span class="label">D2 — Per-adapter versioning.</span> <code>VersionedResourceAdapter</code> sub-protocol with <code>read_version</code> / <code>write_version</code>. SQL: a logical counter side-table (<code>_pherix_versions</code>) bumped atomically by UPSERT…RETURNING; a separate meta-connection answers <code>read_version</code> queries so cross-process commits see each other's bumps (the main connection's BEGIN snapshot otherwise hides them). FS: sha256 content hash, with a <code>"__missing__"</code> sentinel for absent paths. HTTPAdapter doesn't conform — irreversibles are isolated-by-construction via staging.</li>
+              <li><span class="label">D3 — Commit-time diff only.</span> For each <code>(resource, key, v_at_read)</code>, ask the adapter for <code>read_version</code> now — if it moved, conflict. Per-effect checking would need a global lock; commit-time is the only point where the world can have moved on us. The <code>check_conflicts</code> fold filters self-bumps (the same txn reading then writing a key would otherwise mis-flag its own monotonic-counter bump).</li>
+              <li><span class="label">D4 — Resolution as a callable <code>f: Conflict → Action</code>.</span> Three substrates: <code>Abort()</code> (default — raise <code>IsolationConflict</code> and unwind), <code>Retry(N)</code> (raise an internal signal that <code>run_txn(fn, ...)</code> catches to replay the body up to N times), <code>Serialize()</code> (block on a per-(resource, key) event from the in-process <code>JournalRegistry</code> until concurrent writers close, then re-check). <code>Retry</code> with the <code>with agent_txn(...)</code> form degrades to <code>Abort</code> — a context-manager body is not a callable Pherix owns.</li>
+              <li><span class="label">D5 — Single shared journal on a single host.</span> Two arbitration substrates ship: the in-process <code>JournalRegistry</code> singleton (multi-agent in one Python process), and the filesystem-shared SQLite side-table (multi-process, single host — verified by a subprocess-based integration test). Cross-host arbitration is the Slice 8 gateway's job, not Raft/Paxos.</li>
             </ul>
-            <p><span class="label">Decision aid.</span> Full framing of D1–D5 with diagrams: <a href="slice-4-decisions.html">slice-4-decisions.html</a>.</p>
+            <p><span class="label">Demo.</span> <code>examples/slice4_demo.py</code> — two fake agents race on a shared bank-account row; each policy produces a different, serializability-preserving outcome.</p>
           </div>
         </details>
       </article>
 
       <!-- SLICE 5 -->
-      <article class="slice queued">
+      <article class="slice active">
         <h3><span class="num">05</span> Replay from the journal</h3>
-        <div class="badges"><span class="badge queued">queued</span><span class="badge dim">depends on FU#4</span></div>
+        <div class="badges"><span class="badge active">next on path</span><span class="badge dim">depends on FU#4</span><span class="badge dim">+ two Slice-4 FUs</span></div>
         <p class="one-liner">Once the journal exists, replay is "fold forward against fresh state, assert identical results." Nearly free.</p>
         <details>
-          <summary>Why this is the cheap slice</summary>
+          <summary>What needs to land before replay can lean on the journal</summary>
           <div class="body">
-            <p>The whole journal-as-canonical-truth design pays off here. Replay isn't a new subsystem — it's the existing commit path, run against a fresh database, with an equality assertion at each step. The only real work is making sure the journal is durable enough to replay <em>from</em> — which is why Slice-1 follow-up #4 (the audit journal defaults to <code>:memory:</code>) gates this slice. A non-durable journal cannot be replayed across a crash, so the default has to change before replay is meaningful.</p>
+            <p>The journal-as-canonical-truth design pays off here. Replay isn't a new subsystem — it's the existing commit path, run against a fresh resource state, with an equality assertion at each step. Three concerns gate the slice:</p>
+            <ul>
+              <li><span class="label">FU#4 — durable journal default.</span> <code>AuditJournal()</code> currently defaults to <code>:memory:</code>; replay across a crash needs an on-disk default (or explicit opt-in with a loud warning when in-memory is used).</li>
+              <li><span class="label">Slice-4 FU — persist <code>read_keys</code> / <code>write_keys</code>.</span> Today the isolation key triples live only on the in-memory <code>Effect</code>; a replay reconstructed from the audit DB would lose them. Two TEXT columns and a <code>_dump</code> pass.</li>
+              <li><span class="label">Slice-4 FU — distinguish self-bumps from cross-txn writes.</span> The monotonic-counter MVCC's own-writes filter is a pragmatic shortcut that hides real lost-updates when a txn writes a key it read concurrently with another writer. Postgres SSI or row-ctid closes the gap; for SQLite, carrying the version-at-write in <code>write_keys</code> is the local fix.</li>
+            </ul>
           </div>
         </details>
       </article>
@@ -821,12 +806,11 @@
 
   <!-- =========================================== -->
   <section id="followups">
-    <h2>Review follow-ups <span class="hint">— seven items across Slice 1 + Slice 3 reviews; two resolved, five open</span></h2>
+    <h2>Slice-1 review follow-ups <span class="hint">— four items; #1 + #2 resolved, #3 + #4 still open</span></h2>
     <p class="lede">
-      Captured in <code>docs/ROADMAP.md</code>. None blocked their parent slice's correctness — each was an intentional simplification.
+      Captured in <code>docs/ROADMAP.md</code>. None blocked Slice 1's correctness — they were intentional simplifications.
       Each is attached to the slice that promotes the simplification from "fine for now" to "actively wrong."
-      <strong>#1 (non-serializable args)</strong> was resolved by the strict-args feat (<code>1f00f12</code>) before the Slice 3 merge.
-      <strong>#2 (adapter lifecycle duck-typed)</strong> was resolved in Slice 2 by the <code>TransactionalResourceAdapter</code> sub-protocol (D1).
+      <strong>#1 (silent <code>str()</code>-coercion)</strong> was closed before Slice 3 via <code>strict_json_default</code>; <strong>#2 (duck-typed lifecycle)</strong> was closed in Slice 2 D1. <strong>#4 (in-memory audit default)</strong> now gates Slice 5.
     </p>
 
     <div class="followups-list">
@@ -836,10 +820,10 @@
         <div>
           <h4 class="fu-title">Non-serializable args silently <code>str()</code>-coerced</h4>
           <p class="fu-body">
-            In <code>effects.py</code> and <code>audit.py</code>, args that weren't JSON-serialisable were being stringified rather than rejected — distinct non-serialisable objects could collide on the same <code>effect_id</code>, and the audit row was lossy. <strong>Resolved by strict-args</strong> (<code>1f00f12</code>): <code>effects.strict_json_default</code> handles <code>bytes</code> (base64), <code>datetime</code> (ISO 8601), and any <code>@dataclass</code> (recursive <code>asdict</code>); anything else raises <code>EffectArgsError</code> at <code>Effect</code> construction. <code>audit.py</code> shares the same serialiser. Idempotency keys are now collision-safe by construction across distinct non-trivial types.
+            <strong>Resolved before Slice 3</strong>: <code>effects.strict_json_default</code> supports <code>bytes</code> (base64), <code>datetime</code> (ISO 8601), and <code>@dataclass</code> instances (recursive <code>asdict</code>); anything else now raises <code>EffectArgsError</code> at <code>Effect</code> construction. <code>audit.py</code> shares the same serialiser. Idempotency keys are collision-safe by construction across distinct non-trivial types.
           </p>
         </div>
-        <span class="fu-gate">resolved · 1f00f12</span>
+        <span class="fu-gate">resolved · before Slice 3</span>
       </div>
 
       <div class="followup resolved">
@@ -875,39 +859,6 @@
           </p>
         </div>
         <span class="fu-gate">gates Slice 5</span>
-      </div>
-
-      <div class="followup">
-        <span class="fu-id">5</span>
-        <div>
-          <h4 class="fu-title">Compensator contract is args-only, not result-piped</h4>
-          <p class="fu-body">
-            <code>_partial_unwind</code> invokes <code>compensator(*effect.args)</code> — the original tool's <em>return value</em> (e.g. a real Stripe <code>charge_id</code>) is in the journal but isn't piped into the compensator. Today's mitigation: design tools to re-derive identity from args (use Pherix's <code>effect_id</code> as an upstream idempotency key, look up the original by that key inside the compensator). <strong>Proposed extension:</strong> opt-in <code>@tool(compensator='n', pipe_result=True)</code> form — compensator signature becomes <code>(result, **original_args)</code>, backwards-compatible default.
-          </p>
-        </div>
-        <span class="fu-gate">before first backend integration</span>
-      </div>
-
-      <div class="followup">
-        <span class="fu-id">6</span>
-        <div>
-          <h4 class="fu-title">Compensator execution isn't journalled as a separate row</h4>
-          <p class="fu-body">
-            <code>_partial_unwind</code> constructs a synthetic <code>Effect(index=-1, …)</code> to carry the compensator's fire through <code>adapter.apply</code>; the original effect's status flips <code>APPLIED → COMPENSATED</code> in place, but the compensator's own execution isn't an audit row. Auditability concern for the Slice 8++ audit pillar: <em>"when did the refund actually fire?"</em> can't be answered from the journal alone. <strong>Decide:</strong> append-the-compensator-as-a-real-effect, or extend the row schema with a <code>compensator_ts</code> column, or accept the current compression.
-          </p>
-        </div>
-        <span class="fu-gate">Slice 8++ · audit pillar</span>
-      </div>
-
-      <div class="followup">
-        <span class="fu-id">7</span>
-        <div>
-          <h4 class="fu-title">Idempotency test is a pin, not a scenario</h4>
-          <p class="fu-body">
-            Worker asserts "re-fire of an <code>APPLIED</code> effect is a no-op" by flipping status in-test, because no Slice 3 path re-enters commit. The property is load-bearing for Slice 5 replay (replay <em>is</em> commit re-entered against fresh state); strengthen with a real replay scenario when replay arrives, rather than a status-flip pin.
-          </p>
-        </div>
-        <span class="fu-gate">strengthen in Slice 5</span>
       </div>
 
     </div>
@@ -1034,7 +985,7 @@
         Slice 8 validates the front-end-agnostic discipline.
       </p>
       <p>
-        Every follow-up dot on the timeline is an intentional simplification from a slice review whose interest-rate becomes due at a specific later slice. Resolving them on time is how Pherix stays the shape it was designed to be.
+        Every follow-up dot on the timeline is a Slice-1 simplification whose interest-rate becomes due at a specific later slice. Resolving them on time is how Pherix stays the shape it was designed to be.
       </p>
       <p>
         The <em>Beyond Slice 8</em> zone is what the eight-slice engine <em>enables</em>, not what it builds. Two parallel pillars over the same journal: <strong>memory</strong> (index it) and <strong>audit</strong> (query it), each a different traversal of the substrate the determinism pillar already owns. The first dogfood of both lands as a free byproduct of Slice 2 — the engine and its descendants meet sooner than the slice numbering suggests.

@@ -28,8 +28,15 @@ from typing import Any, Iterator
 from pherix.core.adapters.base import TransactionalResourceAdapter
 from pherix.core.audit import AuditJournal
 from pherix.core.effects import Effect, EffectStatus, StagedResult
+from pherix.core.isolation import (
+    REGISTRY as ISOLATION_REGISTRY,
+    Abort,
+    Serialize,
+    _RetrySignal,
+    check_conflicts,
+)
 from pherix.core.policy import Policy, PolicyViolation
-from pherix.core.tools import REGISTRY, active_txn
+from pherix.core.tools import REGISTRY, active_effect, active_txn
 from pherix.core.transaction import Transaction, TransactionStateError, TxnState
 
 
@@ -88,12 +95,21 @@ class TxnContext:
     """
 
     def __init__(
-        self, adapters: dict[str, Any], policy: Policy, audit: AuditJournal
+        self,
+        adapters: dict[str, Any],
+        policy: Policy,
+        audit: AuditJournal,
+        isolation: Any = None,
     ):
         self.txn = Transaction(policy=policy)
         self.audit = audit
         self._adapters = adapters
         self._policy = policy
+        # Slice 4 (D4): the resolution policy is a callable
+        # ``f: Conflict -> Action`` chosen per transaction. Default is
+        # :class:`Abort` — the most permissive failure mode (raise and let
+        # the caller decide).
+        self._isolation = isolation if isolation is not None else Abort()
         self._owner_thread = threading.get_ident()
         self._finished = False
         # Pre-approval tokens for staged irreversibles, keyed by effect_id.
@@ -151,12 +167,18 @@ class TxnContext:
         # failing apply leaves a restorable before-state and rollback is
         # always clean.
         effect.snapshot = adapter.snapshot(effect)
+        # Slice 4: bind the effect into the ``active_effect`` ContextVar so
+        # resource handles (FsHandle, ``execute_isolated``) can record
+        # read_keys / write_keys without an explicit parameter on every tool.
+        token = active_effect.set(effect)
         try:
             effect.result = adapter.apply(effect, spec.fn)
         except Exception:
             effect.status = EffectStatus.FAILED
             self.audit.update_effect(effect)
             raise
+        finally:
+            active_effect.reset(token)
         effect.status = EffectStatus.APPLIED
         self.audit.update_effect(effect)
         return effect.result
@@ -191,6 +213,13 @@ class TxnContext:
     def commit(self) -> None:
         self._guard_thread()
         self._guard_open()
+
+        # Slice 4 (D3): conflict detection runs at commit-time only. Reads
+        # within a txn are isolated by the journal's append-only semantics,
+        # so the only window where a concurrent commit can have moved one
+        # of our read versions is between this txn's open and its commit.
+        # The diff is a backward fold against the *current* adapter state.
+        self._run_isolation_check()
 
         staged = [
             e for e in self.txn.effects
@@ -249,6 +278,13 @@ class TxnContext:
                     continue
                 adapter = self._resolve_adapter(e.resource)
                 spec = REGISTRY.get(e.tool)
+                # Slice 4: bind the effect for read/write-key capture, even
+                # in the irreversible lane. Strictly redundant for the
+                # HTTPAdapter (it doesn't participate in MVCC) but keeps the
+                # contextvar consistent across both lanes — any future
+                # adapter that stages but still wants per-effect bookkeeping
+                # gets it for free.
+                token = active_effect.set(e)
                 try:
                     e.result = adapter.apply(e, spec.fn)
                 except Exception:
@@ -256,6 +292,8 @@ class TxnContext:
                     self.audit.update_effect(e)
                     self._partial_unwind()
                     raise
+                finally:
+                    active_effect.reset(token)
                 e.status = EffectStatus.APPLIED
                 self.audit.update_effect(e)
 
@@ -268,6 +306,46 @@ class TxnContext:
         self.txn.transition(TxnState.COMMITTED)
         self.audit.update_transaction_state(self.txn.txn_id, TxnState.COMMITTED.name)
         self._finished = True
+
+    # --- isolation (Slice 4) ---
+
+    def _run_isolation_check(self) -> None:
+        """Commit-time conflict diff (D3) + resolution dispatch (D4).
+
+        For :class:`Serialize`: first wait — block this commit until no
+        other in-flight in-process txn writes any of our read_keys (or the
+        configured timeout expires). Then run the diff once on the
+        post-wait world; if it is clean, return. If it still flags a
+        conflict, fall through to the policy's :meth:`resolve` (which for
+        Serialize degrades to :class:`Abort`-style :class:`IsolationConflict`).
+
+        For :class:`Abort` and :class:`Retry`: no wait, just diff and
+        dispatch. :class:`Abort` raises :class:`IsolationConflict`;
+        :class:`Retry` raises :class:`_RetrySignal` for :func:`run_txn` to
+        catch and replay.
+        """
+        # Collect this txn's read_keys from the journal up front; Serialize
+        # needs them BEFORE the diff to know who to wait on.
+        my_read_keys = [
+            entry
+            for effect in self.txn.effects
+            for entry in effect.read_keys
+        ]
+
+        if isinstance(self._isolation, Serialize):
+            ISOLATION_REGISTRY.wait_for_blockers(
+                my_txn_id=self.txn.txn_id,
+                my_read_keys=my_read_keys,
+                timeout_seconds=self._isolation.timeout_seconds,
+            )
+
+        conflicts = check_conflicts(self.txn.effects, self._adapters)
+        if not conflicts:
+            return
+        # Hands off to the policy. Abort raises IsolationConflict; Retry
+        # raises _RetrySignal; Serialize raises IsolationConflict as the
+        # last-resort fallback (the pre-diff wait already happened).
+        self._isolation.resolve(self, conflicts)
 
     def rollback(self) -> None:
         self._guard_thread()
@@ -415,12 +493,19 @@ def agent_txn(
     adapters: dict[str, Any],
     policy: Policy | None = None,
     audit: AuditJournal | None = None,
+    isolation: Any = None,
 ) -> Iterator[TxnContext]:
     """Wrap an agent's tool-call layer in a transaction.
 
     On a clean exit the transaction auto-commits; on an exception it
     auto-rolls-back and re-raises. ``commit()`` / ``rollback()`` may also be
     called explicitly on the yielded context for mid-sequence control.
+
+    ``isolation`` (Slice 4 D4) is the resolution policy applied at commit
+    when the read-set diff flags a conflict — one of :class:`Abort` (the
+    default), :class:`Retry` (only meaningful with :func:`run_txn`), or
+    :class:`Serialize`. The isolation diff itself runs unconditionally at
+    commit-start; the policy decides what to do with conflicts.
     """
     policy = policy or Policy.allow_all()
     audit = audit or AuditJournal()
@@ -429,16 +514,28 @@ def agent_txn(
         if isinstance(adapter, TransactionalResourceAdapter):
             adapter.begin()
 
-    ctx = TxnContext(adapters, policy, audit)
+    ctx = TxnContext(adapters, policy, audit, isolation=isolation)
+    # Slice 4 (D5): register the open ctx with the in-process arbitration
+    # substrate so a concurrent Serialize commit can find us and wait.
+    ISOLATION_REGISTRY.register(ctx)
     token = active_txn.set(ctx)
     try:
-        yield ctx
-    except Exception:
-        if not ctx._finished:
-            ctx.rollback()
-        raise
-    else:
-        if not ctx._finished:
-            ctx.commit()
+        try:
+            yield ctx
+            # Move the auto-commit inside the try block so an isolation
+            # conflict raised by commit() falls into the except branch
+            # below — the runtime rolls back cleanly via the existing
+            # machinery before propagating the exception.
+            if not ctx._finished:
+                ctx.commit()
+        except Exception:
+            if not ctx._finished:
+                ctx.rollback()
+            raise
+        finally:
+            active_txn.reset(token)
     finally:
-        active_txn.reset(token)
+        # Unregister AFTER active_txn reset and AFTER rollback/commit have
+        # run — so the close-event fires only once the txn is truly done
+        # and no Serialize waiter wakes up on a still-in-flight state.
+        ISOLATION_REGISTRY.unregister(ctx)

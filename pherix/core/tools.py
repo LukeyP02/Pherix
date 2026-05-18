@@ -22,6 +22,19 @@ active_txn: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "pherix_active_txn", default=None
 )
 
+# Set by the runtime around ``adapter.apply(effect, tool_fn)`` (Slice 4). Holds
+# the :class:`Effect` whose ``read_keys`` / ``write_keys`` lists are the
+# recording target for the currently-executing tool call. Resource handles
+# (FsHandle, the SQL ``execute_isolated`` helper) read this contextvar and
+# append into the effect — automatic isolation bookkeeping with no burden on
+# tool authors. Typed as ``Any`` for the same reason as ``active_txn``: avoid
+# importing :mod:`pherix.core.effects` here (no cycle), and keep the
+# contextvar usable from any handle without a structural dependency on the
+# Effect dataclass.
+active_effect: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "pherix_active_effect", default=None
+)
+
 
 @dataclass
 class ToolSpec:
