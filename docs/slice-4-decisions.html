@@ -1790,22 +1790,26 @@
       <div class="panel pick">
         <span class="ribbon">Picked</span>
         <h4>Operator-configurable per <code>agent_txn()</code></h4>
-<pre class="code"><span class="c"># default — safest</span>
+<pre class="code"><span class="c"># default — safest. Abort and Serialize live inside the with-form;</span>
+<span class="c"># Pherix can do its work within __enter__/__exit__.</span>
 <span class="k">with</span> agent_txn(adapters, policy) <span class="k">as</span> ctx:
     <span class="n">...</span>   <span class="c"># conflict → IsolationConflict raised</span>
-
-<span class="c"># explicit retry for an idempotent pipeline</span>
-<span class="k">with</span> agent_txn(
-        adapters, policy,
-        isolation=Retry(<span class="n">3</span>)) <span class="k">as</span> ctx:
-    <span class="n">...</span>
 
 <span class="c"># serialise for a critical section</span>
 <span class="k">with</span> agent_txn(
         adapters, policy,
         isolation=Serialize()) <span class="k">as</span> ctx:
-    <span class="n">...</span></pre>
-        <p>The mechanism is exposed; the policy is chosen by the operator who actually knows the workload's idempotency profile.</p>
+    <span class="n">...</span>
+
+<span class="c"># retry needs a callable Pherix can legitimately re-invoke —</span>
+<span class="c"># Python's context-manager protocol cannot replay the with-body.</span>
+<span class="c"># Use the run_txn form for the idempotent-pipeline case.</span>
+<span class="k">def</span> <span class="n">pipeline</span>(ctx):
+    <span class="n">...</span>
+
+run_txn(pipeline, adapters, policy,
+        isolation=Retry(<span class="n">3</span>))</pre>
+        <p>The mechanism is exposed; the policy is chosen by the operator who actually knows the workload's idempotency profile. <code>Retry(n)</code> lives on the <code>run_txn(fn, …)</code> entry point because re-entry of a <code>with</code>-body isn't a thing Python lets us do honestly; <code>fn</code> is a handle Pherix can legitimately re-invoke. The function must be idempotent w.r.t. side effects Pherix doesn't see (raw file logging, module-level state, non-adapter network calls) — anything inside the adapter set is rolled back between attempts; anything outside fires every retry.</p>
       </div>
       <div class="panel rej">
         <span class="ribbon">Rejected</span>
