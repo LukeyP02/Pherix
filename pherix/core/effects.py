@@ -2,7 +2,10 @@
 
 An Effect is a single entry in a Transaction's append-only effect journal.
 ``read_keys`` / ``write_keys`` slots exist from day one (Slice 4 isolation)
-but carry no logic in Slice 1; ``compensator`` is likewise inert until Slice 3.
+but carry no logic in Slice 1. ``compensator`` is wired up in Slice 3:
+when an effect is irreversible and fails mid-commit, the runtime invokes
+the named compensator to undo it (a semantic left-inverse — Pherix does
+not verify the property; the developer asserts it).
 """
 
 from __future__ import annotations
@@ -21,6 +24,26 @@ class EffectStatus(Enum):
     COMPENSATED = "compensated"
     GATED = "gated"
     FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class StagedResult:
+    """Sentinel returned to the agent when a staged irreversible tool is called.
+
+    Slice 3 / D1: staged effects exist in a partial order with respect to commit
+    time — temporally posterior, by construction. The agent receives the
+    deterministic ``effect_id`` so it can carry the reference around (e.g.
+    pass it to ``approve_irreversible``), but the real return value of the
+    underlying tool only exists *after* commit fires the effect, and lands in
+    the audit journal then. The agent therefore cannot branch on the result
+    within the same transaction — that's the partial-order property as a
+    constraint on agent code.
+    """
+
+    effect_id: str
+
+    def __repr__(self) -> str:
+        return f"StagedResult(effect_id={self.effect_id!r})"
 
 
 def compute_effect_id(txn_id: str, index: int, tool: str, args: dict) -> str:

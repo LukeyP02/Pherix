@@ -1,7 +1,20 @@
 """Transaction: the state machine that owns the ordered effect journal.
 
-Slice 1 exercises only ``OPEN -> COMMITTED`` and ``OPEN -> ROLLED_BACK``.
-``STAGED`` / ``PARTIAL`` / ``STUCK`` are defined but unused until later slices.
+Slice 1 used only ``OPEN -> COMMITTED`` and ``OPEN -> ROLLED_BACK``.
+Slice 3 wires up the dormant states ``STAGED`` / ``PARTIAL`` / ``STUCK``:
+
+- ``OPEN -> STAGED`` — ``commit()`` invoked, txn carries at least one staged
+  irreversible. Transient: the txn passes through STAGED while irreversibles
+  fire in order.
+- ``STAGED -> COMMITTED`` — all staged irreversibles fired successfully.
+- ``STAGED -> PARTIAL`` — a staged irreversible failed mid-fire; compensators
+  about to run.
+- ``PARTIAL -> ROLLED_BACK`` — unwind completed (compensators + snapshot
+  restores); world is back to pre-txn state.
+- ``PARTIAL -> STUCK`` — a compensator was missing or itself failed; operator
+  intervention required. The journal carries enough state for manual recovery.
+- ``OPEN -> ROLLED_BACK`` — explicit rollback before commit; staged effects
+  never fired (the strongest containment property).
 """
 
 from __future__ import annotations
@@ -26,9 +39,12 @@ class TransactionStateError(RuntimeError):
     """Raised on an illegal transaction state transition or journal mutation."""
 
 
-# Slice 1 only: the reversible commit / rollback paths.
+# Slice 1 + 3: reversible commit / rollback paths, plus staged-irreversible
+# commit and partial-commit recovery.
 _ALLOWED_TRANSITIONS: dict[TxnState, set[TxnState]] = {
-    TxnState.OPEN: {TxnState.COMMITTED, TxnState.ROLLED_BACK},
+    TxnState.OPEN: {TxnState.STAGED, TxnState.COMMITTED, TxnState.ROLLED_BACK},
+    TxnState.STAGED: {TxnState.COMMITTED, TxnState.PARTIAL},
+    TxnState.PARTIAL: {TxnState.ROLLED_BACK, TxnState.STUCK},
 }
 
 
