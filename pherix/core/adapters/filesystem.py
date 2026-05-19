@@ -137,11 +137,26 @@ class FsHandle:
         self._recorded_reads.add(rel_path)
 
     def _record_write_key(self, rel_path: str) -> None:
-        if self._effect is None:
+        """Append a write triple `(resource, key, version_after_my_write)`.
+
+        Slice 4 P3: the post-write version is the content-hash AFTER our write
+        landed. The runtime's commit-time diff uses this as our "expected
+        current" for the key — if the live version differs from it, someone
+        else moved the resource after we wrote, which is a real cross-txn
+        conflict (not a self-bump artefact).
+
+        Unlike read recording, writes are NOT deduplicated: re-writing the
+        same path twice in one effect produces two entries, the last one
+        carries the freshest post-write version. The diff folds via
+        `last_my_write[(resource, key)]` to pick the most recent.
+        """
+        if self._effect is None or self._adapter is None:
             return
-        if rel_path in self._recorded_writes:
-            return
-        self._effect.write_keys.append(("fs", (rel_path,)))
+        # Re-hash AFTER the write has landed on disk so the version we record
+        # is the version the adapter would report on `read_version` right
+        # now. `read_version` happens to be the same logic, so we reuse it.
+        version_after = self._adapter.read_version((rel_path,))
+        self._effect.write_keys.append(("fs", (rel_path,), version_after))
         self._recorded_writes.add(rel_path)
 
 

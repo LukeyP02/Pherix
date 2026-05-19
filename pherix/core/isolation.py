@@ -175,32 +175,40 @@ class Serialize:
 def check_conflicts(
     effects: list, adapters: dict
 ) -> list[Conflict]:
-    """Fold the journal: ask each adapter for the current version of every
-    read key; emit a :class:`Conflict` for any that has moved.
+    """Fold the journal: for every read key, compare the version we expect
+    against the version the adapter reports now. Emit a :class:`Conflict`
+    when those differ.
 
     Effects whose adapter is non-rollback (e.g. :class:`HTTPAdapter`) are
     skipped: irreversibles are isolated-by-construction via staging, so
     their reads (if any) do not participate in MVCC.
 
-    Self-bump caveat: when this transaction *also* writes a key it read,
-    the adapter's monotonic counter has been bumped by our own write —
-    asking ``read_version`` at commit time would report ``v_at_read +
-    my_bumps`` and mis-classify our own write as a conflict. Slice 4
-    skips the diff on those keys: the version moving is consistent with
-    being self-caused. A real lost-update where another txn ALSO wrote
-    the same key cannot be distinguished from a pure self-bump under
-    monotonic-counter versioning (the bookkeeping cost is paid in
-    Stream A's note on D2; SSI or row-ctid in Postgres would close this
-    gap). The canonical Slice 4 lost-update pin uses a read-only
-    "loser" txn — its read-set diff still fires cleanly under
-    first-committer-wins semantics, which is the property Slice 4
-    guarantees.
+    Self-bump disambiguation (Slice 4 P3 follow-up). When a transaction
+    reads a key and then writes it, the adapter's version moves because
+    of OUR own write. Previously the diff filtered such keys out entirely
+    via an ``own_writes`` set — but that filter was too permissive: a
+    genuine lost-update where another transaction ALSO bumped the same
+    key was silently swallowed alongside the self-bump.
+
+    The fix: ``write_keys`` triples carry ``(resource, key,
+    version_after_my_write)``. For each read key, we compute "my expected
+    current" as the version after my LAST write of that key (or, if I
+    didn't write the key, the version when I read it). The diff fires
+    when the adapter's live version is anything other than that. The
+    structure is monotonic — my own bumps move the expected current
+    upward consistently; only a cross-transaction write moves the live
+    version past it.
     """
-    own_writes: set[tuple] = {
-        (r, tuple(k))
-        for effect in effects
-        for (r, k) in effect.write_keys
-    }
+    # Per (resource, key): the version produced by my LAST write. Iteration
+    # order in ``effect.write_keys`` is append-order, and write_keys is
+    # populated in time order by the resource handles, so the last entry
+    # for a given key is the freshest post-write version we produced.
+    last_my_write: dict[tuple, object] = {}
+    for effect in effects:
+        for entry in effect.write_keys:
+            resource, key, v_after = entry
+            last_my_write[(resource, tuple(key))] = v_after
+
     conflicts: list[Conflict] = []
     for effect in effects:
         for entry in effect.read_keys:
@@ -208,14 +216,18 @@ def check_conflicts(
             adapter = adapters.get(resource)
             if adapter is None or not adapter.supports_rollback():
                 continue
-            if (resource, tuple(key)) in own_writes:
-                continue
-            v_now = adapter.read_version(tuple(key))
-            if v_now != v_at_read:
+            key_tuple = tuple(key)
+            # "Expected current" per key:
+            # - If I wrote the key after reading it: the version after my
+            #   last write (we expect the adapter to still report that).
+            # - If I only read the key: v_at_read.
+            v_expected = last_my_write.get((resource, key_tuple), v_at_read)
+            v_now = adapter.read_version(key_tuple)
+            if v_now != v_expected:
                 conflicts.append(
                     Conflict(
                         resource=resource,
-                        key=tuple(key),
+                        key=key_tuple,
                         version_at_read=v_at_read,
                         version_now=v_now,
                     )
@@ -314,7 +326,7 @@ class JournalRegistry:
                     other_writes = {
                         (r, tuple(k))
                         for effect in ctx.txn.effects
-                        for (r, k) in effect.write_keys
+                        for (r, k, _v) in effect.write_keys
                     }
                     if my_reads & other_writes:
                         ev = threading.Event()

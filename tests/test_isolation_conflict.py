@@ -171,6 +171,94 @@ def test_read_key_with_list_form_is_normalised_to_tuple():
     assert isinstance(conflicts[0].key, tuple)
 
 
+# --- Slice 4 P3: self-bump vs cross-txn disambiguation ----------------------
+
+
+def test_self_bump_alone_does_not_flag_a_conflict():
+    """If I read K@v=5, write K, and write_keys records v_after_write=6,
+    then at commit time the live version IS 6 because of my own write —
+    the diff must not flag this as a conflict.
+    """
+    adapter = FakeAdapter(versions={("k",): 6})  # post-my-write state
+    eff = _effect(
+        read_keys=[("fake", ("k",), 5)],
+        write_keys=[("fake", ("k",), 6)],  # my expected-current after write
+    )
+    assert check_conflicts([eff], {"fake": adapter}) == []
+
+
+def test_cross_txn_write_after_my_write_is_flagged_as_conflict():
+    """The bug Slice 4's original code had: a txn that BOTH read AND
+    wrote the same key would silently swallow cross-txn writes via the
+    `own_writes` filter. With P3 the diff uses `last_my_write` to compute
+    "my expected current" and flags anything beyond that as a conflict.
+
+    Scenario: I read K@v=5, write K (expecting v=6 after), then someone
+    else writes K (advancing live to v=7). My commit-time diff sees
+    v_now=7 != my_expected=6 — conflict, correctly.
+    """
+    adapter = FakeAdapter(versions={("k",): 7})  # someone else also wrote
+    eff = _effect(
+        read_keys=[("fake", ("k",), 5)],
+        write_keys=[("fake", ("k",), 6)],  # my expected-current after my write
+    )
+    conflicts = check_conflicts([eff], {"fake": adapter})
+    assert len(conflicts) == 1
+    assert conflicts[0].key == ("k",)
+    assert conflicts[0].version_now == 7
+    # version_at_read reports the version I observed on first read
+    assert conflicts[0].version_at_read == 5
+
+
+def test_multiple_writes_to_same_key_use_last_my_write_as_expected():
+    """Repeated writes append; `last_my_write` picks the freshest. The
+    expected current = the version after my LAST write of K.
+    """
+    adapter = FakeAdapter(versions={("k",): 8})  # matches my last bump
+    eff = _effect(
+        read_keys=[("fake", ("k",), 5)],
+        write_keys=[
+            ("fake", ("k",), 6),
+            ("fake", ("k",), 7),
+            ("fake", ("k",), 8),
+        ],
+    )
+    # My last write produced v=8; live version is 8; no conflict.
+    assert check_conflicts([eff], {"fake": adapter}) == []
+
+
+def test_multiple_writes_then_cross_txn_write_flags_conflict():
+    """Same as the multi-write case but a concurrent writer bumped K
+    one more time after my last write. Must flag a conflict.
+    """
+    adapter = FakeAdapter(versions={("k",): 9})  # one beyond my last write
+    eff = _effect(
+        read_keys=[("fake", ("k",), 5)],
+        write_keys=[
+            ("fake", ("k",), 6),
+            ("fake", ("k",), 7),
+            ("fake", ("k",), 8),
+        ],
+    )
+    conflicts = check_conflicts([eff], {"fake": adapter})
+    assert len(conflicts) == 1
+    assert conflicts[0].version_now == 9
+
+
+def test_write_without_read_does_not_appear_in_diff():
+    """The diff walks `read_keys`. A key I only WROTE (didn't read first)
+    isn't checked — write-only effects don't participate in lost-update
+    detection. This is the Slice-4 scope: read-write conflict, not
+    write-write conflict.
+    """
+    adapter = FakeAdapter(versions={("k",): 99})  # massively moved
+    eff = _effect(
+        read_keys=[],  # no reads
+        write_keys=[("fake", ("k",), 1)],  # I wrote once
+    )
+    assert check_conflicts([eff], {"fake": adapter}) == []
+
+
 # --- IsolationConflict carry-through ----------------------------------------
 
 

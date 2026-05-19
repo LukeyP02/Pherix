@@ -131,12 +131,22 @@ def test_fs_handle_write_records_write_key(fs_adapter, fs_handle_for):
     handle, token = fs_handle_for(effect)
     try:
         handle.write("foo.txt", b"hello")
-        assert effect.write_keys == [("fs", ("foo.txt",))]
+        # Slice 4 P3: write_keys carries `(resource, key, version_after_write)`
+        # so the commit-time diff can disambiguate self-bumps from cross-txn
+        # writes via `last_my_write` lookup.
+        assert len(effect.write_keys) == 1
+        assert effect.write_keys[0][:2] == ("fs", ("foo.txt",))
+        # Third element is the post-write content hash (sha256 hex).
+        v_after = effect.write_keys[0][2]
+        assert isinstance(v_after, str)
+        # The recorded version must match what the adapter reports right
+        # now — the diff compares them at commit time.
+        assert v_after == fs_adapter.read_version(("foo.txt",))
     finally:
         active_effect.reset(token)
 
 
-def test_fs_handle_write_dedupes_within_one_effect(
+def test_fs_handle_write_appends_one_entry_per_write(
     fs_adapter, fs_handle_for
 ):
     effect = _make_effect()
@@ -145,9 +155,14 @@ def test_fs_handle_write_dedupes_within_one_effect(
         handle.write("foo.txt", b"a")
         handle.write("foo.txt", b"bb")
         handle.write("foo.txt", b"ccc")
-        # Three writes, one write_key entry — the journal stays compact.
-        # The disk content reflects the *last* write.
-        assert effect.write_keys == [("fs", ("foo.txt",))]
+        # Slice 4 P3: three writes, three write_key entries (append-only,
+        # no dedup). `last_my_write` in the diff picks the last — the
+        # version corresponding to the on-disk final state.
+        assert len(effect.write_keys) == 3
+        for entry in effect.write_keys:
+            assert entry[:2] == ("fs", ("foo.txt",))
+        # The last triple's version matches what's actually on disk now.
+        assert effect.write_keys[-1][2] == fs_adapter.read_version(("foo.txt",))
         assert (fs_adapter.root / "foo.txt").read_bytes() == b"ccc"
     finally:
         active_effect.reset(token)
@@ -159,7 +174,11 @@ def test_fs_handle_delete_records_write_key(fs_adapter, fs_handle_for):
     handle, token = fs_handle_for(effect)
     try:
         handle.delete("foo.txt")
-        assert effect.write_keys == [("fs", ("foo.txt",))]
+        # Delete also produces a write triple; post-delete hash is the
+        # "missing" sentinel the adapter uses for absent paths.
+        assert len(effect.write_keys) == 1
+        assert effect.write_keys[0][:2] == ("fs", ("foo.txt",))
+        assert effect.write_keys[0][2] == fs_adapter.read_version(("foo.txt",))
     finally:
         active_effect.reset(token)
 
@@ -192,9 +211,11 @@ def test_fs_handle_mixed_read_write_records_both(fs_adapter, fs_handle_for):
         handle.delete("a.txt")
         assert len(effect.read_keys) == 1
         assert effect.read_keys[0][:2] == ("fs", ("a.txt",))
-        # Both b.txt (write) and a.txt (delete) recorded as write_keys.
-        assert ("fs", ("b.txt",)) in effect.write_keys
-        assert ("fs", ("a.txt",)) in effect.write_keys
+        # Both b.txt (write) and a.txt (delete) recorded as write_keys —
+        # triples now: (resource, key, version_after).
+        write_pairs = [entry[:2] for entry in effect.write_keys]
+        assert ("fs", ("b.txt",)) in write_pairs
+        assert ("fs", ("a.txt",)) in write_pairs
         assert len(effect.write_keys) == 2
     finally:
         active_effect.reset(token)
@@ -235,8 +256,9 @@ def test_execute_isolated_records_write_and_bumps_version(sqlite_adapter):
             ("x",),
             writes=[("counters", "x")],
         )
-        # Write recorded, version bumped.
-        assert effect.write_keys == [("sql", ("counters", "x"))]
+        # Write recorded, version bumped. Slice 4 P3: triple form.
+        assert len(effect.write_keys) == 1
+        assert effect.write_keys[0] == ("sql", ("counters", "x"), 1)
         assert sqlite_adapter.read_version(("counters", "x")) == 1
     finally:
         active_effect.reset(token)
@@ -277,11 +299,11 @@ def test_execute_isolated_multi_write_bumps_each(sqlite_adapter):
             (),
             writes=[("counters", "x"), ("counters", "y"), ("counters", "z")],
         )
-        # All three write_keys present (order preserved).
+        # All three write_keys present (order preserved). Slice 4 P3: triples.
         assert effect.write_keys == [
-            ("sql", ("counters", "x")),
-            ("sql", ("counters", "y")),
-            ("sql", ("counters", "z")),
+            ("sql", ("counters", "x"), 1),
+            ("sql", ("counters", "y"), 1),
+            ("sql", ("counters", "z"), 1),
         ]
         # All three versions bumped to 1.
         for pk in ("x", "y", "z"):

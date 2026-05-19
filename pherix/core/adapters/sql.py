@@ -244,11 +244,13 @@ def execute_isolated(
             effect.read_keys.append(triple)
     for key in writes or ():
         key_t = tuple(key)
-        # write_version bumps the side-table — must always run, even when
-        # the pair is already in write_keys (a later read on the same key
-        # in another effect should see the new version, not the old one).
-        adapter.write_version(key_t)
-        pair = ("sql", key_t)
-        if pair not in effect.write_keys:
-            effect.write_keys.append(pair)
+        # Slice 4 P3: write_keys carries `(resource, key, version_after_my_write)`
+        # so the commit-time diff can disambiguate self-bumps from cross-txn
+        # writes via `last_my_write` lookup. The third element is "my expected
+        # current" for this key after my write — if the live version differs,
+        # someone else also wrote this key during my txn. Writes are NOT
+        # deduplicated: repeated writes append fresh triples and the diff
+        # picks the freshest via iteration order.
+        v_after = adapter.write_version(key_t)
+        effect.write_keys.append(("sql", key_t, v_after))
     return cursor

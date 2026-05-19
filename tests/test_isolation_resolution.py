@@ -138,7 +138,10 @@ class FakeAdapter:
         v = self.write_version(k)
         eff = active_effect.get()
         if eff is not None:
-            eff.write_keys.append((self.name, k))
+            # Slice 4 P3: write_keys is `(resource, key, version_after_write)`
+            # so the commit-time diff can disambiguate self-bumps from
+            # cross-txn writes via `last_my_write` lookup.
+            eff.write_keys.append((self.name, k, v))
         return v
 
 
