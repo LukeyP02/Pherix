@@ -38,6 +38,19 @@ from pherix.frontends.library import (
     tool,
 )
 
+# The MCP gateway front-end (Slice 8) lives in its own package and surfaces at
+# the top level directly — it is a second *driver* of the engine, parallel to
+# the library API, not part of it. Importing from ``pherix.frontends.proxy``
+# (rather than re-exporting through ``library``) keeps the gateway's
+# dependency edge explicit: it is a front-end, peer to ``library``.
+from pherix.frontends.proxy import (
+    InProcessMCPClient,
+    MCPClientError,
+    MCPServer,
+    PherixGateway,
+    serve_stdio,
+)
+
 __all__ = [
     "agent_txn",
     "run_txn",
@@ -74,4 +87,9 @@ __all__ = [
     "IsolationConflict",
     "Conflict",
     "JournalRegistry",
+    "PherixGateway",
+    "MCPServer",
+    "InProcessMCPClient",
+    "MCPClientError",
+    "serve_stdio",
 ]
