@@ -268,6 +268,21 @@ orchestrator, workers, reviewers. Adjust accordingly:
   for an interface contract." "ContextVar — like thread-local state but safe for
   async." Maths and physics terms are fair game if used precisely; CS-specific
   jargon needs defining.
+- **Anchor CS abstractions on the problem they solve, *before* naming them.**
+  Defining the term inline is necessary but not sufficient. When introducing a
+  decision framed around an algorithmic concept the operator isn't already
+  holding ("verification vs recovery replay", "equality semantics",
+  "fresh-state factory", "consistent hashing", "two-phase commit"), lead with
+  the *failure mode* or the *question the operator would naturally ask in
+  their own words*, not the abstraction's name. The shape: concrete scenario
+  → plain-English options → only then the formal terms (if even useful by
+  then). The operator's maths intuition recognises the abstraction on its own
+  once anchored to a concrete problem. Abstraction-first lists of D1–D5
+  decisions read as jargon even when each individual term has been defined —
+  the operator's note that "it's all going above my head" is the signal that
+  this rule was broken. When in doubt, ask "what would the operator type into
+  Google to find out about this?" — that phrasing is the right hook for the
+  explanation.
 - **Lead with the logical chain, not the precedent.** Say *why* something follows
   ("X holds because Y and Z compose this way"), not "this is just how it's done."
   Logical structure they trust; appeals to convention they don't.
