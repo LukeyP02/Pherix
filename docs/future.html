@@ -711,6 +711,110 @@
     .trilogy-grid { grid-template-columns: 1fr; }
   }
 
+  /* ---------------- interception-surface axis (orthogonal to trilogy) ---------------- */
+  .interception-axis {
+    margin: 28px 0 24px;
+    padding: 22px 24px 20px;
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+  }
+  .interception-axis .ix-eyebrow {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 5px;
+  }
+  .interception-axis .ix-h {
+    font-family: var(--serif);
+    font-size: 22px;
+    margin: 0 0 6px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .interception-axis .ix-sub {
+    color: var(--ink-2);
+    margin: 0 0 16px;
+    font-size: 14px;
+    max-width: 64ch;
+  }
+  .interception-axis .ix-stack {
+    display: grid; gap: 8px;
+  }
+  .interception-axis .ix-layer {
+    padding: 13px 16px 14px;
+    background: var(--bg);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    border-left: 4px solid var(--accent);
+  }
+  .interception-axis .ix-l2 { border-left-color: var(--accent-3); }
+  .interception-axis .ix-l3 { border-left-color: var(--accent-2); }
+  .interception-axis .ix-meta {
+    display: flex; gap: 8px; align-items: center;
+    margin-bottom: 5px; flex-wrap: wrap;
+  }
+  .interception-axis .ix-slice {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .interception-axis .ix-l2 .ix-slice { color: var(--accent-3); }
+  .interception-axis .ix-l3 .ix-slice { color: var(--accent-2); }
+  .interception-axis .ix-tag {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border: 1px solid var(--rule);
+    border-radius: 99px;
+    padding: 1px 7px;
+  }
+  .interception-axis .ix-layer h4 {
+    font-family: var(--serif);
+    font-size: 15.5px;
+    margin: 0 0 5px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .interception-axis .ix-layer p {
+    margin: 5px 0; color: var(--ink-2); font-size: 13.5px;
+  }
+  .interception-axis .ix-layer p code { font-size: 0.92em; }
+  .interception-axis .ix-questions {
+    font-size: 12.5px !important;
+    color: var(--ink-2);
+    border-top: 1px dashed var(--rule);
+    padding-top: 6px;
+    margin: 8px 0 0 !important;
+  }
+  .interception-axis .ix-questions b { color: var(--ink); }
+  .interception-axis .ix-arrow {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--ink-3);
+    text-align: center;
+    padding: 2px 0;
+  }
+  .interception-axis .ix-foot {
+    margin: 16px 0 0;
+    color: var(--ink-2);
+    font-size: 13px;
+    font-style: italic;
+    border-top: 1px solid var(--rule);
+    padding-top: 12px;
+    text-align: center;
+  }
+  .interception-axis .ix-foot em { color: var(--ink); }
+
   /* ---------------- pillar headers ---------------- */
   .pillar-header {
     margin: 44px 0 12px;
@@ -2046,6 +2150,53 @@
           </div>
         </div>
         <p class="t-foot">Each pillar is a different traversal of the same list. The engine does not change. The slices below earn it; the pillars consume it.</p>
+      </div>
+
+      <!-- ===== A SECOND AXIS: where the engine intercepts ===== -->
+      <div class="interception-axis" role="note" aria-label="Interception-surface axis — where the engine sits in the stack">
+        <p class="ix-eyebrow">A second axis · orthogonal to the trilogy</p>
+        <h3 class="ix-h">Where the engine intercepts.</h3>
+        <p class="ix-sub">
+          The trilogy framed <em>what the engine does</em>: fold the journal forward, index it, query it. This axis frames <em>where the engine sits</em>. Pherix is a Python library today; the same engine has at least three deeper points of interception worth surfacing now — each a Slice 9+ candidate. The corporate "AI-tooling cancellation" pattern (a security team revoking Claude Code provisioning over "guardrails concerns") landed on <em>exactly</em> this axis: a security team's appetite for a coding-CLI tool depends on what sits in front of it, at every layer.
+        </p>
+
+        <div class="ix-stack">
+          <div class="ix-layer ix-l1">
+            <div class="ix-meta">
+              <span class="ix-slice">Slice 8 · sharpened</span>
+              <span class="ix-tag">already in scope</span>
+            </div>
+            <h4>MCP gateway in front of coding CLIs</h4>
+            <p>The existing Slice 8 brief is generic ("MCP gateway frontend"). The cancellation signal sharpens the first specific user: <em>a security team wanting to permit coding-CLI tools (Claude Code, Aider, Cursor agentic mode) by putting Pherix in front of them via MCP.</em> Acceptance criterion stops being "the gateway works for any MCP-speaking agent" and becomes "a security team would let Claude Code be provisioned because Pherix is in front of it."</p>
+            <p class="ix-questions"><b>Artefacts:</b> gateway config templates for common coding-tool MCPs; gate-policy templates for shell / file / git ops; audit-row schema covering bash + git + file events. <b>Close inside Slice 8 — not a separate slice.</b></p>
+          </div>
+
+          <div class="ix-arrow">↓ deeper interception</div>
+
+          <div class="ix-layer ix-l2">
+            <div class="ix-meta">
+              <span class="ix-slice">Slice 9+ candidate</span>
+              <span class="ix-tag">design open</span>
+            </div>
+            <h4>GitAdapter — transactional git operations</h4>
+            <p>Every git operation has a natural semantic left-inverse: <code>git commit</code> ↔ <code>git reset --soft HEAD~1</code>; <code>git push</code> ↔ <code>git push --force-with-lease &lt;prev-sha&gt;</code>; <code>gh pr create</code> ↔ <code>gh pr close</code>; <code>git merge</code> ↔ <code>git reset --hard &lt;merge-base&gt;</code>. The compensator-as-tool pattern from Slice 3 maps onto git <em>directly</em>. A GitAdapter would let any code agent — Slice-8-wrapped or using git directly — inherit transactional semantics over code changes.</p>
+            <p class="ix-questions"><b>Open:</b> single adapter, or a family (<code>LocalGitAdapter</code> for working tree + <code>GitRemoteAdapter</code> for push/PR)? Does it compose with <code>FilesystemAdapter</code> (git operates on files) or shadow it? How do <code>reflog</code> / <code>stash</code> interact with snapshot semantics — Pherix's snapshot mechanism for free, or a confusion of the journal? <b>Decide alongside dogfood prototype #2 (migration bot) — that's where git becomes the first real stress surface.</b></p>
+          </div>
+
+          <div class="ix-arrow">↓ deeper interception</div>
+
+          <div class="ix-layer ix-l3">
+            <div class="ix-meta">
+              <span class="ix-slice">Slice 10+ · or distinct product line</span>
+              <span class="ix-tag">strategic</span>
+            </div>
+            <h4>Pherix as a CI/CD workflow primitive</h4>
+            <p>A CI pipeline step <code>uses: pherix/transaction@v1</code> wraps the pipeline body in <code>agent_txn</code>. Deploys stage with operator-supplied compensators (<code>kubectl apply</code> ↔ <code>kubectl rollout undo</code>; <code>aws cloudformation deploy</code> ↔ <code>aws cloudformation rollback</code>). Failed post-deploy smoke tests fire the compensators automatically. <em>Pherix as a workflow primitive</em> — where the "agent" being intercepted is the pipeline itself, not an LLM.</p>
+            <p class="ix-questions"><b>Open:</b> distinct product (own packaging, GitHub Action, GitLab template) or Slice 10 of the engine? Which CI systems first (GitHub Actions has the largest reach; Buildkite is friendliest to custom step types)? How does the Slice 8 gateway's cross-host arbitration compose with multi-stage pipelines that span runners? Is the CI-step a thin shim over the existing <code>agent_txn</code> API, or does it need its own state-machine vocabulary? <b>Decide once Slice 8 ships — the gateway dependency is real, and CI-as-pipeline mirrors the MCP-as-protocol shape Slice 8 is already solving.</b></p>
+          </div>
+        </div>
+
+        <p class="ix-foot">Same engine. Same journal. Same compensator-as-tool pattern. Three depths of the same wedge: <em>Pherix is the layer between an agent and any tool that touches code.</em></p>
       </div>
 
       <!-- ---------- PILLAR II: MEMORY ---------- -->
