@@ -42,7 +42,15 @@ from pherix.core.isolation import (
     _RetrySignal,
     _in_run_txn,
 )
-from pherix.core.policy import Policy, PolicyViolation
+from pherix.core.policy import (
+    Allow,
+    Cap,
+    Deny,
+    Policy,
+    PolicyContext,
+    PolicyRule,
+    PolicyViolation,
+)
 from pherix.core.replay import (
     EffectOutcome,
     ReplayDivergence,
@@ -126,7 +134,12 @@ __all__ = [
     "EffectOutcome",
     "tool",
     "Policy",
+    "PolicyContext",
+    "PolicyRule",
     "PolicyViolation",
+    "Allow",
+    "Deny",
+    "Cap",
     "SQLiteAdapter",
     "FilesystemAdapter",
     "HTTPAdapter",
