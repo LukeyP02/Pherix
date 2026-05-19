@@ -35,7 +35,12 @@ from pherix.core.isolation import (
     _RetrySignal,
     check_conflicts,
 )
-from pherix.core.policy import Policy, PolicyContext, PolicyViolation
+from pherix.core.policy import (
+    Policy,
+    PolicyContext,
+    PolicyVerdict,
+    PolicyViolation,
+)
 from pherix.core.tools import REGISTRY, active_effect, active_txn
 from pherix.core.transaction import Transaction, TransactionStateError, TxnState
 
@@ -100,6 +105,8 @@ class TxnContext:
         policy: Policy,
         audit: AuditJournal,
         isolation: Any = None,
+        *,
+        dry_run: bool = False,
     ):
         self.txn = Transaction(policy=policy)
         self.audit = audit
@@ -122,7 +129,16 @@ class TxnContext:
         self._policy_ctx = PolicyContext(
             journal=self.txn.effects, where="stage"
         )
-        audit.record_transaction(self.txn)
+        # Slice 7: dry-run mode flips policy evaluation from raise-mode
+        # (``evaluate``) to capture-mode (``try_evaluate``) at stage-time,
+        # so a Deny during the body lands in ``_stage_verdicts`` instead of
+        # aborting the with-block. The audit row carries ``dry_run=1`` so
+        # operators can filter dry-runs out of compliance views.
+        self._dry_run = dry_run
+        self._stage_verdicts: list[PolicyVerdict] = []
+        # Populated by :meth:`_dry_run_finalise` once the body completes.
+        self.result: Any = None
+        audit.record_transaction(self.txn, dry_run=dry_run)
 
     @property
     def txn_id(self) -> str:
@@ -157,7 +173,18 @@ class TxnContext:
         # the tool name alone. On Deny nothing is journalled, no resource is
         # touched, no audit row written. The Effect object is discarded
         # (effect_id is deterministic — a re-attempt rebuilds an identical id).
-        self._policy.evaluate(effect, self._policy_ctx, where="stage")
+        #
+        # Slice 7: in dry-run mode the stage-time path captures verdicts
+        # without raising, so the agent body keeps running and the full
+        # journal materialises for the final ``DryRunResult``.
+        if self._dry_run:
+            self._stage_verdicts.extend(
+                self._policy.try_evaluate(
+                    effect, self._policy_ctx, where="stage"
+                )
+            )
+        else:
+            self._policy.evaluate(effect, self._policy_ctx, where="stage")
 
         self.txn.add_effect(effect)
         self.audit.record_effect(effect)
@@ -334,6 +361,52 @@ class TxnContext:
         self.txn.transition(TxnState.COMMITTED)
         self.audit.update_transaction_state(self.txn.txn_id, TxnState.COMMITTED.name)
         self._finished = True
+
+    # --- Slice 7: dry-run finalise ----------------------------------------
+
+    def _dry_run_finalise(self) -> None:
+        """Commit-time bracket for a dry-run: capture verdicts, build the
+        result, then unwind everything via the existing rollback bracket.
+
+        Three steps, in this exact order:
+
+          1. ``Policy.collect_verdicts`` re-walks the journal in capture
+             mode (no short-circuit, no raise). The full stage-time +
+             commit-time verdict list is what populates the result.
+          2. Build the :class:`DryRunResult` from the live journal, the
+             ``would_have_fired`` filter, and the verdict list.
+          3. ``rollback()`` runs the existing snapshot-restore + adapter
+             rollback bracket, taking the txn ``OPEN → ROLLED_BACK``.
+
+        The world is bit-identical to its pre-dry-run state on exit
+        except for the populated ``self.result`` and the audit row (which
+        carries ``dry_run=1`` so compliance views can filter it out).
+        """
+        # Avoid the cycle: import here so :mod:`pherix.core.runtime` does
+        # not depend on :mod:`pherix.core.dry_run` at import time.
+        from pherix.core.dry_run import DryRunResult
+
+        commit_verdicts = self._policy.collect_verdicts(
+            self.txn, self._policy_ctx
+        )
+        all_verdicts = list(self._stage_verdicts) + list(commit_verdicts)
+        would_have_fired = [
+            e
+            for e in self.txn.effects
+            if (not e.reversible) and e.status is EffectStatus.STAGED
+        ]
+        self.result = DryRunResult(
+            txn_id=self.txn.txn_id,
+            journal=list(self.txn.effects),
+            would_have_fired=would_have_fired,
+            policy_verdicts=all_verdicts,
+            is_clean=all(v.allow for v in all_verdicts),
+        )
+
+        # Unwind: identical mechanics to a normal rollback. Reversibles
+        # restore from snapshots (APPLIED → COMPENSATED); irreversibles
+        # were never fired (STAGED) and have no snapshot to restore.
+        self.rollback()
 
     # --- isolation (Slice 4) ---
 

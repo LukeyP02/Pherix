@@ -475,6 +475,169 @@ class Policy:
         for effect in txn.effects:
             self.evaluate(effect, ctx, where="commit")
 
+    # -- Slice 7: capture-mode evaluation (no short-circuit, no raise) -----
+
+    def try_evaluate(
+        self,
+        effect: Effect,
+        ctx: PolicyContext,
+        *,
+        where: Where | None = None,
+    ) -> list["PolicyVerdict"]:
+        """Capture-mode counterpart of :meth:`evaluate`.
+
+        Walks every rule and every cap against ``effect``; never raises;
+        returns one :class:`PolicyVerdict` per rule/cap evaluation. The
+        allow/deny tool-name lists contribute at most one extra verdict —
+        and only on Deny (Allow on the allow-list layer is implicit and
+        produces nothing, matching :meth:`evaluate`'s "everyone gets
+        through unless allow/deny says otherwise" semantics).
+
+        Caps still only accumulate on Allow. A denied cap's contribution
+        does NOT advance the running total, so the running total at the
+        end of the walk is identical to what :meth:`evaluate` would
+        produce for the same prefix of Allow-yielding effects. This is
+        the load-bearing equality between raise-mode and capture-mode:
+        rule predicates that *would* fire in :meth:`evaluate` fire here
+        too with the same arguments.
+        """
+        if where is not None:
+            ctx.where = where
+        active_where: Where = ctx.where
+        verdicts: list[PolicyVerdict] = []
+
+        # 1. allow/deny — capture as Deny verdict when it bites; allow-list
+        # passes are implicit (no entry).
+        if effect.tool in self.deny:
+            verdicts.append(
+                PolicyVerdict(
+                    allow=False,
+                    rule=None,
+                    effect_index=effect.index,
+                    where=active_where,
+                    tool=effect.tool,
+                    reason="tool is deny-listed",
+                )
+            )
+        elif self.allow is not None and effect.tool not in self.allow:
+            verdicts.append(
+                PolicyVerdict(
+                    allow=False,
+                    rule=None,
+                    effect_index=effect.index,
+                    where=active_where,
+                    tool=effect.tool,
+                    reason="tool is not in the allow-list",
+                )
+            )
+
+        # 2. registered rules — one verdict each, regardless of outcome.
+        for rule in self.rules:
+            v = rule.evaluate(effect, ctx)
+            if isinstance(v, Deny):
+                verdicts.append(
+                    PolicyVerdict(
+                        allow=False,
+                        rule=rule,
+                        effect_index=effect.index,
+                        where=active_where,
+                        tool=effect.tool,
+                        reason=v.reason,
+                    )
+                )
+            else:
+                verdicts.append(
+                    PolicyVerdict(
+                        allow=True,
+                        rule=rule,
+                        effect_index=effect.index,
+                        where=active_where,
+                        tool=effect.tool,
+                    )
+                )
+
+        # 3. caps — one verdict each; accumulate only on Allow.
+        for cap in self.caps:
+            v = cap.evaluate(effect, ctx)
+            if isinstance(v, Deny):
+                verdicts.append(
+                    PolicyVerdict(
+                        allow=False,
+                        rule=cap,
+                        effect_index=effect.index,
+                        where=active_where,
+                        tool=effect.tool,
+                        reason=v.reason,
+                    )
+                )
+            else:
+                verdicts.append(
+                    PolicyVerdict(
+                        allow=True,
+                        rule=cap,
+                        effect_index=effect.index,
+                        where=active_where,
+                        tool=effect.tool,
+                    )
+                )
+                if cap.applies_to(effect):
+                    ctx.cap_add(cap, cap.contribution(effect))
+
+        return verdicts
+
+    def collect_verdicts(
+        self,
+        txn: Any,
+        ctx: PolicyContext,
+    ) -> list["PolicyVerdict"]:
+        """Commit-time capture walk over the whole journal.
+
+        Resets per-cap totals (matching :meth:`evaluate_journal`'s
+        re-accumulate-from-zero semantics) then folds forward through
+        every effect with :meth:`try_evaluate`. Returns the flat list of
+        every verdict produced; never raises on ``Deny``. Used by
+        :func:`pherix.dry_run` as the commit-time policy bracket.
+        """
+        ctx.reset_caps()
+        out: list[PolicyVerdict] = []
+        for effect in txn.effects:
+            out.extend(self.try_evaluate(effect, ctx, where="commit"))
+        return out
+
+
+# -- Slice 7: capture-mode verdict carrier ---------------------------------
+
+
+@dataclass
+class PolicyVerdict:
+    """One evaluation of one rule (or cap, or the allow/deny list) against
+    one effect, captured rather than raised.
+
+    Emitted by :meth:`Policy.try_evaluate` (per stage-time tool call) and
+    by :meth:`Policy.collect_verdicts` (per commit-time journal walk).
+    Aggregated into :class:`pherix.core.dry_run.DryRunResult.policy_verdicts`.
+
+    The :attr:`rule` field is the live rule object (a
+    :class:`PolicyRule`, or the cap returned by :meth:`Cap.count` /
+    :meth:`Cap.sum`), or ``None`` for verdicts attributable to the
+    allow/deny tool-name lists (those have no per-rule identity to
+    surface). :attr:`rule_name` is the convenience handle for printing /
+    asserting in tests.
+    """
+
+    allow: bool
+    rule: Any | None
+    effect_index: int
+    where: Where
+    tool: str
+    reason: str | None = None
+
+    @property
+    def rule_name(self) -> str | None:
+        if self.rule is None:
+            return None
+        return getattr(self.rule, "name", None)
+
 
 __all__ = [
     "Allow",
@@ -483,6 +646,7 @@ __all__ = [
     "Policy",
     "PolicyContext",
     "PolicyRule",
+    "PolicyVerdict",
     "PolicyViolation",
     "Verdict",
 ]

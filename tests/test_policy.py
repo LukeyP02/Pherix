@@ -8,6 +8,7 @@ from pherix.core.policy import (
     Policy,
     PolicyContext,
     PolicyRule,
+    PolicyVerdict,
     PolicyViolation,
 )
 
@@ -299,3 +300,124 @@ def test_rule_short_circuits_before_cap_when_first_in_order():
     # Cap running total is still 20 (the denied effect didn't accumulate).
     cap = policy.caps[0]
     assert ctx.cap_running(cap) == 20
+
+
+# --- Slice 7 capture mode: try_evaluate + collect_verdicts -----------------
+
+
+def test_try_evaluate_returns_verdict_per_rule_and_cap():
+    policy = Policy.allow_all()
+
+    @policy.rule
+    def r1(effect, ctx):
+        return Allow()
+
+    @policy.rule
+    def r2(effect, ctx):
+        return Allow()
+
+    policy.add_cap(Cap.count(tool="ping", max=10))
+
+    verdicts = policy.try_evaluate(_effect("ping"), _ctx())
+    # 2 rules + 1 cap = 3 verdicts; allow-list pass is implicit (no entry).
+    assert len(verdicts) == 3
+    assert all(v.allow for v in verdicts)
+    names = [v.rule_name for v in verdicts]
+    assert "r1" in names and "r2" in names
+    assert any(n and n.startswith("Cap.count") for n in names)
+
+
+def test_try_evaluate_captures_deny_without_raising():
+    policy = Policy.allow_all()
+
+    @policy.rule
+    def denyer(effect, ctx):
+        return Deny("nope")
+
+    verdicts = policy.try_evaluate(_effect("x"), _ctx())
+    assert len(verdicts) == 1
+    assert verdicts[0].allow is False
+    assert verdicts[0].rule_name == "denyer"
+    assert verdicts[0].reason == "nope"
+
+
+def test_try_evaluate_walks_all_rules_no_short_circuit():
+    policy = Policy.allow_all()
+
+    @policy.rule
+    def first_denies(effect, ctx):
+        return Deny("first")
+
+    @policy.rule
+    def second_runs_anyway(effect, ctx):
+        return Allow()
+
+    verdicts = policy.try_evaluate(_effect("x"), _ctx())
+    # No short-circuit — both rules contribute verdicts.
+    assert len(verdicts) == 2
+    assert verdicts[0].rule_name == "first_denies"
+    assert verdicts[0].allow is False
+    assert verdicts[1].rule_name == "second_runs_anyway"
+    assert verdicts[1].allow is True
+
+
+def test_try_evaluate_cap_does_not_accumulate_on_deny():
+    """The load-bearing equality: denied caps don't advance running totals,
+    same semantics as evaluate."""
+    policy = Policy.with_rules(
+        caps=[Cap.sum(tool="charge", via=lambda a: a["amount"], max=50)]
+    )
+    cap = policy.caps[0]
+    ctx = _ctx()
+    policy.try_evaluate(_effect("charge", {"amount": 40}), ctx)
+    assert ctx.cap_running(cap) == 40
+    # This one denies (40 + 20 > 50). Running total must NOT advance.
+    policy.try_evaluate(_effect("charge", {"amount": 20}), ctx)
+    assert ctx.cap_running(cap) == 40
+
+
+def test_try_evaluate_emits_deny_verdict_for_allow_list():
+    policy = Policy(allow={"safe"})
+    verdicts = policy.try_evaluate(_effect("risky"), _ctx())
+    assert len(verdicts) == 1
+    assert verdicts[0].allow is False
+    assert verdicts[0].rule is None
+    assert verdicts[0].rule_name is None
+    assert "allow-list" in verdicts[0].reason
+
+
+def test_collect_verdicts_walks_journal_and_never_raises():
+    policy = Policy.allow_all()
+
+    @policy.rule
+    def block_third(effect, ctx):
+        if effect.index == 2:
+            return Deny("the third one")
+        return Allow()
+
+    txn = _FakeTxn(effects=[_effect("x", index=i) for i in range(3)])
+    verdicts = policy.collect_verdicts(txn, _ctx())
+    # 3 effects × 1 rule = 3 verdicts.
+    assert len(verdicts) == 3
+    assert [v.allow for v in verdicts] == [True, True, False]
+    assert all(v.where == "commit" for v in verdicts)
+    deny = verdicts[2]
+    assert deny.effect_index == 2
+    assert deny.reason == "the third one"
+
+
+def test_collect_verdicts_resets_caps_between_walks():
+    """Same shape as evaluate_journal: each call resets and re-walks."""
+    policy = Policy.with_rules(caps=[Cap.count(tool="ping", max=2)])
+    cap = policy.caps[0]
+    txn = _FakeTxn(effects=[_effect("ping", index=i) for i in range(2)])
+    ctx = _ctx()
+
+    first = policy.collect_verdicts(txn, ctx)
+    assert all(v.allow for v in first)
+    assert ctx.cap_running(cap) == 2
+
+    # Second call resets the cap totals — same 2 effects must NOT trip.
+    second = policy.collect_verdicts(txn, ctx)
+    assert all(v.allow for v in second)
+    assert ctx.cap_running(cap) == 2

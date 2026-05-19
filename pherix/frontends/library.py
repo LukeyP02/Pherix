@@ -31,6 +31,7 @@ from pherix.core.adapters.filesystem import FilesystemAdapter
 from pherix.core.adapters.http import HTTPAdapter, IrreversibleAdapterError
 from pherix.core.adapters.sql import SQLiteAdapter
 from pherix.core.audit import AuditJournal
+from pherix.core.dry_run import DryRunResult, dry_run
 from pherix.core.effects import StagedResult
 from pherix.core.isolation import (
     REGISTRY as JournalRegistry,
@@ -49,6 +50,7 @@ from pherix.core.policy import (
     Policy,
     PolicyContext,
     PolicyRule,
+    PolicyVerdict,
     PolicyViolation,
 )
 from pherix.core.replay import (
@@ -129,6 +131,8 @@ __all__ = [
     "agent_txn",
     "run_txn",
     "replay",
+    "dry_run",
+    "DryRunResult",
     "ReplayResult",
     "ReplayDivergence",
     "EffectOutcome",
@@ -136,6 +140,7 @@ __all__ = [
     "Policy",
     "PolicyContext",
     "PolicyRule",
+    "PolicyVerdict",
     "PolicyViolation",
     "Allow",
     "Deny",
