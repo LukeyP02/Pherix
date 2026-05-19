@@ -1184,8 +1184,8 @@
       <li><a href="#s2">Filesystem adapter <span style="color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
       <li><a href="#s3">HTTP / irreversible <span style="color: var(--accent-2); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
       <li><a href="#s4">Isolation <span style="color: var(--accent-3); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
-      <li><a href="#s5">Replay <span style="color: var(--accent-5); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·NEXT</span></a></li>
-      <li><a href="#s6">Real policy engine</a></li>
+      <li><a href="#s5">Replay <span style="color: var(--accent-5); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
+      <li><a href="#s6">Real policy engine <span style="color: var(--accent-6, var(--accent)); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·NEXT</span></a></li>
       <li><a href="#s7">Speculative dry-run</a></li>
       <li><a href="#s8">MCP gateway</a></li>
     </ol>
@@ -1242,8 +1242,8 @@
               <tr>
                 <td class="cap">Replay</td>
                 <td class="op">forward fold against fresh state</td>
-                <td>every <code>e<sub>i</sub>.result</code> equals the original</td>
-                <td><span class="slice-pill s5">Slice 5</span></td>
+                <td>every <code>e<sub>i</sub>.result</code> equals the original (per the comparator)</td>
+                <td><span class="slice-pill s5">Slice 5 · shipped</span></td>
               </tr>
               <tr>
                 <td class="cap">Speculative dry-run</td>
@@ -1270,7 +1270,7 @@
         <p style="margin-top:18px; color: var(--ink-2);">Five hard problems &mdash; rollback semantics, isolation, partial-failure correctness, deterministic replay, what-if simulation &mdash; reduce to <b>six verbs over one list</b>. That is the wedge. The slices below are each one verb wearing a different costume.</p>
       </div>
 
-      <p style="margin-top:18px;">Slices&nbsp;1&ndash;4 are <b>merged</b> &mdash; the SQL adapter at <code>ad4e9c0</code>, the filesystem adapter at <code>c926f97</code>, the irreversible / HTTP lane at <code>a13018b</code>, and isolation (read/write-set capture through the resource handle, commit-time conflict diff via per-adapter versioning, resolution policy <code>Abort</code> / <code>Retry(N)</code> / <code>Serialize</code>) at <code>0fab344</code> &mdash; 226 tests green. Slice&nbsp;1 is covered in detail in <code>slice-1.html</code>; Slice&nbsp;5 (replay) is next on the critical path and currently in design. This document is the trajectory: how the same engine extends to deterministic replay, real policy, speculative execution, and a language-agnostic gateway &mdash; <em>without rebuilding the engine</em> &mdash; and then how two further pillars, memory and audit, grow from the same journal.</p>
+      <p style="margin-top:18px;">Slices&nbsp;1&ndash;5 are <b>merged</b> &mdash; the SQL adapter at <code>ad4e9c0</code>, the filesystem adapter at <code>c926f97</code>, the irreversible / HTTP lane at <code>a13018b</code>, isolation (read/write-set capture through the resource handle, commit-time conflict diff via per-adapter versioning, resolution policy <code>Abort</code> / <code>Retry(N)</code> / <code>Serialize</code>) at <code>0fab344</code>, and replay (<code>pherix.replay(txn_id, adapters, source_audit=...)</code> folds the journal forward against fresh state, <code>verify</code> mode asserts each effect's recorded result equals the replayed result with a per-tool <code>@tool(comparator=fn)</code> escape hatch, <code>reconstruct</code> mode rebuilds the world; irreversible <code>APPLIED</code> effects are skip-and-reused) &mdash; <b>249 tests green</b>. Slice&nbsp;1 is covered in detail in <code>slice-1.html</code>; Slice&nbsp;6 (real policy engine) is next on the critical path. This document is the trajectory: how the same engine extends to real policy, speculative execution, and a language-agnostic gateway &mdash; <em>without rebuilding the engine</em> &mdash; and then how two further pillars, memory and audit, grow from the same journal.</p>
     </section>
 
     <!-- ===================== MATRIX ===================== -->
@@ -1750,9 +1750,9 @@
 
         <!-- ============ SLICE 5 ============ -->
         <article class="card s5" id="s5">
-          <div class="top"><span class="num">Slice · 05</span><span class="slice-pill s5">replay</span></div>
+          <div class="top"><span class="num">Slice · 05</span><span class="slice-pill s5">replay · shipped</span></div>
           <h3>Replay from the journal</h3>
-          <p class="tagline">Nearly free &mdash; the journal already exists.</p>
+          <p class="tagline">Nearly free &mdash; the journal already exists. <em>Shipped.</em></p>
 
           <div class="schematic">
             <svg viewBox="0 0 360 100" class="glyph" aria-label="forward fold of journal against fresh state">
@@ -1782,13 +1782,13 @@
           </div>
 
           <h4>What it adds</h4>
-          <p>A <code>replay(txn_id)</code> entrypoint: load the recorded journal from the audit, instantiate a fresh resource of each type at a known good state, and fold the journal forward through the adapters &mdash; asserting at each step that the new <code>result</code> equals the recorded one.</p>
+          <p>A top-level <code>pherix.replay(txn_id, adapters, source_audit=..., mode='verify'|'reconstruct')</code> entrypoint: load the recorded journal from <code>source_audit</code>, fold it forward through the operator-supplied fresh adapters. Under <code>mode='verify'</code>, each replayed result is compared against the original via the per-tool <code>@tool(comparator=fn)</code> (default canonical-JSON equality); divergences raise <code>ReplayDivergence</code>. Under <code>mode='reconstruct'</code>, today's result becomes the new world's state. Irreversible <code>APPLIED</code> effects are skip-and-reused from the journal, never re-fired &mdash; Pherix cannot honestly snapshot an external HTTP call, so the journal is the witness for it.</p>
 
           <h4>What it unlocks</h4>
-          <p>Determinism checks. Disaster recovery (rebuild end-state from logs). Debugging: rerun a problematic txn with breakpoints. Compliance: prove that a sequence of agent actions reconstructs to a specific state byte-for-byte. The journal becomes <em>truth</em>, not just a trace.</p>
+          <p>Determinism checks (verify). Disaster recovery (reconstruct: rebuild end-state from the journal on a fresh substrate). Debugging: rerun a problematic txn against fresh adapters with breakpoints. Compliance: prove that a sequence of agent actions reconstructs to a specific state. The journal becomes <em>truth</em>, not just a trace.</p>
 
           <h4>How it traverses the journal</h4>
-          <div class="fold-line">Forward fold, second time around. Same direction as commit; the difference is the substrate &mdash; not the live backend, a fresh one. If the agent and adapters are deterministic, the result is identical. If it isn't, replay <em>finds you the non-determinism</em>.</p>
+          <div class="fold-line">Forward fold, second time around. Same direction as commit; the difference is the substrate &mdash; not the live backend, a fresh one. The new <code>Transaction</code> carries <code>replayed_from = source_txn_id</code>; the replay's own audit row links back. If the agent and adapters are deterministic the verify-fold lands on the same observables; if not, the comparator flags the offending effect.</div>
         </article>
 
         <!-- ============ SLICE 6 ============ -->

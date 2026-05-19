@@ -58,6 +58,12 @@ class Transaction:
     state: TxnState = TxnState.OPEN
     effects: list[Effect] = field(default_factory=list)
     policy: object | None = None
+    # Slice 5: when this transaction is itself a replay, ``replayed_from`` is
+    # the source ``txn_id`` whose journal we re-fired. ``None`` for a normal
+    # transaction. Persisted to the audit row so the operator can ask of any
+    # txn "are you original or a replay of someone?" and "are you anyone's
+    # replay-target?" via a single field lookup.
+    replayed_from: str | None = None
 
     @property
     def is_open(self) -> bool:

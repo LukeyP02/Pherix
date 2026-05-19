@@ -299,10 +299,10 @@
   <h1>Pherix — Build Roadmap</h1>
   <div class="sub">A visual map of the eight-slice build. Each slice ships something demoable; the system gets <em>deeper</em>, not just wider. Hover the timeline, expand a card, follow a thread.</div>
   <div class="meta">
-    <span><b>Status:</b> Slices 1–4 merged · Slice 5 in design (replay)</span>
-    <span><b>Tests on <code>main</code>:</b> 226 passing</span>
-    <span><b>Last merge:</b> <code>0fab344</code> (Slice 4)</span>
-    <span><b>Today:</b> 2026-05-18</span>
+    <span><b>Status:</b> Slices 1–5 merged · Slice 6 next (real policy engine)</span>
+    <span><b>Tests on <code>main</code>:</b> 249 passing</span>
+    <span><b>Last merge:</b> <code>Slice 5</code> (replay)</span>
+    <span><b>Today:</b> 2026-05-19</span>
   </div>
 </header>
 
@@ -338,8 +338,8 @@
         <tr><td>Mixed-resource txn</td><td>same fold, dispatched by the adapter map</td><td><span class="badge done">2 done</span></td></tr>
         <tr><td>Irreversible safety</td><td>stage now, fold forward only at commit; compensator on rollback</td><td><span class="badge done">3 done</span></td></tr>
         <tr><td>Isolation</td><td><span class="pill">diff</span> read/write keys + versions against the journal</td><td><span class="badge done">4 done</span></td></tr>
-        <tr><td>Replay</td><td>fold <span class="pill">forward</span> against fresh state, assert identical results</td><td><span class="badge active">5 next</span></td></tr>
-        <tr><td>Policy (commit-time)</td><td>walk the journal again at commit, re-evaluate every effect</td><td><span class="badge future">6</span></td></tr>
+        <tr><td>Replay</td><td>fold <span class="pill">forward</span> against fresh state, assert identical results</td><td><span class="badge done">5 done</span></td></tr>
+        <tr><td>Policy (commit-time)</td><td>walk the journal again at commit, re-evaluate every effect</td><td><span class="badge active">6 next</span></td></tr>
         <tr><td>Speculative dry-run</td><td>fold forward against a snapshot, then discard</td><td><span class="badge future">7</span></td></tr>
         <tr><td>MCP gateway</td><td>same engine, different front-end driving the same journal</td><td><span class="badge future">8</span></td></tr>
       </tbody>
@@ -372,11 +372,11 @@
           </pattern>
         </defs>
 
-        <!-- "you are here" band between slice 4 and slice 5 -->
+        <!-- "you are here" band between slice 5 and slice 6 -->
         <g>
-          <rect x="670" y="40" width="30" height="240" fill="url(#diag)" color="var(--active)" />
-          <text x="685" y="32" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">you are here</text>
-          <path d="M685 36 L685 44" stroke="var(--active)" stroke-width="1.5"/>
+          <rect x="830" y="40" width="30" height="240" fill="url(#diag)" color="var(--active)" />
+          <text x="845" y="32" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">you are here</text>
+          <path d="M845 36 L845 44" stroke="var(--active)" stroke-width="1.5"/>
         </g>
 
         <!-- main backbone arrows -->
@@ -463,48 +463,48 @@
           </g>
         </g>
 
-        <!-- SLICE 5 (active · in design) -->
+        <!-- SLICE 5 (done · merged) -->
         <g class="node-card" data-slice="5" transform="translate(705,100)">
-          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--active-bg)" stroke="var(--active)" stroke-width="2"/>
-          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">SLICE 5</text>
+          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--done-bg)" stroke="var(--done)" stroke-width="1.5"/>
+          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--done)">SLICE 5</text>
           <text x="60" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Replay</text>
           <text x="60" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">from the journal</text>
-          <text x="60" y="80" text-anchor="middle" font-size="11" fill="var(--ink-soft)">"nearly free"</text>
-          <text x="60" y="102" text-anchor="middle" font-size="10" fill="var(--active)">⟳ in design</text>
-          <!-- Slice-1 FU#4 dot — in-memory default audit journal (blocker) -->
-          <g class="followup-dot" data-fu="4">
-            <circle cx="115" cy="10" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
+          <text x="60" y="80" text-anchor="middle" font-size="11" fill="var(--ink-soft)">verify · reconstruct</text>
+          <text x="60" y="102" text-anchor="middle" font-size="10" fill="var(--done)">✓ merged</text>
+          <!-- Slice-1 FU#4 — in-memory default audit journal, RESOLVED by pre-Slice-5 P1 prep -->
+          <g class="followup-dot" data-fu="4" opacity="0.55">
+            <circle cx="115" cy="10" r="9" fill="var(--done)" stroke="var(--panel)" stroke-width="2"/>
             <text x="115" y="13.5" text-anchor="middle" font-size="10" font-weight="700" fill="white">4</text>
-            <title>Slice-1 FU#4 — Default AuditJournal is :memory:. Replay needs durable-by-default. Blocker for Slice 5.</title>
+            <title>Slice-1 FU#4 — Default AuditJournal is :memory:. RESOLVED before Slice 5: path is required (1c66f70), in_memory() is explicit opt-in.</title>
           </g>
-          <!-- Slice-4 FU monotonic-counter (blocker) -->
-          <g class="followup-dot" data-fu="S4-mvcc">
-            <circle cx="115" cy="32" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
+          <!-- Slice-4 FU monotonic-counter — RESOLVED by P3 prep -->
+          <g class="followup-dot" data-fu="S4-mvcc" opacity="0.55">
+            <circle cx="115" cy="32" r="9" fill="var(--done)" stroke="var(--panel)" stroke-width="2"/>
             <text x="115" y="35.5" text-anchor="middle" font-size="8" font-weight="700" fill="white">mv</text>
-            <title>Slice-4 FU — Monotonic-counter MVCC cannot distinguish self-bumps from cross-txn writes. Blocker for Slice 5.</title>
+            <title>Slice-4 FU — Monotonic-counter MVCC self-bump confusion. RESOLVED before Slice 5 by P3 (10b461f): write_keys carries (resource, key, version_after_my_write); diff folds via last_my_write.</title>
           </g>
-          <!-- Slice-4 FU read/write-keys not persisted (blocker; also gates Slice 8) -->
-          <g class="followup-dot" data-fu="S4-rwkeys">
-            <circle cx="115" cy="54" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
+          <!-- Slice-4 FU read/write-keys persistence — RESOLVED by P2 prep -->
+          <g class="followup-dot" data-fu="S4-rwkeys" opacity="0.55">
+            <circle cx="115" cy="54" r="9" fill="var(--done)" stroke="var(--panel)" stroke-width="2"/>
             <text x="115" y="57.5" text-anchor="middle" font-size="8" font-weight="700" fill="white">rw</text>
-            <title>Slice-4 FU — Audit journal does not persist read_keys / write_keys. Blocker for Slice 5; also gates Slice 8 gateway.</title>
+            <title>Slice-4 FU — Audit journal doesn't persist read_keys / write_keys. RESOLVED before Slice 5 by P2 (f283eeb).</title>
           </g>
-          <!-- Slice-3 FU idempotency replay-pin (strengthen in Slice 5) -->
-          <g class="followup-dot" data-fu="S3-idem" opacity="0.85">
-            <circle cx="115" cy="76" r="9" fill="var(--ink-faint)" stroke="var(--panel)" stroke-width="2"/>
+          <!-- Slice-3 FU idempotency replay-pin — RETIRED by Slice 5 -->
+          <g class="followup-dot" data-fu="S3-idem" opacity="0.55">
+            <circle cx="115" cy="76" r="9" fill="var(--done)" stroke="var(--panel)" stroke-width="2"/>
             <text x="115" y="79.5" text-anchor="middle" font-size="8" font-weight="700" fill="white">id</text>
-            <title>Slice-3 FU — Idempotency test is a pin, not a real replay scenario. Strengthen in Slice 5.</title>
+            <title>Slice-3 FU — Idempotency test was a pin, not a scenario. RETIRED in Slice 5: irreversible-APPLIED skip-and-reuse is now exercised by the real replay walker.</title>
           </g>
         </g>
 
-        <!-- SLICE 6 -->
+        <!-- SLICE 6 (next · active) -->
         <g class="node-card" data-slice="6" transform="translate(865,100)">
-          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--future-bg)" stroke="var(--future)" stroke-width="1.5"/>
-          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--future)">SLICE 6</text>
+          <rect class="node-bg" width="120" height="120" rx="8" fill="var(--active-bg)" stroke="var(--active)" stroke-width="2"/>
+          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">SLICE 6</text>
           <text x="60" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Policy engine</text>
           <text x="60" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">capability grants</text>
           <text x="60" y="80" text-anchor="middle" font-size="11" fill="var(--ink-soft)">commit-time re-eval</text>
-          <text x="60" y="102" text-anchor="middle" font-size="10" fill="var(--future)">future</text>
+          <text x="60" y="102" text-anchor="middle" font-size="10" fill="var(--active)">⟳ next</text>
         </g>
 
         <!-- SLICE 7 -->
@@ -649,16 +649,15 @@
 
   <!-- =========================================== -->
   <section id="you-are-here">
-    <h2>Where am I? <span class="hint">— between Slice 4 and Slice 5</span></h2>
+    <h2>Where am I? <span class="hint">— between Slice 5 and Slice 6</span></h2>
     <div class="compare">
       <div>
-        <h4>What's behind you <span class="tag now">Slices 1–4, merged</span></h4>
-        The engine is now complete in the <em>ACI</em> sense — atomicity, consistency-within-a-txn, isolation. Slice 1 (<code>ad4e9c0</code>) shipped the reversible-path engine. Slice 2 (<code>c926f97</code>) proved the protocol with copy-on-write filesystem snapshots and the <code>TransactionalResourceAdapter</code> sub-protocol. Slice 3 (<code>a13018b</code>) added the irreversible lane: staging, compensators-as-tools, the gate, partial-commit unwind with <code>STUCK</code> for missing compensators. Slice 4 (<code>0fab344</code>) brings isolation online: read/write-set capture through the resource handles, per-adapter versioning (SQL side-table + a meta-connection so cross-process reads see committed bumps; FS via content hash), the commit-time diff, and three resolution policies (<code>Abort</code>, <code>Retry(N)</code> via <code>run_txn</code>, in-process <code>Serialize</code>). <strong>226 tests green</strong> (+67 over Slice 3).
+        <h4>What's behind you <span class="tag now">Slices 1–5, merged</span></h4>
+        The engine is complete in the <em>ACI</em> sense — atomicity, consistency-within-a-txn, isolation — and the journal is now <em>executable</em>. Slice 1 (<code>ad4e9c0</code>) shipped the reversible-path engine. Slice 2 (<code>c926f97</code>) proved the adapter protocol with copy-on-write filesystem snapshots. Slice 3 (<code>a13018b</code>) added the irreversible lane: staging, compensators-as-tools, the gate, partial-commit unwind. Slice 4 (<code>0fab344</code>) brought isolation online with read/write-set capture, per-adapter versioning, the commit-time diff, and three resolution policies. Slice 5 makes the journal executable: a top-level <code>pherix.replay(...)</code> folds the journal forward against operator-supplied fresh adapters — <em>verify</em> asserts each recorded result equals the replayed result (with a per-tool <code>@tool(comparator=fn)</code> escape hatch), <em>reconstruct</em> rebuilds the world from the journal; irreversible <code>APPLIED</code> effects are skip-and-reused, never re-fired. <strong>249 tests green</strong> (+15 over Slice 4 baseline).
       </div>
       <div>
-        <h4>What's in flight <span class="tag next">Slice 5 — replay from the journal</span></h4>
-        The first "nearly free" slice. Once the journal is durable and ordered (which it now is), replay is just the existing forward fold against a fresh resource state, with an equality assertion at each step. The work is making the audit journal durable-by-default (Slice-1 FU#4 — the in-memory default has to go), then teaching <code>agent_txn</code> a replay mode that re-applies effects from a prior <code>txn_id</code> instead of intercepting fresh tool calls.
-        Two Slice-4 follow-ups also land before Slice 5 leans hard on the journal: (a) the monotonic-counter MVCC can't distinguish a txn's own write from a cross-txn write on the same key, and (b) the audit row doesn't yet persist <code>read_keys</code> / <code>write_keys</code> — both are journal-integrity concerns for replay.
+        <h4>What's in flight <span class="tag next">Slice 6 — real policy engine</span></h4>
+        With the journal now executable, Slice 6 starts treating it as a <em>policy substrate</em>: capability grants, spend caps, content-aware rules — evaluated at stage-time and again at commit-time. The Slice 1 allow-list was a placeholder; the commit-time re-eval hook is already wired in <code>runtime.py</code> (it's a no-op against today's stateless policy). The work is the rule vocabulary, the evaluator, and the test corpus.
       </div>
     </div>
   </section>
@@ -774,27 +773,32 @@
       </article>
 
       <!-- SLICE 5 -->
-      <article class="slice active">
+      <article class="slice done">
         <h3><span class="num">05</span> Replay from the journal</h3>
-        <div class="badges"><span class="badge active">next on path</span><span class="badge dim">depends on FU#4</span><span class="badge dim">+ two Slice-4 FUs</span></div>
-        <p class="one-liner">Once the journal exists, replay is "fold forward against fresh state, assert identical results." Nearly free.</p>
+        <div class="badges"><span class="badge done">done · merged</span><span class="badge dim">249 tests · +15</span></div>
+        <p class="one-liner">The journal is now <em>executable</em>. <code>pherix.replay(txn_id, adapters, source_audit=...)</code> folds it forward against fresh state; verify asserts results match, reconstruct accepts today's results as the rebuilt world.</p>
         <details>
-          <summary>What needs to land before replay can lean on the journal</summary>
+          <summary>What shipped · the five decisions, realised</summary>
           <div class="body">
-            <p>The journal-as-canonical-truth design pays off here. Replay isn't a new subsystem — it's the existing commit path, run against a fresh resource state, with an equality assertion at each step. Three concerns gate the slice:</p>
+            <p><span class="label">The shift, in retrospect.</span> Slices 1–4 made the journal canonical; Slice 5 makes it executable. The "nearly free" framing held — replay is the existing commit path's forward fold, pointed at operator-supplied fresh adapters, with per-effect equality at each step (verify) or accept-as-new-state (reconstruct). No new state machine, no new abstractions in <code>effects.py</code> / <code>transaction.py</code> / <code>audit.py</code> beyond a single <code>Transaction.replayed_from</code> field and one new audit column.</p>
+            <p><span class="label">Locked &amp; shipped.</span></p>
             <ul>
-              <li><span class="label">FU#4 — durable journal default.</span> <code>AuditJournal()</code> currently defaults to <code>:memory:</code>; replay across a crash needs an on-disk default (or explicit opt-in with a loud warning when in-memory is used).</li>
-              <li><span class="label">Slice-4 FU — persist <code>read_keys</code> / <code>write_keys</code>.</span> Today the isolation key triples live only on the in-memory <code>Effect</code>; a replay reconstructed from the audit DB would lose them. Two TEXT columns and a <code>_dump</code> pass.</li>
-              <li><span class="label">Slice-4 FU — distinguish self-bumps from cross-txn writes.</span> The monotonic-counter MVCC's own-writes filter is a pragmatic shortcut that hides real lost-updates when a txn writes a key it read concurrently with another writer. Postgres SSI or row-ctid closes the gap; for SQLite, carrying the version-at-write in <code>write_keys</code> is the local fix.</li>
+              <li><span class="label">D1 — Verify and reconstruct share the engine.</span> One walker; the <code>mode</code> parameter selects what to do with each effect's result.</li>
+              <li><span class="label">D2 — JSON-by-default equality with per-tool escape hatch.</span> Default comparator canonicalises both sides through <code>strict_json_default</code> and string-equates. <code>@tool(comparator=fn)</code> overrides for tools whose results vary legitimately (timestamps, generated IDs).</li>
+              <li><span class="label">D3 — Already-applied irreversibles skip-and-reuse.</span> Source <code>status=APPLIED</code> + <code>reversible=False</code> → never re-fired; the journal is the witness. <em>This retired the Slice-3 follow-up that flagged the idempotency test as "a pin, not a scenario."</em></li>
+              <li><span class="label">D4 — Mode parameter from D1 carries non-determinism behaviour.</span> Under reconstruct, today's result becomes the new world's state; under verify, the per-tool comparator decides whether a varying result is tolerated.</li>
+              <li><span class="label">D5 — New top-level <code>replay()</code>, not a <code>run_txn</code> extension.</span> The replay txn carries <code>replayed_from = source_txn_id</code>; its own journal lands in <code>target_audit</code> (default in-memory). Operator hands in the fresh adapters; Pherix doesn't try to construct them.</li>
             </ul>
+            <p><span class="label">Demo.</span> <code>examples/slice5_demo.py</code> — replays a mixed SQL+FS+HTTP source journal three ways: verify against fresh state; reconstruct on yet-another fresh substrate; tamper the audit row, watch verify diverge.</p>
+            <p><span class="label">Slice-3 follow-up #3 retired.</span> Irreversible-APPLIED skip-and-reuse is now exercised by the real replay walker, not a status-flip pin.</p>
           </div>
         </details>
       </article>
 
       <!-- SLICE 6 -->
-      <article class="slice future">
+      <article class="slice active">
         <h3><span class="num">06</span> Real policy engine</h3>
-        <div class="badges"><span class="badge future">future</span></div>
+        <div class="badges"><span class="badge active">next on path</span></div>
         <p class="one-liner">Capability grants, spend caps, content-aware rules — evaluated at stage-time AND again at commit-time (TOCTOU safety).</p>
         <details>
           <summary>Why evaluate twice</summary>
@@ -836,11 +840,11 @@
 
   <!-- =========================================== -->
   <section id="followups">
-    <h2>Slice-1 review follow-ups <span class="hint">— four items; #1 + #2 resolved, #3 + #4 still open</span></h2>
+    <h2>Slice-1 review follow-ups <span class="hint">— four items; #1, #2, #4 resolved; #3 a nit</span></h2>
     <p class="lede">
       Captured in <code>docs/ROADMAP.md</code>. None blocked Slice 1's correctness — they were intentional simplifications.
       Each is attached to the slice that promotes the simplification from "fine for now" to "actively wrong."
-      <strong>#1 (silent <code>str()</code>-coercion)</strong> was closed before Slice 3 via <code>strict_json_default</code>; <strong>#2 (duck-typed lifecycle)</strong> was closed in Slice 2 D1. <strong>#4 (in-memory audit default)</strong> now gates Slice 5.
+      <strong>#1 (silent <code>str()</code>-coercion)</strong> was closed before Slice 3 via <code>strict_json_default</code>; <strong>#2 (duck-typed lifecycle)</strong> was closed in Slice 2 D1; <strong>#4 (in-memory audit default)</strong> was closed before Slice 5 (commit <code>1c66f70</code> — path is required, <code>AuditJournal.in_memory()</code> is explicit opt-in).
     </p>
 
     <div class="followups-list">
@@ -880,15 +884,15 @@
         <span class="fu-gate">nit · anytime</span>
       </div>
 
-      <div class="followup">
+      <div class="followup resolved">
         <span class="fu-id">4</span>
         <div>
           <h4 class="fu-title">Default <code>AuditJournal()</code> is <code>:memory:</code></h4>
           <p class="fu-body">
-            Fine for tests and the demo. Less fine as a real default — durability is one of Pherix's four stated ACID-style guarantees, and a non-durable default journal silently violates it. <strong>Decide:</strong> on-disk default (with explicit opt-in for in-memory), or keep in-memory and force callers to opt into durability. Either is defensible; the current implicit choice isn't.
+            <strong>Resolved before Slice 5</strong> (commit <code>1c66f70</code>): <code>AuditJournal(path)</code> now requires an explicit path; ephemeral runs opt in via <code>AuditJournal.in_memory()</code>. The visible call site forces a deliberate durability choice — the Slice 5 replay machinery depends on durable journals to replay from.
           </p>
         </div>
-        <span class="fu-gate">gates Slice 5</span>
+        <span class="fu-gate">resolved · before Slice 5</span>
       </div>
 
     </div>
