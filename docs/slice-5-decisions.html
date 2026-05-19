@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Slice 5 — replay decisions · Pherix</title>
+<style>
+  :root {
+    --bg: #faf8f4;
+    --panel: #f1ece2;
+    --panel-2: #ebe3d2;
+    --ink: #161513;
+    --ink-2: #4a443c;
+    --ink-3: #7a7268;
+    --ink-faint: #a89e8c;
+    --rule: #d0c7b5;
+    --accent: #b4421e;
+    --accent-2: #355c3a;
+    --accent-3: #2c4a6a;
+    --accent-warn: #8a6a14;
+    --shade: rgba(22, 21, 19, 0.05);
+    --code-bg: rgba(22, 21, 19, 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14130f;
+      --panel: #1c1a14;
+      --panel-2: #221f17;
+      --ink: #ece6d8;
+      --ink-2: #c0baac;
+      --ink-3: #8a8478;
+      --ink-faint: #5a544a;
+      --rule: #3a342a;
+      --accent: #e07a4e;
+      --accent-2: #6ba070;
+      --accent-3: #7ea0c8;
+      --accent-warn: #d4ac56;
+      --shade: rgba(255, 250, 240, 0.04);
+      --code-bg: rgba(255, 250, 240, 0.06);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
+    font-size: 17px; line-height: 1.6;
+    padding: 4rem 1.5rem 6rem;
+  }
+  main { max-width: 920px; margin: 0 auto; }
+  .eyebrow {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-3); margin: 0 0 0.5rem;
+  }
+  h1 {
+    font-size: 2.5rem; line-height: 1.06; margin: 0 0 1rem;
+    font-weight: 500; letter-spacing: -0.012em;
+  }
+  h2 {
+    font-size: 1.55rem; line-height: 1.2; margin: 3.5rem 0 1rem;
+    font-weight: 500; letter-spacing: -0.005em;
+    border-top: 1px solid var(--rule); padding-top: 1.5rem;
+  }
+  h3 {
+    font-size: 1.2rem; margin: 1.6rem 0 0.4rem;
+    font-weight: 500; letter-spacing: -0.003em;
+  }
+  .lede {
+    color: var(--ink-2); font-size: 1.12rem; max-width: 64ch; margin: 0;
+  }
+  p { color: var(--ink-2); margin: 0.6rem 0 0.9rem; }
+  p strong { color: var(--ink); font-weight: 600; }
+  code {
+    font-family: ui-monospace, monospace; font-size: 0.88em;
+    background: var(--code-bg); padding: 1px 5px; border-radius: 3px;
+  }
+  em { color: var(--ink); font-style: italic; }
+  ul, ol { color: var(--ink-2); padding-left: 1.4rem; }
+  ul li, ol li { margin: 0.4rem 0; }
+
+  /* the question framing — load-bearing visual element */
+  .question {
+    margin: 1.4rem 0 1.2rem;
+    padding: 1.1rem 1.4rem;
+    background: var(--panel);
+    border-left: 4px solid var(--accent);
+    border-radius: 4px;
+  }
+  .question .qlabel {
+    font-family: ui-monospace, monospace; font-size: 0.74rem;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3);
+    margin-bottom: 0.3rem;
+  }
+  .question p {
+    margin: 0; color: var(--ink); font-style: italic; font-size: 1.05rem;
+  }
+
+  /* options as small cards */
+  .options { display: grid; gap: 0.7rem; margin: 1rem 0 1.2rem; }
+  .opt {
+    padding: 0.85rem 1.1rem;
+    background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 5px;
+  }
+  .opt.pick { border-left: 4px solid var(--accent-2); }
+  .opt.rej { opacity: 0.78; }
+  .opt .otag {
+    font-family: ui-monospace, monospace; font-size: 0.7rem;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-3); margin-bottom: 0.3rem;
+  }
+  .opt.pick .otag { color: var(--accent-2); }
+  .opt.rej .otag { color: var(--ink-faint); }
+  .opt h4 {
+    font-size: 1rem; font-weight: 600; margin: 0 0 0.3rem;
+    color: var(--ink);
+  }
+  .opt p { margin: 0.3rem 0; }
+  .opt .pros, .opt .cons {
+    font-family: ui-monospace, monospace; font-size: 0.78rem;
+    color: var(--ink-3); margin-top: 0.4rem;
+  }
+  .opt .pros::before { content: "✓ "; color: var(--accent-2); }
+  .opt .cons::before { content: "✗ "; color: var(--accent); }
+
+  /* recommendation strip at the end of each decision */
+  .pick-banner {
+    margin: 1rem 0 1.8rem;
+    padding: 0.85rem 1.2rem;
+    background: var(--panel-2);
+    border-left: 4px solid var(--accent-2);
+    border-radius: 4px;
+  }
+  .pick-banner .ptag {
+    font-family: ui-monospace, monospace; font-size: 0.72rem;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent-2); margin-bottom: 0.25rem;
+  }
+  .pick-banner p { margin: 0; color: var(--ink); }
+
+  /* TOC */
+  nav.toc {
+    margin: 2rem 0 2.5rem; padding: 1rem 1.4rem;
+    background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 6px;
+    font-family: ui-monospace, monospace; font-size: 0.86rem;
+  }
+  nav.toc .label {
+    display: block; color: var(--ink-3);
+    font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  nav.toc a {
+    display: inline-block; padding: 2px 0; margin-right: 1.2rem;
+    color: var(--ink-2); text-decoration: none;
+  }
+  nav.toc a:hover { color: var(--accent); }
+  nav.toc .open-tag {
+    display: inline-block; margin-left: 0.4rem;
+    padding: 1px 6px; border-radius: 99px;
+    font-size: 0.66rem; letter-spacing: 0.08em;
+    color: var(--accent-warn); border: 1px solid var(--accent-warn);
+  }
+
+  /* meta-row */
+  .meta-row {
+    margin-top: 1rem;
+    font-family: ui-monospace, monospace; font-size: 0.78rem;
+    color: var(--ink-3);
+  }
+  .meta-row span { display: inline-block; margin-right: 1.2rem; }
+  .meta-row b { color: var(--ink); font-weight: 600; }
+
+  /* the "Slice 5 in one sentence" callout */
+  .premise {
+    margin: 1.4rem 0 2rem;
+    padding: 1.3rem 1.5rem;
+    background: var(--panel-2);
+    border: 1px solid var(--rule); border-radius: 6px;
+  }
+  .premise p:first-child { margin-top: 0; }
+  .premise p:last-child { margin-bottom: 0; color: var(--ink); }
+  .premise em { font-weight: 500; }
+
+  /* the "two reasons" panel — visual the markdown can't do */
+  .two-reasons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1.2rem 0 1.5rem;
+  }
+  @media (max-width: 720px) { .two-reasons { grid-template-columns: 1fr; } }
+  .reason {
+    padding: 1.1rem 1.3rem;
+    background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 5px;
+    border-top: 4px solid var(--accent-3);
+  }
+  .reason.b { border-top-color: var(--accent-2); }
+  .reason h4 {
+    margin: 0 0 0.4rem; font-size: 1.05rem; font-weight: 600;
+    color: var(--ink);
+  }
+  .reason .scenario {
+    font-style: italic; color: var(--ink); margin: 0.4rem 0;
+  }
+  .reason p:last-child { margin-bottom: 0; }
+  .reason .mode {
+    font-family: ui-monospace, monospace; font-size: 0.74rem;
+    color: var(--ink-3); margin-top: 0.7rem;
+    padding-top: 0.6rem; border-top: 1px dashed var(--rule);
+  }
+  .reason .mode b { color: var(--ink); }
+
+  /* the closing replay-as-fold maths */
+  .closing {
+    margin: 1.5rem 0 0; padding: 1.2rem 1.5rem;
+    background: var(--panel-2);
+    border: 1px solid var(--rule); border-radius: 6px;
+    border-left: 4px solid var(--accent-2);
+  }
+  .closing p:first-child { margin-top: 0; }
+  .closing p:last-child { margin-bottom: 0; }
+
+  footer {
+    margin-top: 5rem; padding-top: 2rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.86rem; color: var(--ink-3);
+  }
+  footer p { margin: 0.35rem 0; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <p class="eyebrow">Pherix · Slice 5 decisions</p>
+  <h1>Re-doing yesterday's journal — and what that's even for.</h1>
+  <p class="lede">
+    The journal is already a complete record of everything an agent did.
+    Slice 5 turns it from a transcript into something you can <em>execute</em>
+    — re-fire the same effects against a starting point of your choice. The
+    decisions below are about <em>why</em> you'd ever do that, <em>how</em>
+    you'd judge whether it worked, and what shape the API takes.
+  </p>
+  <div class="meta-row">
+    <span><b>Slice:</b> 5 — replay from the journal</span>
+    <span><b>Locked:</b> D1–D5 — one open call</span>
+    <span><b>Pre-work shipped:</b> P1, P2, P3 on <code>main</code></span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <span class="label">Decisions</span>
+  <a href="#premise">Premise</a>
+  <a href="#d1">D1 · Why replay?</a>
+  <a href="#d2">D2 · What does "match" mean?</a>
+  <a href="#d3">D3 · Re-doing irreversibles</a>
+  <a href="#d4">D4 · Non-deterministic tools</a>
+  <a href="#d5">D5 · The API shape</a>
+  <a href="#open">Open · Who provides the fresh slate<span class="open-tag">open</span></a>
+  <a href="#closing">Closing — replay as fold</a>
+</nav>
+
+<!-- ===================================================================== -->
+<section id="premise">
+  <h2>The premise</h2>
+  <div class="premise">
+    <p>
+      Yesterday, an agent did 50 things — wrote files, charged a card,
+      queried databases, opened a PR. Pherix has the journal of every
+      single action: the tool name, the args, the resource, whether it
+      succeeded, what it returned. The journal is durable now (pre-work
+      P1 made on-disk the expectation), it carries isolation keys
+      (pre-work P2), and the versions disambiguate self-bumps from
+      cross-txn writes (pre-work P3). It is, at this point, a complete
+      record.
+    </p>
+    <p>
+      <em>So what? What can Pherix do with that journal beyond just
+      reading it as a log?</em>
+    </p>
+  </div>
+  <p>
+    The answer is the same one CLAUDE.md has been promising since Slice 1:
+    every capability is a different traversal of the journal. Commit is a
+    forward fold; rollback is a backward fold; isolation is a diff. Slice
+    5 is <strong>another forward fold</strong> — but instead of folding
+    yesterday's effects against the live world, it folds them against
+    <em>a fresh world the operator provides</em>. That's replay.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="d1">
+  <h2>D1 — Why are we even replaying?</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"We have yesterday's journal. We're about to re-do every action against a fresh starting point. Why?"</p>
+  </div>
+
+  <p>
+    Two distinct reasons an operator would ever ask Pherix to replay,
+    each useful, each shipping with this slice:
+  </p>
+
+  <div class="two-reasons">
+    <div class="reason">
+      <h4>Reason A — Prove Pherix is doing its job</h4>
+      <p class="scenario">
+        "I want to convince myself (or a regulator) that Pherix is
+        deterministic. Same journal in, same world out."
+      </p>
+      <p>
+        Replay walks yesterday's journal, re-fires the effects against
+        fresh adapters, and asserts each effect's result matches
+        yesterday's recorded result. If everything matches, the engine
+        and the tools agreed across runs — deterministic by witness. If
+        anything diverges, something is producing different output and
+        Slice 5 surfaces exactly which effect went wrong.
+      </p>
+      <p class="mode"><b>Pherix calls this:</b> <code>mode="verify"</code></p>
+    </div>
+    <div class="reason b">
+      <h4>Reason B — The agent crashed; rebuild the world</h4>
+      <p class="scenario">
+        "Halfway through a 50-step run the process died. The journal has
+        the first 30 steps. To resume, we need to reconstruct what the
+        world looked like at step 30."
+      </p>
+      <p>
+        Replay walks yesterday's journal against a freshly-created
+        starting point (empty database, empty filesystem, etc.), re-applies
+        every reversible effect, trusts the journal's recorded result for
+        irreversible effects (we don't charge the card twice), and lands
+        in a world identical to where the original txn was when it died.
+      </p>
+      <p class="mode"><b>Pherix calls this:</b> <code>mode="reconstruct"</code></p>
+    </div>
+  </div>
+
+  <h3>The options weighed</h3>
+  <div class="options">
+    <div class="opt rej">
+      <p class="otag">Option A — ship verify only</p>
+      <h4>Smallest scope. Recovery is Slice 5+ or never.</h4>
+      <p class="pros">Smaller surface area; fewer corner cases at launch.</p>
+      <p class="cons">Recovery is the use case operators most viscerally want when an agent crashes mid-incident. Punting it means the dogfood DevOps prototype can't lean on Slice 5 for resumption.</p>
+    </div>
+    <div class="opt rej">
+      <p class="otag">Option B — ship reconstruct only</p>
+      <h4>Verification falls out as a side effect of reconstruct.</h4>
+      <p class="pros">If reconstruct fires every effect and we check each result, we get verification for free.</p>
+      <p class="cons">Verification under reconstruct re-fires non-deterministic tools (timestamps, fresh IDs) and reports them as divergences — false positives. Verification wants the option to <em>use the recorded result</em> precisely so non-determinism doesn't trigger spurious failures.</p>
+    </div>
+    <div class="opt pick">
+      <p class="otag">Option C — ship both, same engine, mode parameter selects</p>
+      <h4>One forward-fold walker. The mode flag picks the per-effect dispatch.</h4>
+      <p>
+        Verify uses recorded results for non-deterministic tools and asserts
+        match. Reconstruct re-fires every reversible against fresh state and
+        skips-and-reuses irreversibles. Both share 80% of the implementation.
+      </p>
+      <p class="pros">Genuinely cheaper than building one then retrofitting the other; the dispatch branch is one line per effect.</p>
+      <p class="pros">Both modes feed the dogfood verticals — verify validates engine correctness in CI, reconstruct recovers crashed agents.</p>
+    </div>
+  </div>
+  <div class="pick-banner">
+    <p class="ptag">Locked — Option C</p>
+    <p>
+      Both modes ship together. Operator-facing API takes
+      <code>mode='verify' | 'reconstruct'</code>; the engine is one
+      walker with a per-effect dispatch that branches on the mode.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="d2">
+  <h2>D2 — How do we know yesterday's result "matches" today's replay?</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"Yesterday the journal recorded that <code>charge_card</code> returned <code>{'charge_id': 'ch_abc', 'amount': 100}</code>. Today we replay; we get back some <code>result</code>. Are those two things <em>the same</em>? What does 'same' even mean?"</p>
+  </div>
+
+  <p>
+    Three honest definitions of "same":
+  </p>
+
+  <div class="options">
+    <div class="opt rej">
+      <p class="otag">Option A — strictest: byte-for-byte equal</p>
+      <h4><code>yesterday_bytes == today_bytes</code></h4>
+      <p class="cons">Falls apart instantly. Anything with a timestamp, a generated ID, or even a Python dict whose key order isn't stable will fail. False positives on every realistic result.</p>
+    </div>
+    <div class="opt pick">
+      <p class="otag">Option B — pragmatic: convert both to JSON, compare strings</p>
+      <h4>Run each result through <code>strict_json_default</code> (the existing serialiser), compare resulting strings.</h4>
+      <p>
+        Works for most realistic results: dicts, lists, primitives, dataclasses,
+        bytes (base64), datetimes (ISO). The serialiser already handles
+        whatever Pherix's other infrastructure handles, so there's no new
+        normalisation work.
+      </p>
+      <p class="pros">Reuses existing serialisation; covers 80% of tools without any per-tool work.</p>
+      <p class="cons">A tool whose result legitimately includes a fresh timestamp will fail verification under this comparator — but that's where option C plugs in.</p>
+    </div>
+    <div class="opt pick">
+      <p class="otag">Option C — flexible: per-tool custom comparator</p>
+      <h4><code>@tool(comparator=fn)</code> where <code>fn(yesterday, today) -&gt; bool</code>.</h4>
+      <p>
+        Tools whose results vary across runs but are "equal" by some
+        domain-specific rule (ignore-the-timestamp, compare-only-the-id,
+        whatever) declare their own comparator. The decorator change is
+        small; the registry already has the shape for it.
+      </p>
+      <p class="pros">Escape hatch for the 20% of tools the default doesn't cover.</p>
+      <p class="cons">Adds API surface; one more thing for tool authors to think about.</p>
+    </div>
+  </div>
+  <div class="pick-banner">
+    <p class="ptag">Locked — Option B as default + Option C as escape hatch</p>
+    <p>
+      JSON equality is the default; tools that need different semantics
+      override via <code>@tool(comparator=fn)</code>. Most tools won't
+      need to think about it; the few that do have a clean place to do
+      that thinking.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="d3">
+  <h2>D3 — What about things we already did that we shouldn't re-do?</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"Yesterday the agent charged a credit card. Today's replay walks the same journal. <em>Do we charge the card again?</em>"</p>
+  </div>
+
+  <p>
+    Obviously no. Double-charging is exactly the failure mode Pherix exists
+    to prevent. So replay must <em>know</em> the charge already happened
+    and not re-fire it. How does it know?
+  </p>
+
+  <p>
+    The journal already records the answer. Every effect carries a status
+    (<code>STAGED → APPLIED → COMPENSATED</code>...) and a recorded
+    result. An effect that fired yesterday has status <code>APPLIED</code>
+    and a recorded result. Replay sees <code>APPLIED</code> + an
+    irreversible adapter (<code>supports_rollback() → False</code>) and
+    <strong>skips the actual fire, using the recorded result instead</strong>.
+  </p>
+
+  <p>
+    This is exactly what <code>Effect.effect_id</code> was built for from
+    Slice 1, and what the Slice 3 review captured as
+    <em>"the idempotency test is a pin, not a scenario — strengthen when
+    replay arrives"</em>. Slice 5 is the scenario. The pin retires; the
+    property gets exercised at scale.
+  </p>
+
+  <div class="pick-banner">
+    <p class="ptag">No real choice to make — confirming behaviour</p>
+    <p>
+      Already-applied irreversibles are <strong>skip-and-reuse</strong>:
+      replay sees <code>APPLIED</code> status, doesn't re-fire, uses the
+      journal's recorded result for the effect's contribution to the
+      replay. The Slice 3 idempotency-key infrastructure already carries
+      this; Slice 5 is the first place it actually matters.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="d4">
+  <h2>D4 — What about tools that return different things every time?</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"A tool returns <code>datetime.now()</code>. Yesterday it was 2026-05-18T14:00; today's replay it'll be 2026-05-19T15:00. Is that a problem?"</p>
+  </div>
+
+  <p>
+    Depends on what replay is for. This is exactly the place where D1's
+    two modes branch:
+  </p>
+
+  <div class="options">
+    <div class="opt pick">
+      <p class="otag">Under verify mode</p>
+      <h4>Use yesterday's recorded result; don't actually re-run the tool.</h4>
+      <p>
+        Verification asks <em>"is Pherix's bookkeeping correct"</em>, not
+        "is the wall clock correct". The journal IS the witness: if the
+        journal records "the tool returned T", verification uses T. No
+        false positives on every <code>datetime.now()</code>.
+      </p>
+    </div>
+    <div class="opt pick">
+      <p class="otag">Under reconstruct mode</p>
+      <h4>Re-fire the tool; accept whatever fresh result comes back.</h4>
+      <p>
+        Reconstruct wants a real working world, not a frozen snapshot. If
+        the tool returns "now", reconstruct's "now" is today, not
+        yesterday. That's <em>correct</em> for the use case — we're not
+        verifying behaviour, we're materialising a new world from a recipe.
+      </p>
+    </div>
+  </div>
+  <div class="pick-banner">
+    <p class="ptag">Locked — mode parameter from D1 carries the decision</p>
+    <p>
+      Same parameter as D1; no extra knob. Verify uses recorded results
+      for non-deterministic tools and never false-positives on
+      <code>datetime.now()</code>; reconstruct re-fires and accepts the
+      new output.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="d5">
+  <h2>D5 — How does the operator ASK for a replay?</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"What does the operator type in their Python code to start a replay?"</p>
+  </div>
+
+  <div class="options">
+    <div class="opt rej">
+      <p class="otag">Option A — extend <code>run_txn</code> with a replay parameter</p>
+      <h4><code>run_txn(fn=None, replay_from=txn_id, …)</code></h4>
+      <p>
+        One entry point for everything Pherix runs. The function knows
+        whether it's running fresh agent code (<code>fn=...</code>) or
+        replaying a journal (<code>replay_from=...</code>).
+      </p>
+      <p class="cons">Conceptually muddled — running an agent's code is a different operation from replaying a recorded journal. The function ends up with mutually-exclusive parameter sets pretending to be one API.</p>
+    </div>
+    <div class="opt pick">
+      <p class="otag">Option B — new top-level <code>replay()</code> function</p>
+      <h4><code>pherix.replay(txn_id, adapters, *, source_audit, mode=...)</code></h4>
+      <p>
+        Replay is its own operation: it walks a recorded journal rather
+        than executing fresh agent code. A separate entry point keeps both
+        APIs clean.
+      </p>
+      <p class="pros">Conceptually honest — replay isn't "running an agent", it's "executing a transcript".</p>
+      <p class="pros">Operator-facing signature is small and focused; nothing pretends to be both kinds of run.</p>
+    </div>
+  </div>
+  <div class="pick-banner">
+    <p class="ptag">Locked — Option B</p>
+    <p>
+      New top-level <code>replay()</code> function in
+      <code>pherix.frontends.library</code>. <code>agent_txn</code> and
+      <code>run_txn</code> stay exactly as they are; replay sits alongside
+      them, not inside them. Signature shape:
+      <code>replay(txn_id, adapters, *, source_audit, target_audit=None,
+      mode='verify')</code>.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="open">
+  <h2>Open — Who provides the "fresh slate"?</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"Reconstruct mode needs to fold the journal against fresh adapters — an empty database, an empty directory. <em>Where do those come from?</em>"</p>
+  </div>
+
+  <p>
+    Two reasonable answers:
+  </p>
+
+  <div class="options">
+    <div class="opt rej">
+      <p class="otag">Pherix tries to make them itself</p>
+      <h4>Each adapter gets a <code>fresh()</code> method that produces an empty version.</h4>
+      <p>
+        <code>SQLiteAdapter.fresh()</code> creates a new in-memory database
+        with the same schema. <code>FilesystemAdapter.fresh()</code> creates
+        an empty temp directory. Tidy from Pherix's side; one less thing
+        the operator has to do.
+      </p>
+      <p class="cons">Fresh adapters need environment-specific input (DB connection strings, file paths, auth tokens) that Pherix has no business knowing or hardcoding. A <code>fresh()</code> method either makes wrong assumptions or leaks operator config into Pherix's scope.</p>
+    </div>
+    <div class="opt pick">
+      <p class="otag">The operator provides them</p>
+      <h4>Operator opens fresh resources and hands them to <code>replay()</code> as the <code>adapters</code> parameter.</h4>
+      <p>
+        Pherix walks the journal against whatever the operator passed.
+        The correctness of the "fresh state" is the operator's contract;
+        Pherix's contract is just the walk.
+      </p>
+      <p class="pros">Respects Pherix's scope boundary — environment knowledge stays with the operator.</p>
+      <p class="pros">Same shape as how adapters are already passed to <code>agent_txn</code>; no new mental model.</p>
+    </div>
+  </div>
+  <div class="pick-banner">
+    <p class="ptag">Recommendation — operator provides</p>
+    <p>
+      This is the open call but the recommended answer is to keep
+      adapter construction in the operator's hands. If during
+      implementation a clean <code>fresh()</code> shape emerges that
+      doesn't leak environment specifics, surface it as a Slice 5
+      follow-up rather than retrofitting it mid-build.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="closing">
+  <h2>Closing — replay is just another fold</h2>
+  <div class="closing">
+    <p>
+      Three sentences of maths, the only ones in this document. <strong>Commit
+      is a forward fold</strong> over the journal against the live world.
+      <strong>Rollback is a backward fold</strong> over the journal against
+      the live world. <strong>Replay is a forward fold</strong> over the
+      journal against a <em>fresh</em> world the operator provides.
+    </p>
+    <p>
+      Three operations, one engine, one journal. The Slice 5 build is
+      mostly wiring — the engine already knows how to fold; the
+      <code>replay()</code> entry point just hands it a different
+      substrate to fold against. Verify mode asserts each step matches the
+      recorded result; reconstruct mode accepts each step's output as the
+      new state. Idempotency keys from Slice 3 keep us from re-firing
+      irreversibles. Read/write keys from Slice 4 (and the P2 schema bump)
+      let us cross-check isolation behaviour replays cleanly.
+    </p>
+    <p>
+      <em>Everything below cognition; nothing about the LLM.</em> The
+      journal is the witness; replay is what makes the witness
+      executable.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <p>Pherix · <code>docs/slice-5-decisions.html</code> · ready for <code>/work slice-5</code>. Retires post-merge per the HTML-hygiene rule in <code>CLAUDE.md</code>.</p>
+  <p>Pre-work shipped: P1 <code>1c66f70</code> (audit path required), P2 <code>f283eeb</code> (audit row keys), P3 <code>10b461f</code> (write-key versions). 234 tests on <code>main</code> at <code>0b917d9</code>.</p>
+</footer>
+
+</main>
+</body>
+</html>
