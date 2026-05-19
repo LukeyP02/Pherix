@@ -173,7 +173,7 @@ def test_audit_records_full_cross_resource_story(
     conn, adapters, book_order_charge_email
 ):
     book_order, charge_card, _, send_email, _ = book_order_charge_email
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with agent_txn(adapters, audit=audit) as txn:
         book_order(customer="alice")
         charge_card(customer="alice", amount=100)

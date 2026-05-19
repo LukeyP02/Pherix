@@ -534,7 +534,7 @@ def test_audit_journal_records_isolation_keys(shared_db: Path):
             )
             return cur.fetchone()[0]
 
-        audit = AuditJournal()
+        audit = AuditJournal.in_memory()
         with agent_txn({"sql": adapter}, audit=audit) as ctx:
             read_x(name="x")
 

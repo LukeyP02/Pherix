@@ -20,7 +20,7 @@ def make_effect(txn_id, index=0, **overrides):
 
 
 def test_record_and_get_transaction():
-    j = AuditJournal()
+    j = AuditJournal.in_memory()
     txn = Transaction()
     j.record_transaction(txn)
     row = j.get_transaction(txn.txn_id)
@@ -29,7 +29,7 @@ def test_record_and_get_transaction():
 
 
 def test_update_transaction_state():
-    j = AuditJournal()
+    j = AuditJournal.in_memory()
     txn = Transaction()
     j.record_transaction(txn)
     j.update_transaction_state(txn.txn_id, TxnState.COMMITTED.name)
@@ -37,7 +37,7 @@ def test_update_transaction_state():
 
 
 def test_record_effect_persists_json_args():
-    j = AuditJournal()
+    j = AuditJournal.in_memory()
     txn = Transaction()
     j.record_transaction(txn)
     e = make_effect(txn.txn_id, args={"name": "bob", "role": "admin"})
@@ -50,7 +50,7 @@ def test_record_effect_persists_json_args():
 
 
 def test_update_effect_is_in_place_no_new_row():
-    j = AuditJournal()
+    j = AuditJournal.in_memory()
     txn = Transaction()
     j.record_transaction(txn)
     e = make_effect(txn.txn_id)
@@ -70,7 +70,7 @@ def test_update_effect_is_in_place_no_new_row():
 
 
 def test_journal_completeness_for_multi_effect_transaction():
-    j = AuditJournal()
+    j = AuditJournal.in_memory()
     txn = Transaction()
     j.record_transaction(txn)
     for i, name in enumerate(["a", "b", "c"]):
@@ -81,4 +81,4 @@ def test_journal_completeness_for_multi_effect_transaction():
 
 
 def test_get_unknown_transaction_returns_none():
-    assert AuditJournal().get_transaction("nope") is None
+    assert AuditJournal.in_memory().get_transaction("nope") is None

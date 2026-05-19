@@ -138,7 +138,7 @@ def test_exception_mid_sequence_unwinds_both_resources(
 def test_audit_records_both_adapters_in_interleaved_order(
     conn, fs_root: Path, adapters, insert_note, write_file
 ):
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with agent_txn(adapters, audit=audit) as txn:
         insert_note(body="one")
         write_file(path="one.txt", data=b"1")

@@ -84,7 +84,7 @@ def test_rollback_before_commit_means_staged_effects_never_fire():
     # The strongest containment property Pherix offers: irreversible
     # effects do not happen if the txn rolls back before commit.
     ping, calls = _fire_counter()
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with agent_txn({"http": HTTPAdapter()}, audit=audit) as txn:
         ping(url="https://example.com")
         ping(url="https://example.org")

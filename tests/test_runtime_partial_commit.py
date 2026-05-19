@@ -73,7 +73,7 @@ def test_partial_failure_invokes_compensators_in_reverse_order():
         fired.append(("step_c", {"token": token}))
         raise RuntimeError("payment provider down")
 
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with pytest.raises(RuntimeError, match="payment provider down"):
         with agent_txn({"http": HTTPAdapter()}, audit=audit) as txn:
             step_a(token="A")
@@ -128,7 +128,7 @@ def test_partial_failure_with_missing_compensator_lands_in_stuck():
         fired.append("failing")
         raise RuntimeError("boom")
 
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with pytest.raises(RuntimeError, match="boom"):
         with agent_txn({"http": HTTPAdapter()}, audit=audit) as txn:
             r1 = step_a(x=1)
@@ -269,7 +269,7 @@ def test_partial_unwind_state_passes_through_partial():
     def step_failing(x):
         raise RuntimeError("boom")
 
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with pytest.raises(RuntimeError, match="boom"):
         with agent_txn({"http": HTTPAdapter()}, audit=audit) as txn:
             step_a(x=1)

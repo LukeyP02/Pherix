@@ -66,7 +66,7 @@ def test_apply_failure_mid_transaction_rolls_back_cleanly(conn, insert_user):
         conn.execute("INSERT INTO users (name) VALUES (?)", (name,))
         raise RuntimeError("tool exploded")
 
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with pytest.raises(RuntimeError, match="tool exploded"):
         with agent_txn({"sql": SQLiteAdapter(conn)}, audit=audit) as txn:
             insert_user(name="a")
@@ -103,7 +103,7 @@ def test_commit_after_rollback_raises(conn, insert_user):
 
 
 def test_policy_denial_leaves_no_trace(conn, insert_user):
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with pytest.raises(PolicyViolation):
         with agent_txn(
             {"sql": SQLiteAdapter(conn)}, policy=Policy(allow=set()), audit=audit
@@ -124,7 +124,7 @@ def test_empty_transaction_commits(conn):
 
 
 def test_journal_records_the_whole_story(conn, insert_user):
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with agent_txn({"sql": SQLiteAdapter(conn)}, audit=audit) as txn:
         insert_user(name="bob")
         insert_user(name="alice")
@@ -138,7 +138,7 @@ def test_journal_records_the_whole_story(conn, insert_user):
 
 
 def test_rollback_compensates_effects_newest_first(conn, insert_user):
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with agent_txn({"sql": SQLiteAdapter(conn)}, audit=audit) as txn:
         insert_user(name="a")
         insert_user(name="b")

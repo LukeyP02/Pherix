@@ -58,11 +58,31 @@ def _now() -> str:
 
 
 class AuditJournal:
-    def __init__(self, path: str = ":memory:"):
+    """SQLite-backed audit journal — persistent transcript of every effect.
+
+    Slice 1 / P1 follow-up: ``path`` is required. Pherix is honest about its
+    durability claim — the operator picks where journal persistence lives, no
+    silent ``:memory:`` default. For tests and ephemeral runs that genuinely
+    don't need persistence, call :meth:`in_memory` explicitly so the choice
+    is visible at the call site rather than hiding in a default argument.
+    """
+
+    def __init__(self, path: str):
         self._conn = sqlite3.connect(path)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
+
+    @classmethod
+    def in_memory(cls) -> "AuditJournal":
+        """Construct an in-memory (non-durable) journal.
+
+        Suitable for tests and one-off interactive use. Production callers
+        should pass an explicit on-disk path to :meth:`__init__` so the
+        journal survives process restart — the Slice 5 replay machinery
+        depends on durable journals.
+        """
+        return cls(":memory:")
 
     def close(self) -> None:
         self._conn.close()

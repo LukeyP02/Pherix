@@ -60,7 +60,7 @@ def main() -> None:
     conn = sqlite3.connect(db_path, isolation_level=None)
     conn.execute("CREATE TABLE docs (id TEXT PRIMARY KEY, title TEXT)")
 
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     adapters = {
         "sql": SQLiteAdapter(conn),
         "fs": FilesystemAdapter(fs_root),

@@ -241,7 +241,7 @@ def main() -> None:
         "CREATE TABLE orders (id INTEGER PRIMARY KEY, customer TEXT, status TEXT)"
     )
 
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
 
     t1 = scenario_happy(conn, audit)
     t2 = scenario_gate_block(conn, audit)

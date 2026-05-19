@@ -230,7 +230,7 @@ def scenario_serialize(db_path: str, audit: AuditJournal) -> None:
         ad_b = SQLiteAdapter(conn_b)
         # Audit journals are SQLite connections too — thread-affine.
         # Give B its own so the worker thread never touches A's audit.
-        b_audit = AuditJournal()
+        b_audit = AuditJournal.in_memory()
         try:
             with agent_txn({"sql": ad_b}, audit=b_audit) as _:
                 credit(account="alice", amount=10)
@@ -289,7 +289,7 @@ def main() -> None:
     db_fd, db_path = tempfile.mkstemp(suffix=".db")
     os.close(db_fd)
     setup_db(db_path)
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
 
     try:
         scenario_abort(db_path, audit)

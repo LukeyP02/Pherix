@@ -73,7 +73,7 @@ def test_gate_block_lists_all_needs_approval_effect_ids():
 
 def test_gate_block_marks_effects_gated_and_txn_rolled_back():
     s, _ = _make_send_email()
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with pytest.raises(GateBlocked):
         with agent_txn({"http": HTTPAdapter()}, audit=audit) as txn:
             s(to="a@example.com", body="x")
@@ -162,7 +162,7 @@ def test_policy_revoked_between_stage_and_commit_blocks_irreversible():
 def test_policy_recheck_marks_effect_gated_and_rolls_back():
     charge, _, _ = _make_charge_and_refund()
     policy = _MutablePolicy()
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     with pytest.raises(PolicyViolation):
         with agent_txn({"http": HTTPAdapter()}, policy=policy, audit=audit) as txn:
             charge(customer_id="c1", amount=100)

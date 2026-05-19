@@ -42,7 +42,7 @@ def main() -> None:
     conn.execute(
         "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, role TEXT)"
     )
-    audit = AuditJournal()
+    audit = AuditJournal.in_memory()
     adapters = {"sql": SQLiteAdapter(conn)}
 
     def show(label: str) -> None:
