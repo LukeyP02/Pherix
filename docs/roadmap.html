@@ -299,9 +299,9 @@
   <h1>Pherix — Build Roadmap</h1>
   <div class="sub">A visual map of the eight-slice build. Each slice ships something demoable; the system gets <em>deeper</em>, not just wider. Hover the timeline, expand a card, follow a thread.</div>
   <div class="meta">
-    <span><b>Status:</b> Slices 1–4 done · Slice 5 next (replay)</span>
-    <span><b>Tests on <code>feat/slice-4</code>:</b> 225 passing</span>
-    <span><b>Last merge:</b> <code>a13018b</code> (Slice 3)</span>
+    <span><b>Status:</b> Slices 1–4 merged · Slice 5 in design (replay)</span>
+    <span><b>Tests on <code>main</code>:</b> 226 passing</span>
+    <span><b>Last merge:</b> <code>0fab344</code> (Slice 4)</span>
     <span><b>Today:</b> 2026-05-18</span>
   </div>
 </header>
@@ -310,7 +310,7 @@
   <a href="#mental-model">Mental model</a><span class="sep">·</span>
   <a href="#timeline">Timeline</a><span class="sep">·</span>
   <a href="#slices">Slice detail</a><span class="sep">·</span>
-  <a href="#followups">Slice-1 follow-ups</a><span class="sep">·</span>
+  <a href="#followups">Follow-ups</a><span class="sep">·</span>
   <a href="#you-are-here">Where am I?</a><span class="sep">·</span>
   <a href="#beyond">Beyond Slice 8</a>
 </nav>
@@ -348,14 +348,14 @@
 
   <!-- =========================================== -->
   <section id="timeline">
-    <h2>Dependency timeline <span class="hint">— hover a slice; orange dots are Slice-1 follow-ups gated to that slice</span></h2>
+    <h2>Dependency timeline <span class="hint">— hover a slice; orange dots are review follow-ups gated to that slice</span></h2>
 
     <div class="legend" aria-label="Legend">
       <span class="legend-item"><span class="swatch done"></span> done · merged</span>
-      <span class="legend-item"><span class="swatch active"></span> active · in worktree</span>
+      <span class="legend-item"><span class="swatch active"></span> active · in design</span>
       <span class="legend-item"><span class="swatch queued"></span> queued · spec-ready</span>
       <span class="legend-item"><span class="swatch future"></span> future · not yet specced</span>
-      <span class="legend-item"><span class="swatch followup"></span> Slice-1 follow-up gated here</span>
+      <span class="legend-item"><span class="swatch followup"></span> review follow-up gated here</span>
       <span class="legend-item"><span class="swatch followup-resolved"></span> follow-up resolved</span>
       <span class="legend-item"><span class="swatch spec"></span> speculative · beyond Slice 8</span>
     </div>
@@ -446,30 +446,54 @@
           </g>
         </g>
 
-        <!-- SLICE 4 (done) -->
+        <!-- SLICE 4 (done · merged) -->
         <g class="node-card" data-slice="4" transform="translate(545,100)">
           <rect class="node-bg" width="120" height="120" rx="8" fill="var(--done-bg)" stroke="var(--done)" stroke-width="1.5"/>
           <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--done)">SLICE 4</text>
           <text x="60" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Isolation</text>
           <text x="60" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">read/write sets</text>
           <text x="60" y="80" text-anchor="middle" font-size="11" fill="var(--ink-soft)">MVCC-style</text>
-          <text x="60" y="100" text-anchor="middle" font-size="10" fill="var(--done)">✓ pending merge</text>
-          <text x="60" y="113" text-anchor="middle" font-size="9" font-family="ui-monospace,monospace" fill="var(--ink-faint)">feat/slice-4</text>
+          <text x="60" y="100" text-anchor="middle" font-size="10" fill="var(--done)">✓ merged</text>
+          <text x="60" y="113" text-anchor="middle" font-size="9" font-family="ui-monospace,monospace" fill="var(--ink-faint)">0fab344</text>
+          <!-- follow-up #S4-leak dot - meta-conn leak (housekeeping) -->
+          <g class="followup-dot" data-fu="S4-leak" opacity="0.85">
+            <circle cx="115" cy="10" r="9" fill="var(--ink-faint)" stroke="var(--panel)" stroke-width="2"/>
+            <text x="115" y="13.5" text-anchor="middle" font-size="8" font-weight="700" fill="white">hk</text>
+            <title>Slice-4 follow-up — SQLiteAdapter meta-connection leak; _CONN_ADAPTERS keyed by id(conn). Housekeeping, anytime.</title>
+          </g>
         </g>
 
-        <!-- SLICE 5 (active / next) -->
+        <!-- SLICE 5 (active · in design) -->
         <g class="node-card" data-slice="5" transform="translate(705,100)">
           <rect class="node-bg" width="120" height="120" rx="8" fill="var(--active-bg)" stroke="var(--active)" stroke-width="2"/>
           <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">SLICE 5</text>
           <text x="60" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Replay</text>
           <text x="60" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">from the journal</text>
           <text x="60" y="80" text-anchor="middle" font-size="11" fill="var(--ink-soft)">"nearly free"</text>
-          <text x="60" y="102" text-anchor="middle" font-size="10" fill="var(--active)">⟳ next on path</text>
-          <!-- follow-up #4 dot - in-memory default (gates slice 5) -->
+          <text x="60" y="102" text-anchor="middle" font-size="10" fill="var(--active)">⟳ in design</text>
+          <!-- Slice-1 FU#4 dot — in-memory default audit journal (blocker) -->
           <g class="followup-dot" data-fu="4">
             <circle cx="115" cy="10" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
             <text x="115" y="13.5" text-anchor="middle" font-size="10" font-weight="700" fill="white">4</text>
-            <title>Follow-up #4 — Default audit journal is :memory: (gates Slice 5, replay needs durable journal).</title>
+            <title>Slice-1 FU#4 — Default AuditJournal is :memory:. Replay needs durable-by-default. Blocker for Slice 5.</title>
+          </g>
+          <!-- Slice-4 FU monotonic-counter (blocker) -->
+          <g class="followup-dot" data-fu="S4-mvcc">
+            <circle cx="115" cy="32" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
+            <text x="115" y="35.5" text-anchor="middle" font-size="8" font-weight="700" fill="white">mv</text>
+            <title>Slice-4 FU — Monotonic-counter MVCC cannot distinguish self-bumps from cross-txn writes. Blocker for Slice 5.</title>
+          </g>
+          <!-- Slice-4 FU read/write-keys not persisted (blocker; also gates Slice 8) -->
+          <g class="followup-dot" data-fu="S4-rwkeys">
+            <circle cx="115" cy="54" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
+            <text x="115" y="57.5" text-anchor="middle" font-size="8" font-weight="700" fill="white">rw</text>
+            <title>Slice-4 FU — Audit journal does not persist read_keys / write_keys. Blocker for Slice 5; also gates Slice 8 gateway.</title>
+          </g>
+          <!-- Slice-3 FU idempotency replay-pin (strengthen in Slice 5) -->
+          <g class="followup-dot" data-fu="S3-idem" opacity="0.85">
+            <circle cx="115" cy="76" r="9" fill="var(--ink-faint)" stroke="var(--panel)" stroke-width="2"/>
+            <text x="115" y="79.5" text-anchor="middle" font-size="8" font-weight="700" fill="white">id</text>
+            <title>Slice-3 FU — Idempotency test is a pin, not a real replay scenario. Strengthen in Slice 5.</title>
           </g>
         </g>
 
@@ -500,6 +524,12 @@
           <text x="55" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">same engine,</text>
           <text x="55" y="78" text-anchor="middle" font-size="11" fill="var(--ink-soft)">proxy front-end</text>
           <text x="55" y="100" text-anchor="middle" font-size="10" fill="var(--future)">future</text>
+          <!-- Slice-4 FU Serialize cross-process (decide alongside Slice 8 scope) -->
+          <g class="followup-dot" data-fu="S4-serialize">
+            <circle cx="105" cy="10" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
+            <text x="105" y="13.5" text-anchor="middle" font-size="8" font-weight="700" fill="white">sz</text>
+            <title>Slice-4 FU — Serialize cross-process documented as Abort-degrade, not enforced. Decide alongside Slice 8 gateway scope.</title>
+          </g>
         </g>
 
         <!-- follow-up #3 - the "nit" dot, attached loosely (anytime) -->
@@ -623,7 +653,7 @@
     <div class="compare">
       <div>
         <h4>What's behind you <span class="tag now">Slices 1–4, merged</span></h4>
-        The engine is now complete in the <em>ACI</em> sense — atomicity, consistency-within-a-txn, isolation. Slice 1 (<code>ad4e9c0</code>) shipped the reversible-path engine. Slice 2 (<code>c926f97</code>) proved the protocol with copy-on-write filesystem snapshots and the <code>TransactionalResourceAdapter</code> sub-protocol. Slice 3 (<code>a13018b</code>) added the irreversible lane: staging, compensators-as-tools, the gate, partial-commit unwind with <code>STUCK</code> for missing compensators. Slice 4 (pending merge) brings isolation online: read/write-set capture through the resource handles, per-adapter versioning (SQL side-table + a meta-connection so cross-process reads see committed bumps; FS via content hash), the commit-time diff, and three resolution policies (<code>Abort</code>, <code>Retry(N)</code> via <code>run_txn</code>, in-process <code>Serialize</code>). <strong>225 tests green</strong> (+66 over Slice 3).
+        The engine is now complete in the <em>ACI</em> sense — atomicity, consistency-within-a-txn, isolation. Slice 1 (<code>ad4e9c0</code>) shipped the reversible-path engine. Slice 2 (<code>c926f97</code>) proved the protocol with copy-on-write filesystem snapshots and the <code>TransactionalResourceAdapter</code> sub-protocol. Slice 3 (<code>a13018b</code>) added the irreversible lane: staging, compensators-as-tools, the gate, partial-commit unwind with <code>STUCK</code> for missing compensators. Slice 4 (<code>0fab344</code>) brings isolation online: read/write-set capture through the resource handles, per-adapter versioning (SQL side-table + a meta-connection so cross-process reads see committed bumps; FS via content hash), the commit-time diff, and three resolution policies (<code>Abort</code>, <code>Retry(N)</code> via <code>run_txn</code>, in-process <code>Serialize</code>). <strong>226 tests green</strong> (+67 over Slice 3).
       </div>
       <div>
         <h4>What's in flight <span class="tag next">Slice 5 — replay from the journal</span></h4>
@@ -721,9 +751,9 @@
       <article class="slice done">
         <h3><span class="num">04</span> Isolation</h3>
         <div class="badges">
-          <span class="badge done">done · pending merge</span>
-          <span class="badge dim">feat/slice-4</span>
-          <span class="badge dim">225 tests · +66</span>
+          <span class="badge done">done · merged</span>
+          <span class="badge dim">0fab344</span>
+          <span class="badge dim">226 tests · +67</span>
         </div>
         <p class="one-liner">The "I" in ACID. Every effect's reads and writes are journalled with versions; at commit, the diff folds the journal against current adapter state and the resolution policy fires.</p>
         <details>

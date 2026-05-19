@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pherix — beyond Slice 2 — the unifying journal & its two pillars</title>
+<title>Pherix — beyond Slice 4 — the unifying journal & its two pillars</title>
 <style>
   :root {
     --bg: #faf8f3;
@@ -1170,7 +1170,7 @@
 <div class="frame">
   <nav class="toc" aria-label="Table of contents">
     <h1>Pherix</h1>
-    <div class="sub">Beyond Slice 2</div>
+    <div class="sub">Beyond Slice 4</div>
 
     <div class="group-label">The argument</div>
     <ol>
@@ -1182,9 +1182,9 @@
     <div class="group-label">The slices</div>
     <ol>
       <li><a href="#s2">Filesystem adapter <span style="color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
-      <li><a href="#s3">HTTP / irreversible</a></li>
-      <li><a href="#s4">Isolation</a></li>
-      <li><a href="#s5">Replay</a></li>
+      <li><a href="#s3">HTTP / irreversible <span style="color: var(--accent-2); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
+      <li><a href="#s4">Isolation <span style="color: var(--accent-3); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
+      <li><a href="#s5">Replay <span style="color: var(--accent-5); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·NEXT</span></a></li>
       <li><a href="#s6">Real policy engine</a></li>
       <li><a href="#s7">Speculative dry-run</a></li>
       <li><a href="#s8">MCP gateway</a></li>
@@ -1255,7 +1255,7 @@
                 <td class="cap">Isolation / conflict</td>
                 <td class="op">diff of this txn's <code>read_keys</code> / <code>write_keys</code> against the committed journal</td>
                 <td>no overlap ⇒ commit; overlap ⇒ abort / retry / serialize</td>
-                <td><span class="slice-pill s4">Slice 4</span></td>
+                <td><span class="slice-pill s4">Slice 4 · shipped</span></td>
               </tr>
               <tr>
                 <td class="cap">Audit / observability</td>
@@ -1270,7 +1270,7 @@
         <p style="margin-top:18px; color: var(--ink-2);">Five hard problems &mdash; rollback semantics, isolation, partial-failure correctness, deterministic replay, what-if simulation &mdash; reduce to <b>six verbs over one list</b>. That is the wedge. The slices below are each one verb wearing a different costume.</p>
       </div>
 
-      <p style="margin-top:18px;">Slices&nbsp;1&ndash;4 are <b>merged</b> &mdash; the SQL adapter at <code>ad4e9c0</code>, the filesystem adapter at <code>c926f97</code>, the irreversible / HTTP lane at <code>a13018b</code>, and isolation (read/write-set capture, commit-time diff, <code>Abort</code> / <code>Retry</code> / <code>Serialize</code>) pending merge on <code>feat/slice-4</code>. Slice&nbsp;1 is covered in detail in <code>slice-1.html</code>; Slice&nbsp;5 (replay) is next on the critical path. This document is the trajectory: how the same engine extends to deterministic replay, real policy, speculative execution, and a language-agnostic gateway &mdash; <em>without rebuilding the engine</em> &mdash; and then how two further pillars, memory and audit, grow from the same journal.</p>
+      <p style="margin-top:18px;">Slices&nbsp;1&ndash;4 are <b>merged</b> &mdash; the SQL adapter at <code>ad4e9c0</code>, the filesystem adapter at <code>c926f97</code>, the irreversible / HTTP lane at <code>a13018b</code>, and isolation (read/write-set capture through the resource handle, commit-time conflict diff via per-adapter versioning, resolution policy <code>Abort</code> / <code>Retry(N)</code> / <code>Serialize</code>) at <code>0fab344</code> &mdash; 226 tests green. Slice&nbsp;1 is covered in detail in <code>slice-1.html</code>; Slice&nbsp;5 (replay) is next on the critical path and currently in design. This document is the trajectory: how the same engine extends to deterministic replay, real policy, speculative execution, and a language-agnostic gateway &mdash; <em>without rebuilding the engine</em> &mdash; and then how two further pillars, memory and audit, grow from the same journal.</p>
     </section>
 
     <!-- ===================== MATRIX ===================== -->
@@ -1313,7 +1313,7 @@
         <div class="row" role="row">
           <div class="cell rowhead">Detect concurrent conflict</div>
           <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
-          <div class="cell lit s4"><span class="slice-pill s4">S4</span><div class="note">read versions vs. committed writes</div></div>
+          <div class="cell lit s4"><span class="slice-pill s4">S4 · shipped</span><div class="note">f: conflict→Action · meta-conn arbiter</div></div>
           <div class="cell"></div>
         </div>
 

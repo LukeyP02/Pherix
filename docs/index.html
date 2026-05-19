@@ -171,7 +171,7 @@
          aria-label="Beyond Slice 8: speculative ambition (Slice 9+). See future.html.">9+<span class="lbl">beyond</span></a>
     </div>
     <p class="status-note">
-      Slice 1 (reversible-path engine) merged at <code>ad4e9c0</code>; Slice 2 (filesystem adapter, copy-on-write, mixed-resource transactions) merged at <code>c926f97</code>; Slice 3 (irreversible lane — staging, gate, compensators, partial-commit recovery) merged at <code>a13018b</code>; Slice 4 (isolation, MVCC — read/write-set capture, commit-time conflict diff, <code>Abort</code> / <code>Retry(N)</code> / <code>Serialize</code> resolution policy, in-process <code>JournalRegistry</code> + filesystem-shared cross-process arbitration) pending merge. 225 tests green.
+      Slices 1–4 merged: reversible engine (<code>ad4e9c0</code>), filesystem adapter (<code>c926f97</code>), irreversible lane (<code>a13018b</code>), and isolation/MVCC (<code>0fab344</code>) — read/write-set capture, commit-time conflict diff, <code>Abort</code> / <code>Retry(N)</code> / <code>Serialize</code> resolution policy, in-process <code>JournalRegistry</code> + filesystem-shared cross-process arbitration via the <code>SQLiteAdapter</code> meta-connection. <strong>226 tests green.</strong>
       Slice 5 (replay from the journal) is next on the critical path.
       Beyond Slice 8, the trilogy of <em>determinism, memory, audit</em> emerges as the natural extension — see <code>future.html</code>.
     </p>

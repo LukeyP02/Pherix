@@ -7,7 +7,7 @@ Slice-by-slice build status. The full spec for each slice lives in `CLAUDE.md`.
 - [x] **Slice 1** — SQL adapter (savepoints) + `Transaction` state machine + `agent_txn()` + SQLite audit journal + allow-list policy. Reversible path end-to-end. *(merged `ad4e9c0`)*
 - [x] **Slice 2** — Filesystem adapter (copy-on-write) + `TransactionalResourceAdapter` sub-protocol + mixed-resource transactions. *(merged `c926f97`)*
 - [x] **Slice 3** — HTTP/irreversible adapter — staging, `StagedResult`, gate, compensator-as-tool, mixed-fold partial-commit unwind with `STUCK` for missing compensators. *(merged `a13018b`)*
-- [x] **Slice 4** — Isolation — read/write-set tracking, commit-time conflict diff, resolution policy (`Abort` / `Retry(N)` / `Serialize`), in-process `JournalRegistry` and filesystem-shared SQLite cross-process arbitration via the `SQLiteAdapter` meta-connection. *(pending merge)*
+- [x] **Slice 4** — Isolation — read/write-set tracking, commit-time conflict diff, resolution policy (`Abort` / `Retry(N)` / `Serialize`), in-process `JournalRegistry` and filesystem-shared SQLite cross-process arbitration via the `SQLiteAdapter` meta-connection. *(merged `0fab344`)*
 - [ ] **Slice 5** — Replay from the journal.
 - [ ] **Slice 6** — Real policy engine — capability grants, spend caps, content-aware rules, commit-time re-eval.
 - [ ] **Slice 7** — Speculative dry-run diff.
