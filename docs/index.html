@@ -157,22 +157,22 @@
 
   <section class="status" aria-label="Current build state">
     <p class="status-label">Where we are · 8-slice build</p>
-    <div class="progress" role="img" aria-label="Slices 1 to 6 done; Slice 7 active; Slice 8 pending; further ambition beyond Slice 8.">
+    <div class="progress" role="img" aria-label="Slices 1 to 7 done; Slice 8 active; further ambition beyond Slice 8.">
       <span class="step done"><span class="lbl">1</span></span>
       <span class="step done"><span class="lbl">2</span></span>
       <span class="step done"><span class="lbl">3</span></span>
       <span class="step done"><span class="lbl">4</span></span>
       <span class="step done"><span class="lbl">5</span></span>
       <span class="step done"><span class="lbl">6</span></span>
-      <span class="step active"><span class="lbl">7</span></span>
-      <span class="step"><span class="lbl">8</span></span>
+      <span class="step done"><span class="lbl">7</span></span>
+      <span class="step active"><span class="lbl">8</span></span>
       <a class="beyond" href="future.html"
          title="Slice 9+ — memory-adapter family, memory-specific policy vocabulary, agent-memory frontend. See future.html."
          aria-label="Beyond Slice 8: speculative ambition (Slice 9+). See future.html.">9+<span class="lbl">beyond</span></a>
     </div>
     <p class="status-note">
-      Slices 1–6 merged: reversible engine (<code>ad4e9c0</code>), filesystem adapter (<code>c926f97</code>), irreversible lane (<code>a13018b</code>), isolation/MVCC (<code>0fab344</code>), replay (<code>9ff69a6</code>), and now the policy engine (<code>c2318d5</code>) — <code>@policy.rule</code> Python callables returning <code>Allow | Deny(reason)</code>, <code>Cap.count</code> / <code>Cap.sum</code> spend-cap primitives that fold over the journal-so-far, stage-time AND commit-time evaluation bracket (the commit-time walk runs <em>before</em> the staged-fire loop, so irreversibles never fire under commit-time denial — the strongest containment property the architecture can offer), enriched <code>PolicyViolation</code> carrying <code>where</code>/<code>rule</code>/<code>reason</code>/<code>effect_index</code>. World-state-aware rules defer to Slice 6.5 via a <code>ctx.read(...)</code> placeholder. <strong>280 tests green.</strong>
-      Slice 7 (speculative dry-run) is next on the critical path.
+      Slices 1–7 merged: reversible engine (<code>ad4e9c0</code>), filesystem adapter (<code>c926f97</code>), irreversible lane (<code>a13018b</code>), isolation/MVCC (<code>0fab344</code>), replay (<code>9ff69a6</code>), policy engine (<code>c2318d5</code>), and now speculative dry-run (<code>6ee8980</code>) — <code>pherix.dry_run(adapters)</code> is the same forward fold as <code>agent_txn</code> ending in <code>adapter.rollback()</code> instead of <code>adapter.commit()</code>; world is bit-identical pre/post; <code>DryRunResult</code> carries the journal, the <code>would_have_fired</code> filter, and policy verdicts captured via <code>try_evaluate</code>/<code>collect_verdicts</code> (capture-mode siblings, never raise on <code>Deny</code>). Audit gains a <code>dry_run</code> column. Per-adapter structured state diff and concurrency-aware dry-run defer to Slice 7.5. <strong>299 tests green.</strong>
+      Slice 8 (MCP gateway frontend) is next on the critical path — the test of the front-end-agnostic discipline.
       Beyond Slice 8, the trilogy of <em>determinism, memory, audit</em> emerges as the natural extension — see <code>future.html</code>.
     </p>
   </section>
@@ -192,11 +192,6 @@
       <div class="card-head"><h2>Roadmap</h2><span class="badge review">Review</span></div>
       <p>All 8 slices as a dependency graph with status colour-coding, the four Slice-1 review follow-ups attached to the slices they gate, and a "you are here" marker between 1 and 2.</p>
       <span class="url">roadmap.html</span>
-    </a>
-    <a class="card" href="slice-7-decisions.html">
-      <div class="card-head"><h2>Slice 7 decisions</h2><span class="badge decide">Decide</span></div>
-      <p>Speculative dry-run — "show me what this transaction would do, but don't actually do it." The smallest slice in the build: agent_txn that rolls back at the end instead of committing. Five decisions locked (API shape, irreversibles, result contents, policy capture, state guarantee); per-adapter state diff and concurrency-aware dry-run deferred to 7.5.</p>
-      <span class="url">slice-7-decisions.html</span>
     </a>
     <a class="card" href="future.html">
       <div class="card-head"><h2>Future · Slices 2–8</h2><span class="badge vision">Vision</span></div>

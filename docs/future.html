@@ -1290,8 +1290,8 @@
       <li><a href="#s4">Isolation <span style="color: var(--accent-3); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
       <li><a href="#s5">Replay <span style="color: var(--accent-5); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
       <li><a href="#s6">Real policy engine <span style="color: var(--accent-6, var(--accent)); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
-      <li><a href="#s7">Speculative dry-run <span style="color: var(--accent-5); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·NEXT</span></a></li>
-      <li><a href="#s8">MCP gateway</a></li>
+      <li><a href="#s7">Speculative dry-run <span style="color: var(--accent-5); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
+      <li><a href="#s8">MCP gateway <span style="color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·NEXT</span></a></li>
     </ol>
 
     <div class="group-label">The shape it becomes</div>
@@ -1306,7 +1306,7 @@
   <main>
 
     <header class="hero">
-      <div class="tag">Vision · Slices 1—6 shipped · 7 next (dry-run) · 8 ahead · then the trilogy</div>
+      <div class="tag">Vision · Slices 1—7 shipped · 8 next (MCP gateway) · then the trilogy</div>
       <h1>One engine, <em>three</em> faces.</h1>
       <p class="sub">Pherix grows by traversing the same sequence in a new direction each time. Forward fold. Backward fold. Fold against fresh state. Fold against a snapshot, then discard. Diff. Walk. Six verbs over one ordered object — the journal — yield every capability the system claims. Slices&nbsp;1—8 ship the determinism engine. Beyond, two more pillars grow from the same substrate: a <em>memory</em> layer that indexes the journal, and an <em>audit</em> layer that queries it.</p>
     </header>
@@ -1941,9 +1941,9 @@
 
         <!-- ============ SLICE 7 ============ -->
         <article class="card s7" id="s7">
-          <div class="top"><span class="num">Slice · 07</span><span class="slice-pill s7">dry-run</span></div>
+          <div class="top"><span class="num">Slice · 07</span><span class="slice-pill s7">dry-run · shipped</span></div>
           <h3>Speculative dry-run</h3>
-          <p class="tagline">Run it &mdash; then throw the world away.</p>
+          <p class="tagline">Run it &mdash; then throw the world away. <em>Shipped.</em></p>
 
           <div class="schematic">
             <svg viewBox="0 0 360 100" class="glyph" aria-label="snapshot, fold, discard, diff">
@@ -1972,13 +1972,13 @@
           </div>
 
           <h4>What it adds</h4>
-          <p>A <code>dry_run()</code> entrypoint: take a snapshot of the involved resources, fold the proposed journal forward against the copy, capture the resulting diff, throw the copy away. No live effect leaks. Irreversible effects are recorded as "would have called X with Y" without firing.</p>
+          <p>A top-level <code>pherix.dry_run(adapters)</code> context manager that runs the agent body identically to <code>agent_txn</code> but ends in <code>adapter.rollback()</code> instead of <code>adapter.commit()</code>. The world after the <code>with</code> block is bit-identical to its pre-call state — reversibles restore via the existing <code>BEGIN</code>/<code>ROLLBACK</code> bracket; irreversibles never invoked (Slice 3's staging path keeps the real function unreached). The agent walks away with a <code>DryRunResult</code> carrying the per-effect journal, the <code>would_have_fired</code> filter (staged irreversibles), and policy verdicts captured via new sibling methods <code>Policy.try_evaluate</code> / <code>Policy.collect_verdicts</code> (never raise on <code>Deny</code> — verdict is data, not control flow). Audit gains a <code>dry_run</code> column for compliance filtering.</p>
 
           <h4>What it unlocks</h4>
-          <p>"Show me what this agent <em>would</em> do." Pre-flight checks before committing. A/B prompts compared on their projected change set. Cost projections without spending money. The agent's plan becomes diffable in the same way code is &mdash; review the change, then approve the commit.</p>
+          <p>"Show me what this agent <em>would</em> do." Pre-flight checks before committing. A/B prompts compared on their projected change set. Cost projections without spending money. The agent's plan becomes diffable in the same way code is &mdash; review the change, then approve the commit. Slices 6.5 and 7.5 sit open as scoped follow-ups: world-state-aware policy reads, per-adapter structured state diff (rows added, files written), and concurrency-aware dry-run.</p>
 
           <h4>How it traverses the journal</h4>
-          <div class="fold-line">Forward fold, against a snapshot, with the result discarded. Mathematically: <code>diff = state(fold(journal, snapshot)) − snapshot</code>. The work was already done by Slice 1's <code>snapshot</code> and Slice 5's fold mechanism; Slice 7 just wires them up differently.</p>
+          <div class="fold-line">Forward fold ending in rollback instead of commit. Mathematically: same fold as <code>agent_txn</code>, different terminator. The journal is the diff. Slice 1's snapshot/rollback bracket gives "discard the world" for free; Slice 3's staging keeps irreversibles unfired; Slice 6's policy fold runs in capture mode. Slice 7 is composition, not invention.</div>
         </article>
 
         <!-- ============ SLICE 8 ============ -->
