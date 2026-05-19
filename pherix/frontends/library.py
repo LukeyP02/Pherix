@@ -43,6 +43,12 @@ from pherix.core.isolation import (
     _in_run_txn,
 )
 from pherix.core.policy import Policy, PolicyViolation
+from pherix.core.replay import (
+    EffectOutcome,
+    ReplayDivergence,
+    ReplayResult,
+    replay,
+)
 from pherix.core.runtime import CompensatorNotRegistered, GateBlocked, agent_txn
 from pherix.core.tools import tool
 
@@ -114,6 +120,10 @@ def run_txn(
 __all__ = [
     "agent_txn",
     "run_txn",
+    "replay",
+    "ReplayResult",
+    "ReplayDivergence",
+    "EffectOutcome",
     "tool",
     "Policy",
     "PolicyViolation",
