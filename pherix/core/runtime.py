@@ -25,7 +25,7 @@ import threading
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-from pherix.core.adapters.base import TransactionalResourceAdapter
+from pherix.core.adapters.base import StateDiffable, TransactionalResourceAdapter
 from pherix.core.audit import AuditJournal
 from pherix.core.effects import Effect, EffectStatus, StagedResult
 from pherix.core.isolation import (
@@ -107,6 +107,7 @@ class TxnContext:
         isolation: Any = None,
         *,
         dry_run: bool = False,
+        client_id: str | None = None,
     ):
         self.txn = Transaction(policy=policy)
         self.audit = audit
@@ -135,10 +136,36 @@ class TxnContext:
         # aborting the with-block. The audit row carries ``dry_run=1`` so
         # operators can filter dry-runs out of compliance views.
         self._dry_run = dry_run
+        # Slice 8: provenance for a gateway front-end serving many MCP
+        # clients through one core. Threaded as a keyword-only param exactly
+        # as ``dry_run`` is; written into the nullable ``client_id`` audit
+        # column. Library callers never supply one and the column stays NULL.
+        self._client_id = client_id
         self._stage_verdicts: list[PolicyVerdict] = []
+        # Slice 8: capture a read-only state baseline per StateDiffable
+        # adapter at txn begin. A SQLite SAVEPOINT is not separately
+        # queryable as a before-image, so the structural diff cannot read the
+        # pre-image from inside the per-effect snapshot lane — instead it
+        # diffs the live resource at finalise against this parallel baseline.
+        # Only the dry-run finalise consumes it, so the capture is gated on
+        # ``dry_run``: a committed agent_txn never pays the full-table-dump
+        # cost on its hot path. Captured eagerly (the context managers call
+        # adapter.begin() before constructing the ctx, so the resource is
+        # already inside its txn bracket and the baseline is the pre-effect
+        # state). Keyed by id(adapter) to dedupe one adapter serving several
+        # resource keys. Empty unless an adapter opts into StateDiffable.
+        self._state_baselines: dict[int, tuple[Any, Any]] = (
+            {
+                id(a): (a, a.state_baseline())
+                for a in _unique(adapters)
+                if isinstance(a, StateDiffable)
+            }
+            if dry_run
+            else {}
+        )
         # Populated by :meth:`_dry_run_finalise` once the body completes.
         self.result: Any = None
-        audit.record_transaction(self.txn, dry_run=dry_run)
+        audit.record_transaction(self.txn, dry_run=dry_run, client_id=client_id)
 
     @property
     def txn_id(self) -> str:
@@ -401,12 +428,31 @@ class TxnContext:
             would_have_fired=would_have_fired,
             policy_verdicts=all_verdicts,
             is_clean=all(v.allow for v in all_verdicts),
+            state_diff=self._compute_state_diff(),
         )
 
         # Unwind: identical mechanics to a normal rollback. Reversibles
         # restore from snapshots (APPLIED → COMPENSATED); irreversibles
         # were never fired (STAGED) and have no snapshot to restore.
         self.rollback()
+
+    def _compute_state_diff(self) -> dict[str, dict]:
+        """Per-resource structural delta — current state vs the begin baseline.
+
+        Called from :meth:`_dry_run_finalise` *before* the rollback, so the
+        live resource still carries the dry-run's writes. For every
+        :class:`StateDiffable` adapter whose baseline was captured at
+        ``__init__``, dispatch ``adapter.state_diff(baseline)`` and key the
+        result by ``adapter.name`` — yielding the cross-driver contract shape
+        ``{"sql": {...}, "fs": {...}}``. Adapters that did not opt in
+        contribute nothing (their baseline was never captured), so the HTTP
+        adapter is silently absent — its structural record is
+        ``would_have_fired``.
+        """
+        out: dict[str, dict] = {}
+        for adapter, baseline in self._state_baselines.values():
+            out[adapter.name] = adapter.state_diff(baseline)
+        return out
 
     # --- isolation (Slice 4) ---
 
@@ -595,6 +641,8 @@ def agent_txn(
     policy: Policy | None = None,
     audit: AuditJournal | None = None,
     isolation: Any = None,
+    *,
+    client_id: str | None = None,
 ) -> Iterator[TxnContext]:
     """Wrap an agent's tool-call layer in a transaction.
 
@@ -615,7 +663,7 @@ def agent_txn(
         if isinstance(adapter, TransactionalResourceAdapter):
             adapter.begin()
 
-    ctx = TxnContext(adapters, policy, audit, isolation=isolation)
+    ctx = TxnContext(adapters, policy, audit, isolation=isolation, client_id=client_id)
     # Slice 4 (D5): register the open ctx with the in-process arbitration
     # substrate so a concurrent Serialize commit can find us and wait.
     ISOLATION_REGISTRY.register(ctx)

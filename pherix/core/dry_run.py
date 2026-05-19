@@ -100,6 +100,16 @@ class DryRunResult:
     would_have_fired: list[Effect]
     policy_verdicts: list[PolicyVerdict]
     is_clean: bool
+    # Slice 8: per-resource structured state delta, keyed by adapter name.
+    # Each value is the adapter's :meth:`StateDiffable.state_diff` output —
+    # SQL: ``{"rows_added": [...], "rows_modified": [...],
+    # "rows_deleted": [...]}``; FS: ``{"files_added": [...],
+    # "files_modified": [...], "files_deleted": [...]}``. Empty for adapters
+    # that do not opt into :class:`~pherix.core.adapters.base.StateDiffable`
+    # (e.g. the irreversible HTTP adapter, whose structural record is
+    # :attr:`would_have_fired`). Populated at the dry-run finalise hook,
+    # *before* the rollback discards the world.
+    state_diff: dict = field(default_factory=dict)
 
 
 @contextmanager
@@ -108,6 +118,7 @@ def dry_run(
     *,
     policy: Policy | None = None,
     audit: AuditJournal | None = None,
+    client_id: str | None = None,
 ) -> Iterator[Any]:
     """Speculative-execution context manager.
 
@@ -151,7 +162,7 @@ def dry_run(
         if isinstance(adapter, TransactionalResourceAdapter):
             adapter.begin()
 
-    ctx = TxnContext(adapters, policy, audit, dry_run=True)
+    ctx = TxnContext(adapters, policy, audit, dry_run=True, client_id=client_id)
     # Slice 4 (D5): register the context with the in-process arbitration
     # substrate — same as :func:`agent_txn` — so :class:`Serialize`
     # waiters can see us as a peer. Dry-runs don't actually compete for
