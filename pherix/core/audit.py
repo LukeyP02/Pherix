@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS effects (
     args       TEXT NOT NULL,
     snapshot   TEXT,
     result     TEXT,
+    read_keys  TEXT NOT NULL DEFAULT '[]',
+    write_keys TEXT NOT NULL DEFAULT '[]',
     ts         TEXT NOT NULL,
     PRIMARY KEY (txn_id, idx)
 );
@@ -122,8 +124,8 @@ class AuditJournal:
     def record_effect(self, effect: Effect) -> None:
         self._conn.execute(
             "INSERT INTO effects (txn_id, idx, effect_id, tool, resource, "
-            "reversible, status, args, snapshot, result, ts) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "reversible, status, args, snapshot, result, read_keys, write_keys, ts) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 effect.txn_id,
                 effect.index,
@@ -135,20 +137,33 @@ class AuditJournal:
                 _dump(effect.args),
                 _dump(effect.snapshot),
                 _dump(effect.result),
+                _dump(effect.read_keys) or "[]",
+                _dump(effect.write_keys) or "[]",
                 effect.ts.isoformat(),
             ),
         )
         self._conn.commit()
 
     def update_effect(self, effect: Effect) -> None:
-        """Update status / snapshot / result in place — same row, no history (D5)."""
+        """Update mutable state in place — same row, no history (D5).
+
+        Mutable fields: ``status``, ``snapshot``, ``result``, plus the
+        isolation key triples ``read_keys`` / ``write_keys`` (which the
+        resource handle / ``execute_isolated`` appends to during the
+        adapter's ``apply``, AFTER the initial ``record_effect``). Slice 5
+        replay reads these from the journal to verify isolation behaviour
+        replays correctly.
+        """
         self._conn.execute(
-            "UPDATE effects SET status = ?, snapshot = ?, result = ? "
+            "UPDATE effects SET status = ?, snapshot = ?, result = ?, "
+            "read_keys = ?, write_keys = ? "
             "WHERE txn_id = ? AND idx = ?",
             (
                 effect.status.name,
                 _dump(effect.snapshot),
                 _dump(effect.result),
+                _dump(effect.read_keys) or "[]",
+                _dump(effect.write_keys) or "[]",
                 effect.txn_id,
                 effect.index,
             ),

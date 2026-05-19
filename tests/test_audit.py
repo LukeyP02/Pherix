@@ -82,3 +82,65 @@ def test_journal_completeness_for_multi_effect_transaction():
 
 def test_get_unknown_transaction_returns_none():
     assert AuditJournal.in_memory().get_transaction("nope") is None
+
+
+# --- Slice 1 review P2: audit row persists read_keys / write_keys ----------
+
+
+def test_audit_persists_read_keys_and_write_keys_round_trip():
+    """Slice 4 isolation triples must survive the journal round-trip — Slice 5
+    replay reads them back to verify isolation behaviour replays correctly.
+    """
+    j = AuditJournal.in_memory()
+    txn = Transaction()
+    j.record_transaction(txn)
+    e = make_effect(
+        txn.txn_id,
+        read_keys=[("sql", ("users", "alice"), 5), ("fs", ("/notes/a.txt",), "sha256:abc")],
+        write_keys=[("sql", ("users", "alice")), ("fs", ("/notes/a.txt",))],
+    )
+    j.record_effect(e)
+
+    rows = j.get_effects(txn.txn_id)
+    assert len(rows) == 1
+    # JSON round-trip — keys are tuples in-memory, lists in the audit row.
+    rk = json.loads(rows[0]["read_keys"])
+    wk = json.loads(rows[0]["write_keys"])
+    assert rk == [["sql", ["users", "alice"], 5], ["fs", ["/notes/a.txt"], "sha256:abc"]]
+    assert wk == [["sql", ["users", "alice"]], ["fs", ["/notes/a.txt"]]]
+
+
+def test_audit_default_empty_read_write_keys_serialise_as_empty_list():
+    """An effect with no isolation involvement journalls as empty lists,
+    not NULL — keeps the schema invariant that read_keys / write_keys
+    are always JSON-parseable arrays.
+    """
+    j = AuditJournal.in_memory()
+    txn = Transaction()
+    j.record_transaction(txn)
+    j.record_effect(make_effect(txn.txn_id))
+    rows = j.get_effects(txn.txn_id)
+    assert json.loads(rows[0]["read_keys"]) == []
+    assert json.loads(rows[0]["write_keys"]) == []
+
+
+def test_audit_update_effect_persists_late_appended_keys():
+    """read_keys / write_keys are appended DURING adapter.apply, AFTER the
+    initial record_effect. update_effect must persist the now-populated lists.
+    """
+    j = AuditJournal.in_memory()
+    txn = Transaction()
+    j.record_transaction(txn)
+    e = make_effect(txn.txn_id)
+    j.record_effect(e)  # empty read/write keys
+
+    # Simulate the runtime: handle appends during apply.
+    e.read_keys.append(("sql", ("users", "bob"), 7))
+    e.write_keys.append(("sql", ("users", "bob")))
+    e.status = EffectStatus.APPLIED
+    j.update_effect(e)
+
+    rows = j.get_effects(txn.txn_id)
+    assert json.loads(rows[0]["read_keys"]) == [["sql", ["users", "bob"], 7]]
+    assert json.loads(rows[0]["write_keys"]) == [["sql", ["users", "bob"]]]
+    assert rows[0]["status"] == "APPLIED"
