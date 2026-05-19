@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     state         TEXT NOT NULL,
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL,
-    replayed_from TEXT
+    replayed_from TEXT,
+    dry_run       INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS effects (
     txn_id     TEXT NOT NULL,
@@ -98,13 +99,30 @@ class AuditJournal:
 
     # --- transactions ---
 
-    def record_transaction(self, txn: Transaction) -> None:
+    def record_transaction(
+        self, txn: Transaction, *, dry_run: bool = False
+    ) -> None:
+        """Insert the per-transaction audit row.
+
+        Slice 7 adds ``dry_run`` as a keyword-only flag (default ``False``)
+        — passed from :class:`pherix.core.runtime.TxnContext` when the
+        operator entered via :func:`pherix.dry_run`. The column lives on
+        ``transactions`` so operators can filter dry-runs out of
+        compliance views with a plain ``WHERE dry_run = 0``.
+        """
         now = _now()
         self._conn.execute(
             "INSERT INTO transactions "
-            "(txn_id, state, created_at, updated_at, replayed_from) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (txn.txn_id, txn.state.name, now, now, txn.replayed_from),
+            "(txn_id, state, created_at, updated_at, replayed_from, dry_run) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                txn.txn_id,
+                txn.state.name,
+                now,
+                now,
+                txn.replayed_from,
+                int(dry_run),
+            ),
         )
         self._conn.commit()
 
