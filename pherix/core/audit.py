@@ -18,10 +18,11 @@ from pherix.core.transaction import Transaction
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS transactions (
-    txn_id     TEXT PRIMARY KEY,
-    state      TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    txn_id        TEXT PRIMARY KEY,
+    state         TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    replayed_from TEXT
 );
 CREATE TABLE IF NOT EXISTS effects (
     txn_id     TEXT NOT NULL,
@@ -100,9 +101,10 @@ class AuditJournal:
     def record_transaction(self, txn: Transaction) -> None:
         now = _now()
         self._conn.execute(
-            "INSERT INTO transactions (txn_id, state, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?)",
-            (txn.txn_id, txn.state.name, now, now),
+            "INSERT INTO transactions "
+            "(txn_id, state, created_at, updated_at, replayed_from) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (txn.txn_id, txn.state.name, now, now, txn.replayed_from),
         )
         self._conn.commit()
 

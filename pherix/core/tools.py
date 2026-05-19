@@ -50,6 +50,13 @@ class ToolSpec:
     # missing names fail loudly at stage-time. Pherix does not verify the
     # left-inverse property — the developer asserts it.
     compensator: str | None = None
+    # Slice 5 (D2): per-tool equality predicate for verify-mode replay.
+    # ``fn(recorded_result, replayed_result) -> bool``. ``None`` means use
+    # the default JSON comparator (round-trip both sides through
+    # ``strict_json_default`` and compare strings). Tools whose results
+    # legitimately vary across runs (timestamps, generated IDs) declare a
+    # comparator to relax equality on the parts that don't matter.
+    comparator: Callable[[Any, Any], bool] | None = None
 
     def public_signature(self) -> inspect.Signature:
         """The signature the agent sees — the injected handle removed."""
@@ -95,6 +102,7 @@ def tool(
     name: str | None = None,
     injects_handle: bool = True,
     compensator: str | None = None,
+    comparator: Callable[[Any, Any], bool] | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         spec = ToolSpec(
@@ -104,6 +112,7 @@ def tool(
             reversible=reversible,
             injects_handle=injects_handle,
             compensator=compensator,
+            comparator=comparator,
         )
         REGISTRY.register(spec)
 
