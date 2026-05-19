@@ -182,6 +182,70 @@ def test_verify_flags_tampered_result_as_divergence_and_raises(tmp_path):
     source_audit.close()
 
 
+def test_divergence_restores_fs_state_on_rollback(tmp_path):
+    """Cross-resource divergence: SQL ROLLBACK discards the BEGIN bracket
+    (savepoints become moot), but FilesystemAdapter.rollback() only deletes
+    its backup tempdir — restoring file state needs a per-effect
+    adapter.restore(snapshot) walk newest-first, same shape as the
+    runtime's normal rollback. Without that walk, the FS writes the
+    replay just produced linger on the fresh root.
+    """
+
+    @tool(resource="sql")
+    def insert_user(conn, name):
+        conn.execute("INSERT INTO users (name) VALUES (?)", (name,))
+        return name
+
+    @tool(resource="fs")
+    def store_doc(fs: FsHandle, name: str, body: bytes):
+        fs.write(f"{name}.txt", body)
+        return name
+
+    audit_path = str(tmp_path / "audit.db")
+    source_audit = AuditJournal(audit_path)
+
+    src_conn = _fresh_users_db()
+    src_fs_root = Path(tempfile.mkdtemp(prefix="pherix_src_"))
+    src_adapters = {
+        "sql": SQLiteAdapter(src_conn),
+        "fs": FilesystemAdapter(src_fs_root),
+    }
+    with agent_txn(src_adapters, audit=source_audit) as ctx:
+        insert_user(name="alice")
+        store_doc(name="alice", body=b"hello")
+    src_txn_id = ctx.txn_id
+    source_audit.close()
+
+    # Tamper the SQL effect result so replay verify diverges AFTER the
+    # FS effect has already been applied to the fresh root.
+    raw = sqlite3.connect(audit_path)
+    raw.execute(
+        "UPDATE effects SET result = ? WHERE txn_id = ? AND idx = 0",
+        (json.dumps("MALLORY"), src_txn_id),
+    )
+    raw.commit()
+    raw.close()
+
+    source_audit = AuditJournal(audit_path)
+    fresh_conn = _fresh_users_db()
+    fresh_fs_root = Path(tempfile.mkdtemp(prefix="pherix_fresh_"))
+    with pytest.raises(ReplayDivergence):
+        replay(
+            src_txn_id,
+            {
+                "sql": SQLiteAdapter(fresh_conn),
+                "fs": FilesystemAdapter(fresh_fs_root),
+            },
+            source_audit=source_audit,
+        )
+    # SQL is restored by the adapter-level ROLLBACK.
+    assert _names(fresh_conn) == []
+    # FS must also be restored — without per-effect restore on rollback,
+    # the file replay just wrote would persist on the fresh root.
+    assert list(fresh_fs_root.iterdir()) == []
+    source_audit.close()
+
+
 def test_verify_with_raise_on_divergence_false_returns_result(tmp_path):
     """``raise_on_divergence=False`` collects divergences into the result
     object instead of raising — the operator can branch on outcome shape."""
@@ -556,6 +620,66 @@ def test_replay_propagates_policy_denial(tmp_path):
             {"sql": SQLiteAdapter(fresh_conn)},
             source_audit=source_audit,
             policy=deny,
+        )
+    source_audit.close()
+
+
+def test_stricter_policy_does_not_block_irreversible_skip(tmp_path):
+    """Irreversibles are skip-and-reused on replay; nothing fires. A stricter
+    policy at replay-time would block re-firing, but the skip path never
+    invokes ``policy.check`` — pins the contract that policy gates re-fire,
+    not journal-walk."""
+
+    @tool(resource="http", reversible=False, injects_handle=False, name="ping")
+    def ping(url):
+        return {"status": 200}
+
+    source_audit = AuditJournal(str(tmp_path / "audit.db"))
+    with agent_txn({"http": HTTPAdapter()}, audit=source_audit) as ctx:
+        r = ping(url="https://example.com")
+        ctx.approve_irreversible(r.effect_id)
+    src_txn_id = ctx.txn_id
+
+    # Replay under a policy that would deny ping if it tried to re-fire.
+    deny = Policy(deny={"ping"})
+    result = replay(
+        src_txn_id,
+        {"http": HTTPAdapter()},
+        source_audit=source_audit,
+        policy=deny,
+    )
+    assert result.status == "success"
+    assert result.outcomes[0].status == "skipped_idempotent"
+    source_audit.close()
+
+
+def test_replay_missing_tool_registration_gives_friendly_error(tmp_path):
+    """A bare ``KeyError`` from a registry miss is opaque. Replay wraps it so
+    the operator sees "tool X not registered in this process; replay needs
+    the same @tool defs as the source" instead of an unhelpful traceback."""
+
+    @tool(resource="sql")
+    def insert_user(conn, name):
+        conn.execute("INSERT INTO users (name) VALUES (?)", (name,))
+        return name
+
+    source_audit = AuditJournal(str(tmp_path / "audit.db"))
+    src_conn = _fresh_users_db()
+    with agent_txn({"sql": SQLiteAdapter(src_conn)}, audit=source_audit) as ctx:
+        insert_user(name="alice")
+    src_txn_id = ctx.txn_id
+
+    # Simulate "operator forgot to register the tool in the replay process"
+    # by clearing the registry between source and replay.
+    from pherix.core.tools import REGISTRY as TR
+    TR.clear()
+
+    fresh_conn = _fresh_users_db()
+    with pytest.raises(RuntimeError, match="not registered in this process"):
+        replay(
+            src_txn_id,
+            {"sql": SQLiteAdapter(fresh_conn)},
+            source_audit=source_audit,
         )
     source_audit.close()
 

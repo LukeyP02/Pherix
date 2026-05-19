@@ -111,7 +111,14 @@ class ReplayResult:
     divergences: list[EffectOutcome] = field(default_factory=list)
     # Mirrors ``check_conflicts(replay_txn.effects, adapters)`` at commit-time.
     # Empty list under a clean replay; a non-empty list flags Slice-4 contract
-    # leakage and is treated as a divergence under verify mode.
+    # leakage. Under ``mode='verify'`` a non-empty list is also treated as a
+    # divergence (it becomes one of ``divergences`` and pushes ``status`` to
+    # ``"divergence"``). Under ``mode='reconstruct'`` it is recorded here but
+    # does NOT change ``status`` — reconstruct's job is to rebuild the world,
+    # not to prove determinism, so a self-consistent replay against fresh
+    # state should not "fail" merely because the adapter versioning model
+    # disagrees somewhere. Operators using reconstruct should inspect this
+    # field separately if they care about isolation faithfulness.
     isolation_conflicts: list = field(default_factory=list)
 
 
@@ -160,6 +167,25 @@ def _compare(spec_comparator: Callable[[Any, Any], bool] | None, recorded: Any, 
     """Pick the comparator: per-tool override if registered, default otherwise."""
     fn = spec_comparator or _default_comparator
     return fn(recorded, replayed)
+
+
+def _lookup_tool(name: str):
+    """Resolve a source-journal tool name against the in-process registry.
+
+    A bare ``REGISTRY.get`` raises :class:`KeyError` on miss — opaque when
+    it surfaces from a replay (the operator's likely cause is "forgot to
+    import the module that registers this tool in the replay process,"
+    not "looked up the wrong dict key"). Wrap with a message that names
+    the cause.
+    """
+    if name not in REGISTRY:
+        raise RuntimeError(
+            f"replay: tool {name!r} is not registered in this process. "
+            f"Replay needs the same @tool definitions registered as the "
+            f"source run produced — import every tool module the source "
+            f"used before calling replay()."
+        )
+    return REGISTRY.get(name)
 
 
 def replay(
@@ -265,12 +291,12 @@ def replay(
 
         if result.divergences:
             result.status = "divergence"
-            _finalise(bracket_adapters, replay_txn, target_audit, committed=False)
+            _finalise(bracket_adapters, replay_txn, target_audit, adapters, committed=False)
         else:
-            _finalise(bracket_adapters, replay_txn, target_audit, committed=True)
+            _finalise(bracket_adapters, replay_txn, target_audit, adapters, committed=True)
     except Exception:
         result.status = "failure"
-        _finalise(bracket_adapters, replay_txn, target_audit, committed=False)
+        _finalise(bracket_adapters, replay_txn, target_audit, adapters, committed=False)
         raise
 
     if mode == "verify" and result.divergences and raise_on_divergence:
@@ -317,7 +343,7 @@ def _walk(
         # ReplayResult.status='failure'.
         policy.check(src["tool"])
 
-        spec = REGISTRY.get(src["tool"])
+        spec = _lookup_tool(src["tool"])
 
         new_effect = Effect(
             txn_id=replay_txn.txn_id,
@@ -431,10 +457,30 @@ def _finalise(
     bracket_adapters: list[Any],
     replay_txn: Transaction,
     target_audit: AuditJournal,
+    adapters: dict[str, Any],
     *,
     committed: bool,
 ) -> None:
-    """Close out lifecycle and persist terminal state."""
+    """Close out lifecycle and persist terminal state.
+
+    On the rollback path, mirror :meth:`runtime.TxnContext.rollback`: walk
+    the journal backward and call ``adapter.restore(snapshot)`` for each
+    reversible effect newest-first, then call the transactional adapter's
+    ``rollback`` to close the bracket. For SQL, the per-effect savepoint
+    restore is redundant with the adapter-level ``ROLLBACK`` that follows
+    (the BEGIN bracket gets discarded either way), but for the filesystem
+    adapter it is load-bearing: ``FilesystemAdapter.rollback()`` only
+    deletes the per-txn backup tempdir; restoring file state has to go
+    through ``restore(snapshot)`` per effect. Skipping that step would
+    leave any FS writes replay just produced lingering on the operator's
+    fresh root after a divergence.
+    """
+    if not committed:
+        for effect in reversed(replay_txn.effects):
+            if effect.snapshot is None:
+                continue
+            adapter = adapters[effect.resource]
+            adapter.restore(effect.snapshot)
     for adapter in bracket_adapters:
         if isinstance(adapter, TransactionalResourceAdapter):
             if committed:
