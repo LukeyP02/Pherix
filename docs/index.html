@@ -157,13 +157,13 @@
 
   <section class="status" aria-label="Current build state">
     <p class="status-label">Where we are · 8-slice build</p>
-    <div class="progress" role="img" aria-label="Slices 1 to 4 done; Slices 5 to 8 pending; further ambition beyond Slice 8.">
+    <div class="progress" role="img" aria-label="Slices 1 to 5 done; Slice 6 active; Slices 7 to 8 pending; further ambition beyond Slice 8.">
       <span class="step done"><span class="lbl">1</span></span>
       <span class="step done"><span class="lbl">2</span></span>
       <span class="step done"><span class="lbl">3</span></span>
       <span class="step done"><span class="lbl">4</span></span>
-      <span class="step active"><span class="lbl">5</span></span>
-      <span class="step"><span class="lbl">6</span></span>
+      <span class="step done"><span class="lbl">5</span></span>
+      <span class="step active"><span class="lbl">6</span></span>
       <span class="step"><span class="lbl">7</span></span>
       <span class="step"><span class="lbl">8</span></span>
       <a class="beyond" href="future.html"
@@ -171,8 +171,8 @@
          aria-label="Beyond Slice 8: speculative ambition (Slice 9+). See future.html.">9+<span class="lbl">beyond</span></a>
     </div>
     <p class="status-note">
-      Slices 1–4 merged: reversible engine (<code>ad4e9c0</code>), filesystem adapter (<code>c926f97</code>), irreversible lane (<code>a13018b</code>), and isolation/MVCC (<code>0fab344</code>) — read/write-set capture, commit-time conflict diff, <code>Abort</code> / <code>Retry(N)</code> / <code>Serialize</code> resolution policy, in-process <code>JournalRegistry</code> + filesystem-shared cross-process arbitration via the <code>SQLiteAdapter</code> meta-connection. <strong>226 tests green.</strong>
-      Slice 5 (replay from the journal) is next on the critical path.
+      Slices 1–5 merged: reversible engine (<code>ad4e9c0</code>), filesystem adapter (<code>c926f97</code>), irreversible lane (<code>a13018b</code>), isolation/MVCC (<code>0fab344</code>), and replay (<em>this slice</em>) — a top-level <code>pherix.replay(txn_id, adapters, source_audit=...)</code> folds the journal forward against operator-supplied fresh state; <code>mode='verify'</code> asserts each effect's recorded result equals the replayed result (per-tool <code>@tool(comparator=fn)</code> escape hatch); <code>mode='reconstruct'</code> rebuilds the world from the journal; irreversible APPLIED effects are skip-and-reused, never re-fired. <strong>249 tests green.</strong>
+      Slice 6 (real policy engine) is next on the critical path.
       Beyond Slice 8, the trilogy of <em>determinism, memory, audit</em> emerges as the natural extension — see <code>future.html</code>.
     </p>
   </section>
@@ -187,11 +187,6 @@
       <div class="card-head"><h2>Roadmap</h2><span class="badge review">Review</span></div>
       <p>All 8 slices as a dependency graph with status colour-coding, the four Slice-1 review follow-ups attached to the slices they gate, and a "you are here" marker between 1 and 2.</p>
       <span class="url">roadmap.html</span>
-    </a>
-    <a class="card" href="slice-5-decisions.html">
-      <div class="card-head"><h2>Slice 5 decisions</h2><span class="badge decide">Decide</span></div>
-      <p>Replay from the journal — making yesterday's transcript executable. Two modes: <em>verify</em> (prove Pherix is deterministic) and <em>reconstruct</em> (rebuild the world after a crash). Five decisions locked, one open (who provides the fresh slate).</p>
-      <span class="url">slice-5-decisions.html</span>
     </a>
     <a class="card" href="future.html">
       <div class="card-head"><h2>Future · Slices 2–8</h2><span class="badge vision">Vision</span></div>
