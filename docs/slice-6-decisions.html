@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Slice 6 — policy decisions · Pherix</title>
+<style>
+  :root {
+    --bg: #faf8f4;
+    --panel: #f1ece2;
+    --panel-2: #ebe3d2;
+    --ink: #161513;
+    --ink-2: #4a443c;
+    --ink-3: #7a7268;
+    --ink-faint: #a89e8c;
+    --rule: #d0c7b5;
+    --accent: #b4421e;
+    --accent-2: #355c3a;
+    --accent-3: #2c4a6a;
+    --accent-warn: #8a6a14;
+    --shade: rgba(22, 21, 19, 0.05);
+    --code-bg: rgba(22, 21, 19, 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14130f;
+      --panel: #1c1a14;
+      --panel-2: #221f17;
+      --ink: #ece6d8;
+      --ink-2: #c0baac;
+      --ink-3: #8a8478;
+      --ink-faint: #5a544a;
+      --rule: #3a342a;
+      --accent: #e07a4e;
+      --accent-2: #6ba070;
+      --accent-3: #7ea0c8;
+      --accent-warn: #d4ac56;
+      --shade: rgba(255, 250, 240, 0.04);
+      --code-bg: rgba(255, 250, 240, 0.06);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
+    font-size: 17px; line-height: 1.6;
+    padding: 4rem 1.5rem 6rem;
+  }
+  main { max-width: 920px; margin: 0 auto; }
+  .eyebrow {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-3); margin: 0 0 0.5rem;
+  }
+  h1 {
+    font-size: 2.5rem; line-height: 1.06; margin: 0 0 1rem;
+    font-weight: 500; letter-spacing: -0.012em;
+  }
+  h2 {
+    font-size: 1.55rem; line-height: 1.2; margin: 3.5rem 0 1rem;
+    font-weight: 500; letter-spacing: -0.005em;
+    border-top: 1px solid var(--rule); padding-top: 1.5rem;
+  }
+  h3 {
+    font-size: 1.2rem; margin: 1.6rem 0 0.4rem;
+    font-weight: 500; letter-spacing: -0.003em;
+  }
+  .lede {
+    color: var(--ink-2); font-size: 1.12rem; max-width: 64ch; margin: 0;
+  }
+  p { color: var(--ink-2); margin: 0.6rem 0 0.9rem; }
+  p strong { color: var(--ink); font-weight: 600; }
+  code {
+    font-family: ui-monospace, monospace; font-size: 0.88em;
+    background: var(--code-bg); padding: 1px 5px; border-radius: 3px;
+  }
+  em { color: var(--ink); font-style: italic; }
+  ul, ol { color: var(--ink-2); padding-left: 1.4rem; }
+  ul li, ol li { margin: 0.4rem 0; }
+
+  /* the question framing — load-bearing visual element */
+  .question {
+    margin: 1.4rem 0 1.2rem;
+    padding: 1.1rem 1.4rem;
+    background: var(--panel);
+    border-left: 4px solid var(--accent);
+    border-radius: 4px;
+  }
+  .question .qlabel {
+    font-family: ui-monospace, monospace; font-size: 0.74rem;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3);
+    margin-bottom: 0.3rem;
+  }
+  .question p {
+    margin: 0; color: var(--ink); font-style: italic; font-size: 1.05rem;
+  }
+
+  /* options as small cards */
+  .options { display: grid; gap: 0.7rem; margin: 1rem 0 1.2rem; }
+  .opt {
+    padding: 0.85rem 1.1rem;
+    background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 5px;
+  }
+  .opt.pick { border-left: 4px solid var(--accent-2); }
+  .opt.rej { opacity: 0.78; }
+  .opt .otag {
+    font-family: ui-monospace, monospace; font-size: 0.7rem;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-3); margin-bottom: 0.3rem;
+  }
+  .opt.pick .otag { color: var(--accent-2); }
+  .opt.rej .otag { color: var(--ink-faint); }
+  .opt h4 {
+    font-size: 1rem; font-weight: 600; margin: 0 0 0.3rem;
+    color: var(--ink);
+  }
+  .opt p { margin: 0.3rem 0; }
+  .opt .pros, .opt .cons {
+    font-family: ui-monospace, monospace; font-size: 0.78rem;
+    color: var(--ink-3); margin-top: 0.4rem;
+  }
+  .opt .pros::before { content: "✓ "; color: var(--accent-2); }
+  .opt .cons::before { content: "✗ "; color: var(--accent); }
+
+  /* recommendation strip at the end of each decision */
+  .pick-banner {
+    margin: 1rem 0 1.8rem;
+    padding: 0.85rem 1.2rem;
+    background: var(--panel-2);
+    border-left: 4px solid var(--accent-2);
+    border-radius: 4px;
+  }
+  .pick-banner .ptag {
+    font-family: ui-monospace, monospace; font-size: 0.72rem;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent-2); margin-bottom: 0.25rem;
+  }
+  .pick-banner p { margin: 0; color: var(--ink); }
+
+  /* TOC */
+  nav.toc {
+    margin: 2rem 0 2.5rem; padding: 1rem 1.4rem;
+    background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 6px;
+    font-family: ui-monospace, monospace; font-size: 0.86rem;
+  }
+  nav.toc .label {
+    display: block; color: var(--ink-3);
+    font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  nav.toc a {
+    display: inline-block; padding: 2px 0; margin-right: 1.2rem;
+    color: var(--ink-2); text-decoration: none;
+  }
+  nav.toc a:hover { color: var(--accent); }
+  nav.toc .open-tag {
+    display: inline-block; margin-left: 0.4rem;
+    padding: 1px 6px; border-radius: 99px;
+    font-size: 0.66rem; letter-spacing: 0.08em;
+    color: var(--accent-warn); border: 1px solid var(--accent-warn);
+  }
+
+  /* meta-row */
+  .meta-row {
+    margin-top: 1rem;
+    font-family: ui-monospace, monospace; font-size: 0.78rem;
+    color: var(--ink-3);
+  }
+  .meta-row span { display: inline-block; margin-right: 1.2rem; }
+  .meta-row b { color: var(--ink); font-weight: 600; }
+
+  /* the "Slice 6 in one sentence" callout */
+  .premise {
+    margin: 1.4rem 0 2rem;
+    padding: 1.3rem 1.5rem;
+    background: var(--panel-2);
+    border: 1px solid var(--rule); border-radius: 6px;
+  }
+  .premise p:first-child { margin-top: 0; }
+  .premise p:last-child { margin-bottom: 0; color: var(--ink); }
+  .premise em { font-weight: 500; }
+
+  /* the four failure modes panel — visual the markdown can't do */
+  .failure-modes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1.2rem 0 1.5rem;
+  }
+  @media (max-width: 720px) { .failure-modes { grid-template-columns: 1fr; } }
+  .fmode {
+    padding: 1rem 1.2rem;
+    background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 5px;
+    border-top: 4px solid var(--accent);
+  }
+  .fmode.b { border-top-color: var(--accent-3); }
+  .fmode.c { border-top-color: var(--accent-warn); }
+  .fmode.d { border-top-color: var(--accent-2); }
+  .fmode h4 {
+    margin: 0 0 0.4rem; font-size: 1rem; font-weight: 600;
+    color: var(--ink);
+  }
+  .fmode .scenario {
+    font-style: italic; color: var(--ink); margin: 0.4rem 0;
+    font-size: 0.95rem;
+  }
+  .fmode p:last-child { margin-bottom: 0; }
+  .fmode .needed {
+    font-family: ui-monospace, monospace; font-size: 0.74rem;
+    color: var(--ink-3); margin-top: 0.6rem;
+    padding-top: 0.5rem; border-top: 1px dashed var(--rule);
+  }
+  .fmode .needed b { color: var(--ink); }
+
+  /* code block for rule sketches */
+  pre.sketch {
+    margin: 0.8rem 0; padding: 0.9rem 1.1rem;
+    background: var(--code-bg); border: 1px solid var(--rule);
+    border-radius: 5px; overflow-x: auto;
+    font-family: ui-monospace, monospace; font-size: 0.84rem;
+    line-height: 1.5; color: var(--ink);
+  }
+  pre.sketch .c { color: var(--ink-3); font-style: italic; }
+  pre.sketch .k { color: var(--accent-3); }
+  pre.sketch .s { color: var(--accent-2); }
+
+  /* the closing predicate maths */
+  .closing {
+    margin: 1.5rem 0 0; padding: 1.2rem 1.5rem;
+    background: var(--panel-2);
+    border: 1px solid var(--rule); border-radius: 6px;
+    border-left: 4px solid var(--accent-2);
+  }
+  .closing p:first-child { margin-top: 0; }
+  .closing p:last-child { margin-bottom: 0; }
+
+  footer {
+    margin-top: 5rem; padding-top: 2rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.86rem; color: var(--ink-3);
+  }
+  footer p { margin: 0.35rem 0; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <p class="eyebrow">Pherix · Slice 6 decisions</p>
+  <h1>From "is this tool name allowed?" to a real predicate over the journal and the world.</h1>
+  <p class="lede">
+    Today's policy is a name-check — <em>"is this tool's name in the allow
+    list?"</em> That covers a tiny corner of what an operator actually wants
+    when they say "policy". Slice 6 turns it into a real predicate over
+    <code>(effect, world_state)</code>, evaluated at both stage-time and
+    commit-time so a rule that passed before side-effects fired still has
+    to pass after the journal folded. Five decisions below, one open call,
+    one explicit deferral.
+  </p>
+  <div class="meta-row">
+    <span><b>Slice:</b> 6 — real policy engine</span>
+    <span><b>Status:</b> in design — D1–D5 + 1 open</span>
+    <span><b>Built on:</b> Slices 1–5 merged at <code>9ff69a6</code></span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <span class="label">Decisions</span>
+  <a href="#premise">Premise</a>
+  <a href="#d1">D1 · What rules?</a>
+  <a href="#d2">D2 · How written?</a>
+  <a href="#d3">D3 · When evaluated?</a>
+  <a href="#d4">D4 · Spend caps shape</a>
+  <a href="#d5">D5 · Exception model</a>
+  <a href="#open">Open · World-state-aware rules<span class="open-tag">deferred</span></a>
+  <a href="#closing">Closing — predicate over journal × world</a>
+</nav>
+
+<!-- ===================================================================== -->
+<section id="premise">
+  <h2>The premise</h2>
+  <div class="premise">
+    <p>
+      <code>Policy.allow_all()</code> and <code>Policy(deny={...})</code> —
+      that is the entire vocabulary today. The runtime calls
+      <code>policy.check(tool_name)</code> at stage-time and raises
+      <code>PolicyViolation</code> if the name is in the deny set. It is
+      a one-line predicate: <code>P(effect) = effect.tool ∉ deny</code>.
+    </p>
+    <p>
+      That is enough for "agent can call <code>index_doc</code>, agent
+      cannot call <code>delete_database</code>". It is <em>not</em> enough
+      for any of the things below — which are, between them, what
+      "real policy" actually means in production:
+    </p>
+  </div>
+
+  <div class="failure-modes">
+    <div class="fmode">
+      <h4>Args-aware</h4>
+      <p class="scenario">
+        "Agent can update users where <code>tier='basic'</code> but not
+        where <code>tier='enterprise'</code>."
+      </p>
+      <p>Same tool name. Different args. Different verdict.</p>
+      <p class="needed"><b>Needs:</b> rules that inspect <code>effect.args</code>, not just <code>effect.tool</code>.</p>
+    </div>
+    <div class="fmode b">
+      <h4>Spend caps</h4>
+      <p class="scenario">
+        "Agent can call <code>charge_card</code> as many times as it
+        wants, but not for more than $50 cumulative across this txn."
+      </p>
+      <p>No single call breaks the rule. The journal taken together does.</p>
+      <p class="needed"><b>Needs:</b> rules that fold over the journal so far, not the current effect alone.</p>
+    </div>
+    <div class="fmode c">
+      <h4>TOCTOU safety</h4>
+      <p class="scenario">
+        "Agent stages a refund. Between stage and commit, the operator
+        revokes the agent's spending grant. Commit must fail."
+      </p>
+      <p>The check that passed at stage-time must run <em>again</em> at commit-time.</p>
+      <p class="needed"><b>Needs:</b> rules evaluated twice — once before journalling, once before the journal lands.</p>
+    </div>
+    <div class="fmode d">
+      <h4>World-state-aware</h4>
+      <p class="scenario">
+        "Agent can refund order #42 <em>only if</em>
+        <code>order.status='paid'</code> right now."
+      </p>
+      <p>The args don't change. The world changes.</p>
+      <p class="needed"><b>Needs:</b> rules that read live adapter state at evaluation time. <em>(Deferred to 6.5 — see <a href="#open">open</a>.)</em></p>
+    </div>
+  </div>
+
+  <p>
+    Slice 6 ships the first three. The fourth is the <a href="#open">open
+    call</a> — every other architectural choice in this slice is shaped to
+    leave room for it.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="d1">
+  <h2>D1 — What kinds of rules does Slice 6 actually support?</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"We've named four failure modes. Which of them does Slice 6 ship, and which defer?"</p>
+  </div>
+
+  <div class="options">
+    <div class="opt rej">
+      <p class="otag">Option A — bare minimum: args-aware only</p>
+      <h4>Allow/deny stays, args-aware rules join, spend caps and TOCTOU bracket defer.</h4>
+      <p class="pros">Smallest slice, fastest to ship.</p>
+      <p class="cons">Spend caps are the operator-facing demand most loudly heard ("limit my agent's blast radius"). Punting them makes Slice 6 feel like a half-step.</p>
+      <p class="cons">Without stage-and-commit bracket the architecture grows two evaluation points later, which is exactly the kind of retrofit Pherix has been disciplined to avoid.</p>
+    </div>
+    <div class="opt pick">
+      <p class="otag">Option B — args-aware + spend caps + stage/commit bracket</p>
+      <h4>Three of the four. World-state-aware rules defer to Slice 6.5.</h4>
+      <p>
+        Args-aware predicates inspect <code>effect.args</code>. Spend caps
+        fold over the journal so far. Both fire at stage-time (cheap,
+        fail-fast) and again at commit-time (TOCTOU re-eval). World-state
+        reads — "is this row's tier still <code>'basic'</code>?" — defer.
+      </p>
+      <p class="pros">Covers the three operator-facing demands that don't require new adapter primitives.</p>
+      <p class="pros">Stage/commit bracket lands as architecture even though args-only rules give identical results at both points — when world-state-aware rules join in 6.5 the engine doesn't need refactoring.</p>
+      <p class="cons">Honest about the limit: until 6.5, commit-time re-eval is structural, not behavioural.</p>
+    </div>
+    <div class="opt rej">
+      <p class="otag">Option C — full set including world-state reads</p>
+      <h4>Ship all four failure modes in one slice.</h4>
+      <p class="cons">World-state reads need a per-adapter "read at policy time" primitive — what version do we read at? what happens on read failure? how does it interact with isolation? Doubles the slice's complexity for the failure mode whose shape is least clear.</p>
+      <p class="cons">"Build it once" is a discipline, not an obligation to build it all at once. Slice 6.5 is the natural home for this.</p>
+    </div>
+  </div>
+  <div class="pick-banner">
+    <p class="ptag">Locked — Option B</p>
+    <p>
+      Args-aware predicates + spend caps + stage/commit bracket land in
+      Slice 6. World-state-aware reads defer to 6.5 with an explicit
+      seam for them to slot in later.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="d2">
+  <h2>D2 — How does the operator actually WRITE a policy rule?</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"Someone has to author 'no enterprise updates' or '$50 cap'. What does that look like — a Python function, a YAML file, or some kind of rules DSL?"</p>
+  </div>
+
+  <p>The three honest options operators reach for in real systems:</p>
+
+  <div class="options">
+    <div class="opt pick">
+      <p class="otag">Option A — Python callables</p>
+      <h4>A rule is a function. Register it with a decorator.</h4>
+      <pre class="sketch"><span class="c"># A rule takes the effect about to fire and a context</span>
+<span class="c"># object (carrying the journal so far). Returns Allow,</span>
+<span class="c"># Deny(reason), or Defer.</span>
+<span class="k">@policy.rule</span>
+<span class="k">def</span> no_enterprise_updates(effect, ctx):
+    <span class="k">if</span> effect.tool == <span class="s">"update_user"</span> <span class="k">and</span> effect.args.get(<span class="s">"tier"</span>) == <span class="s">"enterprise"</span>:
+        <span class="k">return</span> Deny(<span class="s">"enterprise tier off-limits"</span>)
+    <span class="k">return</span> Allow()</pre>
+      <p>
+        Matches Pherix's existing shape — tools are functions,
+        compensators are functions, comparators are functions, rules are
+        functions. Fully expressive, code-reviewed, importable from
+        tests, no new file formats to maintain.
+      </p>
+      <p class="pros">Operators already know how to test Python; rules become ordinary unit tests.</p>
+      <p class="pros">Expressivity is unbounded — anything the operator can write in Python, they can express as a rule.</p>
+      <p class="cons">Rules live in the same process as Pherix; rules-as-config files (option B) are easier to externalise to a different team. Slice 8 gateway can reopen that conversation if it bites.</p>
+    </div>
+    <div class="opt rej">
+      <p class="otag">Option B — declarative config</p>
+      <h4>YAML/JSON file parsed at startup.</h4>
+      <pre class="sketch"><span class="c"># policies.yaml</span>
+rules:
+  - deny:
+      tool: update_user
+      args:
+        tier: enterprise
+  - cap:
+      tool: charge_card
+      sum: <span class="s">"args.amount"</span>
+      max: 50</pre>
+      <p class="pros">Externalisable — security team can author rules without committing Python.</p>
+      <p class="cons">Expressivity ceiling — every new predicate shape needs a config-schema change. The first time someone needs "deny if (tool == X and args.role == 'admin' and time < 09:00)" you reinvent a DSL.</p>
+      <p class="cons">Doesn't compose with Pherix's existing decorator-and-callable register.</p>
+    </div>
+    <div class="opt rej">
+      <p class="otag">Option C — DSL (Rego / OPA-style)</p>
+      <h4>Industry-standard authZ language, separate process or library.</h4>
+      <p class="pros">Decades of policy engineering baked in; battle-tested for cloud AuthZ.</p>
+      <p class="cons">Heavy import — a whole new language for the operator to learn and the project to depend on.</p>
+      <p class="cons">Pherix's current ergonomic story is "Python all the way down". A Rego import breaks that without operator-asked-for value at this scale.</p>
+    </div>
+  </div>
+  <div class="pick-banner">
+    <p class="ptag">Locked — Option A</p>
+    <p>
+      Rules are Python callables decorated with <code>@policy.rule</code>.
+      They take <code>(effect, ctx)</code> and return
+      <code>Allow</code> / <code>Deny(reason)</code>. If externalisation
+      becomes a requirement for the gateway (Slice 8), config-loading
+      becomes a Slice 6.5 conversation — but the engine evaluates
+      callables either way.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="d3">
+  <h2>D3 — When does each rule actually fire?</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"Should the rule run when the agent calls the tool, or when the txn commits, or both?"</p>
+  </div>
+
+  <p>
+    Same effect, same rule, two possible evaluation points. They are not
+    interchangeable:
+  </p>
+
+  <ul>
+    <li><strong>Stage-time</strong> — before the effect is journalled and (for reversibles) before the adapter applies it. Cheap. Fails fast. The agent sees the denial immediately.</li>
+    <li><strong>Commit-time</strong> — after every effect in the txn has been folded forward into the journal, just before the adapter brackets commit. Expensive (the whole txn unwinds on a denial). Catches drift in <code>world_state</code> between the two points.</li>
+  </ul>
+
+  <div class="options">
+    <div class="opt rej">
+      <p class="otag">Option A — stage only</p>
+      <h4>What we have today. No TOCTOU re-eval.</h4>
+      <p class="cons">A rule that passed at stage-time can be silently violated by the time the txn commits — exactly the failure mode CLAUDE.md has been promising commit-time re-eval would catch since Slice 1.</p>
+    </div>
+    <div class="opt rej">
+      <p class="otag">Option C — commit only</p>
+      <h4>Defer all evaluation to the end of the txn.</h4>
+      <p class="pros">One evaluation point, simpler runtime.</p>
+      <p class="cons">Fails late. The agent stages 50 effects, blows resources doing it, and only finds out at commit that rule #3 would have denied effect #1. Pherix's own runtime calls policy.check at stage-time for a reason — stop early when you can.</p>
+    </div>
+    <div class="opt pick">
+      <p class="otag">Option B — both, same predicates, two evaluations</p>
+      <h4>Each rule fires at stage-time AND again at commit-time. Same callable, evaluated twice.</h4>
+      <p>
+        Stage-time: agent calls a tool → runtime evaluates every applicable
+        rule with <code>(effect, ctx)</code> where <code>ctx</code> carries
+        the journal so far. Deny → raise immediately, fail fast.
+      </p>
+      <p>
+        Commit-time: every effect folded, journal complete → runtime walks
+        the journal one more time and re-evaluates every rule against
+        every effect. Deny here → reversibles roll back, irreversibles
+        compensate, the txn unwinds.
+      </p>
+      <p>
+        For Slice 6's args-only rules, both evaluations give identical
+        results (the args don't change between stage and commit). That is
+        the <em>honest</em> position: the bracket lands as architecture,
+        not as new behaviour, until 6.5 brings world-state-aware rules in.
+      </p>
+      <p class="pros">CLAUDE.md has had stage-AND-commit as an invariant since Slice 1; Slice 6 is where we deliver it.</p>
+      <p class="pros">Engine is ready for 6.5's world-state rules without refactoring — they slot into the existing commit-time hook.</p>
+    </div>
+  </div>
+  <div class="pick-banner">
+    <p class="ptag">Locked — Option B</p>
+    <p>
+      Every rule fires at stage-time and again at commit-time. Same
+      predicate, same callable, two evaluation points. Args-only rules
+      produce identical verdicts at both; the bracket is the
+      architecture that lets world-state-aware rules join later without
+      surgery.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="d4">
+  <h2>D4 — Spend caps — what shape does the API take?</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"The operator wants to write '$50 cumulative cap on <code>charge_card</code> this txn'. What's the literal Python they type?"</p>
+  </div>
+
+  <p>
+    A spend cap is a <em>fold</em> over the journal so far. Two questions
+    in one: how do we say <em>what</em> to fold (the per-effect
+    contribution), and how do we say <em>how much</em> we'll tolerate?
+  </p>
+
+  <div class="options">
+    <div class="opt rej">
+      <p class="otag">Option A — count caps only</p>
+      <h4><code>Cap.count(tool='charge_card', max=10)</code> — "no more than N fires."</h4>
+      <p class="pros">Simplest possible primitive. Easy to implement, easy to explain.</p>
+      <p class="cons">Doesn't express the $-cap, which is the most-asked-for shape.</p>
+    </div>
+    <div class="opt pick">
+      <p class="otag">Option B — count + sum-via-fn</p>
+      <h4>Two primitives covering count-based and arg-derived caps.</h4>
+      <pre class="sketch"><span class="c"># "No more than 10 charge_card fires"</span>
+Cap.count(tool=<span class="s">"charge_card"</span>, max=10)
+
+<span class="c"># "Sum of args['amount'] across charges ≤ 50"</span>
+Cap.sum(
+    tool=<span class="s">"charge_card"</span>,
+    via=<span class="k">lambda</span> args: args[<span class="s">"amount"</span>],
+    max=50,
+)</pre>
+      <p>
+        Caps are themselves rules — they live in the same registry as
+        custom <code>@policy.rule</code> functions. The runtime carries
+        per-cap running totals on the context object and the cap's
+        check is: <em>"would this effect push the running total above
+        max?"</em> If yes, <code>Deny</code>.
+      </p>
+      <p class="pros">Two shapes cover virtually every operator-facing use case (count, monetary, byte-budget, token-budget) without forcing tool authors to annotate cost ahead of time.</p>
+      <p class="pros"><code>via=fn</code> is composable with the comparator/compensator pattern — Pherix's "function-shaped extension points" register stays consistent.</p>
+      <p class="cons">No automatic discovery — the operator has to know which arg carries the cost. That's correct: tool authors shouldn't be guessing what "cost" means; the policy author should declare it.</p>
+    </div>
+    <div class="opt rej">
+      <p class="otag">Option C — cost-decorated tools</p>
+      <h4><code>@tool(cost=lambda args: args['amount'])</code> — tool declares its own cost.</h4>
+      <p class="pros">Cost lives next to the tool definition, single source of truth.</p>
+      <p class="cons">Couples cost <em>semantics</em> (a policy concern) to tool <em>definition</em> (a behaviour concern). Different policies may want different cost interpretations of the same tool.</p>
+      <p class="cons">Forces a tool-author change every time a new spend axis emerges.</p>
+    </div>
+  </div>
+  <div class="pick-banner">
+    <p class="ptag">Locked — Option B</p>
+    <p>
+      Two primitives: <code>Cap.count(tool, max)</code> and
+      <code>Cap.sum(tool, via=fn, max)</code>. They register alongside
+      <code>@policy.rule</code> callables; the engine treats them
+      identically. Cost-decorated tools (option C) can be a thin sugar
+      layer in a future slice if it's asked for; the underlying engine
+      doesn't change.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="d5">
+  <h2>D5 — What does the operator catch when a rule fires?</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"The rule fired and denied the effect. Operator code is wrapping this in <code>try/except</code>. What goes in the except clause?"</p>
+  </div>
+
+  <p>
+    This matters more than it sounds, because the consequence of a denial
+    differs depending on <em>when</em> it fired:
+  </p>
+
+  <ul>
+    <li><strong>Stage-time denial</strong> — no side-effects have happened yet (reversibles weren't applied, irreversibles weren't gated). The txn just doesn't start the effect. Cheap, clean.</li>
+    <li><strong>Commit-time denial</strong> — reversibles have applied to the adapters; if they roll back cleanly, fine. Irreversibles already approved have fired against the external world — they need compensation, and if they have no compensator the txn lands in <code>STUCK</code> (the Slice 3 partial-unwind path).</li>
+  </ul>
+
+  <p>
+    The operator's recovery code is genuinely different in those two
+    cases. So the exception they catch has to make the distinction
+    visible.
+  </p>
+
+  <div class="options">
+    <div class="opt rej">
+      <p class="otag">Option A — keep one <code>PolicyViolation</code></p>
+      <h4>Existing exception, no new fields. Operator inspects <code>txn.state</code> to figure out where it fired.</h4>
+      <p class="cons">Forces the operator to correlate exception with transaction state — easy to get wrong. The exception itself should carry enough context to make the operator's response correct without further lookup.</p>
+    </div>
+    <div class="opt pick">
+      <p class="otag">Option B — one <code>PolicyViolation</code> with <code>where</code> + <code>rule</code> attributes</p>
+      <h4>Single exception type, but instances carry where they fired and which rule fired them.</h4>
+      <pre class="sketch"><span class="k">class</span> PolicyViolation(Exception):
+    where: Literal[<span class="s">"stage"</span>, <span class="s">"commit"</span>]
+    rule: <span class="s">"PolicyRule | Cap"</span>
+    reason: str
+    effect_index: int | None  <span class="c"># which effect tripped it</span></pre>
+      <p>
+        One catch site for callers who just want "policy said no". The
+        <code>where</code> attribute for callers who care about pre- vs
+        post-side-effect handling. The <code>rule</code> attribute for
+        operators building higher-level workflows ("if this specific
+        rule fired, apply this specific recovery").
+      </p>
+      <p class="pros">Backwards-compatible with the current <code>PolicyViolation</code> exception — existing code keeps working.</p>
+      <p class="pros">Operator's response code stays at one indentation level instead of branching on txn state.</p>
+    </div>
+    <div class="opt rej">
+      <p class="otag">Option C — split into two exception types</p>
+      <h4><code>StagePolicyViolation</code> and <code>CommitPolicyViolation</code>.</h4>
+      <p class="pros">Type-driven dispatch (operators can <code>except StagePolicyViolation:</code> separately).</p>
+      <p class="cons">Doubles the API surface for what's really one concept ("policy denied"). Most callers want one catch site.</p>
+      <p class="cons">Breaking change for existing <code>except PolicyViolation:</code> code.</p>
+    </div>
+  </div>
+  <div class="pick-banner">
+    <p class="ptag">Locked — Option B</p>
+    <p>
+      Single <code>PolicyViolation</code> exception, enriched with
+      <code>where</code> (<code>'stage' | 'commit'</code>),
+      <code>rule</code>, <code>reason</code>, and (for commit-time
+      denials) <code>effect_index</code>. Existing
+      <code>except PolicyViolation:</code> code continues to work; new
+      code can introspect the attributes for richer recovery.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="open">
+  <h2>Open — World-state-aware rules, the deferred fourth failure mode</h2>
+
+  <div class="question">
+    <p class="qlabel">The question</p>
+    <p>"The operator says 'refund order 42 only if its status is <em>paid right now</em>'. The rule needs to read the live database at evaluation time. How?"</p>
+  </div>
+
+  <p>
+    This is the failure mode D1 set aside as Slice 6.5. The shape isn't
+    clear enough yet, and the deeper architectural questions it opens are
+    real:
+  </p>
+
+  <ul>
+    <li><strong>Read consistency.</strong> When the rule reads "order 42's status", does it read at the txn's snapshot version (consistent with isolation) or the latest committed version (consistent with the real world)? Different answers for different rules.</li>
+    <li><strong>Read failures.</strong> The adapter is unreachable; the rule can't evaluate. Allow or Deny by default?</li>
+    <li><strong>Interaction with isolation.</strong> A policy read introduces an additional read into the journal — does it participate in commit-time conflict detection, or is it a "policy-only" read that doesn't count?</li>
+    <li><strong>Performance.</strong> Stage-time rules that touch the adapter are an order of magnitude slower than args-only ones. Does the runtime want a "this rule needs adapter access" hint so it can short-circuit cheap rules first?</li>
+  </ul>
+
+  <p>
+    Three candidate shapes if 6.5 picks this up:
+  </p>
+
+  <div class="options">
+    <div class="opt rej">
+      <p class="otag">Shape α — adapter.read_for_policy(key)</p>
+      <h4>Adapter gains a dedicated read method for policy queries.</h4>
+      <p>Clean separation but doubles the adapter protocol's surface area.</p>
+    </div>
+    <div class="opt rej">
+      <p class="otag">Shape β — rules take adapters parameter</p>
+      <h4>Rule signature becomes <code>(effect, ctx, adapters)</code>; rule calls <code>adapters['sql'].read(...)</code> directly.</h4>
+      <p>Maximally flexible. Maximally easy to get wrong (rules accidentally writing instead of reading).</p>
+    </div>
+    <div class="opt rej">
+      <p class="otag">Shape γ — context exposes a read-only handle</p>
+      <h4><code>ctx.read(resource, key)</code> — runtime gates the read.</h4>
+      <p>The cleanest middle ground; the runtime can short-circuit reads that aren't needed.</p>
+    </div>
+  </div>
+  <div class="pick-banner">
+    <p class="ptag">Recommendation — defer, but design Slice 6 with γ in mind</p>
+    <p>
+      Slice 6 ships args-only rules and a context object that already
+      carries a placeholder <code>ctx.read</code> attribute (raises
+      <code>NotImplementedError</code> until 6.5). That way 6.5 is a
+      content-only slice — fill in the read implementation, write the
+      tests, no architectural surgery on the engine.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="closing">
+  <h2>Closing — a policy is a predicate over the journal × the world</h2>
+  <div class="closing">
+    <p>
+      Three sentences of formalism, the only ones in this document. A
+      <strong>policy</strong> is a predicate
+      <code>P : (effect, world_state) → {Allow, Deny}</code>.
+      <strong>Stage-time evaluation</strong> calls
+      <code>P(effect, world_before_apply)</code>;
+      <strong>commit-time evaluation</strong> calls
+      <code>P(effect, world_after_journal_fold)</code> for every effect
+      in the journal. The <em>world_state</em> at evaluation time is
+      where Slice 6 and Slice 6.5 part ways: 6 treats world as
+      <em>"the journal so far"</em> (a pure fold, no adapter reads); 6.5
+      lets world include <em>live adapter state</em>.
+    </p>
+    <p>
+      Args-aware rules, spend caps, and the stage/commit bracket are all
+      special cases of that one predicate. Spend caps are a fold over
+      the journal's contribution to one running counter; args-aware
+      rules ignore <code>world_state</code> entirely; stage/commit
+      bracket is the same <code>P</code> evaluated at two different
+      times. One engine, one rule abstraction, three operator-facing
+      capabilities.
+    </p>
+    <p>
+      <em>The journal is a witness; policy is a judge.</em> Slice 6 hires
+      the judge for the first time and gives them the journal to read
+      from. Slice 6.5 will give them the right to subpoena the adapters
+      too.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <p>Pherix · <code>docs/slice-6-decisions.html</code> · in design. Retires post-merge per the HTML-hygiene rule in <code>CLAUDE.md</code>.</p>
+  <p>Built on Slices 1–5 merged at <code>9ff69a6</code>. 252 tests on <code>main</code>.</p>
+</footer>
+
+</main>
+</body>
+</html>

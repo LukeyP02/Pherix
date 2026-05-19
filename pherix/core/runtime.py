@@ -35,7 +35,7 @@ from pherix.core.isolation import (
     _RetrySignal,
     check_conflicts,
 )
-from pherix.core.policy import Policy, PolicyViolation
+from pherix.core.policy import Policy, PolicyContext, PolicyViolation
 from pherix.core.tools import REGISTRY, active_effect, active_txn
 from pherix.core.transaction import Transaction, TransactionStateError, TxnState
 
@@ -115,6 +115,13 @@ class TxnContext:
         # Pre-approval tokens for staged irreversibles, keyed by effect_id.
         # Recorded by approve_irreversible(); consumed by the commit-time gate.
         self._approvals: set[str] = set()
+        # Slice 6: a single PolicyContext per txn carries the journal-so-far
+        # reference + per-cap running totals across every stage-time
+        # evaluate() call. The same ctx is reused for the commit-time
+        # evaluate_journal walk (which resets caps and re-folds).
+        self._policy_ctx = PolicyContext(
+            journal=self.txn.effects, where="stage"
+        )
         audit.record_transaction(self.txn)
 
     @property
@@ -127,10 +134,6 @@ class TxnContext:
         self._guard_thread()
         self._guard_open()
         spec = REGISTRY.get(tool_name)
-
-        # Stage-time policy check (D6). On denial nothing is appended to the
-        # journal and no resource is touched — the violation simply propagates.
-        self._policy.check(tool_name)
 
         # Stage-time compensator-name validation (D2). Catches typos before
         # any state changes; the journal stores the resolved name.
@@ -147,6 +150,15 @@ class TxnContext:
             reversible=adapter.supports_rollback(),
             compensator=spec.compensator,
         )
+
+        # Slice 6: stage-time policy evaluation against the fully-built
+        # Effect. Rules and caps need ``effect.args`` and the journal-so-far
+        # (held live by ``self._policy_ctx``) — neither is available from
+        # the tool name alone. On Deny nothing is journalled, no resource is
+        # touched, no audit row written. The Effect object is discarded
+        # (effect_id is deterministic — a re-attempt rebuilds an identical id).
+        self._policy.evaluate(effect, self._policy_ctx, where="stage")
+
         self.txn.add_effect(effect)
         self.audit.record_effect(effect)
 
@@ -234,21 +246,37 @@ class TxnContext:
                 self.txn.txn_id, TxnState.STAGED.name
             )
 
-            # D4: re-evaluate stage-time policy at commit start (TOCTOU). For
-            # Slice 1's stateless allow-list this is trivially equal to the
-            # stage-time evaluation — the hook lives in the right place for
-            # Slice 6's state-dependent policy.
-            for e in staged:
-                try:
-                    self._policy.check(e.tool)
-                except PolicyViolation:
-                    e.status = EffectStatus.GATED
-                    self.audit.update_effect(e)
-                    # Unwind reversibles, then propagate. Irreversibles never
-                    # fired, so there are no compensators to run.
-                    self._partial_unwind()
-                    raise
+        # Slice 6: commit-time policy bracket. Re-walk the journal and
+        # re-evaluate every applicable rule against every effect (D3 timing).
+        # For Slice 6's args-only rules the verdicts match stage-time
+        # exactly; the bracket lands as architecture so Slice 6.5's
+        # world-state-aware rules slot in without engine surgery. Walks the
+        # entire journal — reversibles included — because rules can deny on
+        # any effect's args, not only the staged irreversibles. Replaces the
+        # Slice 3 per-staged ``policy.check(e.tool)`` loop.
+        try:
+            self._policy.evaluate_journal(self.txn, self._policy_ctx)
+        except PolicyViolation as exc:
+            if (
+                exc.effect_index is not None
+                and 0 <= exc.effect_index < len(self.txn.effects)
+            ):
+                denied = self.txn.effects[exc.effect_index]
+                denied.status = EffectStatus.GATED
+                self.audit.update_effect(denied)
+            # Unwind path depends on whether we've already transitioned to
+            # STAGED (irreversibles present): partial_unwind handles the
+            # mixed-fold case via the PARTIAL state; otherwise the txn is
+            # still OPEN and a plain rollback restores reversibles. At this
+            # point no staged irreversible has fired yet — irreversibles
+            # remain STAGED, the strongest containment property.
+            if self.txn.state is TxnState.STAGED:
+                self._partial_unwind()
+            else:
+                self.rollback()
+            raise
 
+        if staged:
             # D3: the gate — every staged irreversible must be
             # compensator-backed OR pre-approved.
             needs_approval = [
