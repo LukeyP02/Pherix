@@ -1289,8 +1289,8 @@
       <li><a href="#s3">HTTP / irreversible <span style="color: var(--accent-2); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
       <li><a href="#s4">Isolation <span style="color: var(--accent-3); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
       <li><a href="#s5">Replay <span style="color: var(--accent-5); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
-      <li><a href="#s6">Real policy engine <span style="color: var(--accent-6, var(--accent)); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·NEXT</span></a></li>
-      <li><a href="#s7">Speculative dry-run</a></li>
+      <li><a href="#s6">Real policy engine <span style="color: var(--accent-6, var(--accent)); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·SHIPPED</span></a></li>
+      <li><a href="#s7">Speculative dry-run <span style="color: var(--accent-5); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;">·NEXT</span></a></li>
       <li><a href="#s8">MCP gateway</a></li>
     </ol>
 
@@ -1306,7 +1306,7 @@
   <main>
 
     <header class="hero">
-      <div class="tag">Vision · Slices 1—4 shipped · 5 next (replay) · 6—8 ahead · then the trilogy</div>
+      <div class="tag">Vision · Slices 1—6 shipped · 7 next (dry-run) · 8 ahead · then the trilogy</div>
       <h1>One engine, <em>three</em> faces.</h1>
       <p class="sub">Pherix grows by traversing the same sequence in a new direction each time. Forward fold. Backward fold. Fold against fresh state. Fold against a snapshot, then discard. Diff. Walk. Six verbs over one ordered object — the journal — yield every capability the system claims. Slices&nbsp;1—8 ship the determinism engine. Beyond, two more pillars grow from the same substrate: a <em>memory</em> layer that indexes the journal, and an <em>audit</em> layer that queries it.</p>
     </header>
@@ -1374,7 +1374,7 @@
         <p style="margin-top:18px; color: var(--ink-2);">Five hard problems &mdash; rollback semantics, isolation, partial-failure correctness, deterministic replay, what-if simulation &mdash; reduce to <b>six verbs over one list</b>. That is the wedge. The slices below are each one verb wearing a different costume.</p>
       </div>
 
-      <p style="margin-top:18px;">Slices&nbsp;1&ndash;5 are <b>merged</b> &mdash; the SQL adapter at <code>ad4e9c0</code>, the filesystem adapter at <code>c926f97</code>, the irreversible / HTTP lane at <code>a13018b</code>, isolation (read/write-set capture through the resource handle, commit-time conflict diff via per-adapter versioning, resolution policy <code>Abort</code> / <code>Retry(N)</code> / <code>Serialize</code>) at <code>0fab344</code>, and replay (<code>pherix.replay(txn_id, adapters, source_audit=...)</code> folds the journal forward against fresh state, <code>verify</code> mode asserts each effect's recorded result equals the replayed result with a per-tool <code>@tool(comparator=fn)</code> escape hatch, <code>reconstruct</code> mode rebuilds the world; irreversible <code>APPLIED</code> effects are skip-and-reused) &mdash; <b>249 tests green</b>. Slice&nbsp;1 is covered in detail in <code>slice-1.html</code>; Slice&nbsp;6 (real policy engine) is next on the critical path. This document is the trajectory: how the same engine extends to real policy, speculative execution, and a language-agnostic gateway &mdash; <em>without rebuilding the engine</em> &mdash; and then how two further pillars, memory and audit, grow from the same journal.</p>
+      <p style="margin-top:18px;">Slices&nbsp;1&ndash;6 are <b>merged</b> &mdash; the SQL adapter at <code>ad4e9c0</code>, the filesystem adapter at <code>c926f97</code>, the irreversible / HTTP lane at <code>a13018b</code>, isolation at <code>0fab344</code>, replay at <code>9ff69a6</code>, and now the policy engine at <code>c2318d5</code> (<code>@policy.rule</code> Python callables returning <code>Allow | Deny(reason)</code>; <code>Cap.count</code> / <code>Cap.sum</code> spend-cap primitives folding over the journal-so-far; stage-time AND commit-time evaluation bracket; commit-time walk runs <em>before</em> the staged-fire loop so irreversibles are pre-empted under commit-time denial; enriched <code>PolicyViolation</code> carrying <code>where</code>/<code>rule</code>/<code>reason</code>/<code>effect_index</code>; world-state-aware rules defer to Slice 6.5 via a <code>ctx.read(...)</code> placeholder seam) &mdash; <b>280 tests green</b>. Slice&nbsp;1 is covered in detail in <code>slice-1.html</code>; Slice&nbsp;7 (speculative dry-run) is next on the critical path. This document is the trajectory: how the same engine extends to speculative execution and a language-agnostic gateway &mdash; <em>without rebuilding the engine</em> &mdash; and then how two further pillars, memory and audit, grow from the same journal.</p>
     </section>
 
     <!-- ===================== MATRIX ===================== -->
@@ -1897,9 +1897,9 @@
 
         <!-- ============ SLICE 6 ============ -->
         <article class="card s6" id="s6">
-          <div class="top"><span class="num">Slice · 06</span><span class="slice-pill s6">policy</span></div>
+          <div class="top"><span class="num">Slice · 06</span><span class="slice-pill s6">policy · shipped</span></div>
           <h3>The real policy engine</h3>
-          <p class="tagline">Evaluated twice. State changes; permission must too.</p>
+          <p class="tagline">Evaluated twice. State changes; permission must too. <em>Shipped.</em></p>
 
           <div class="schematic">
             <svg viewBox="0 0 360 100" class="glyph" aria-label="policy gate at stage and commit">
@@ -1930,13 +1930,13 @@
           </div>
 
           <h4>What it adds</h4>
-          <p>Replaces the Slice 1 allow-list with capability grants ("this agent may write to <code>orders.*</code>"), spend caps ("at most $5 across all <code>charge</code> calls this txn"), and content-aware rules ("never email anything containing <code>password</code>"). Evaluated at <em>stage-time</em> (fail fast, before any work) and again at <em>commit-time</em> (state may have changed in between &mdash; classic TOCTOU defence: time-of-check vs. time-of-use). A grant that was true when an effect was staged might be false by the time the whole transaction is ready to land.</p>
+          <p>Slice 1's name-check (<code>P(effect) = effect.tool ∉ deny</code>) became a real predicate over <code>(Effect, Context)</code>. Rules are Python callables registered with <code>@policy.rule</code> returning <code>Allow | Deny(reason)</code>. Spend caps fold over the journal-so-far: <code>Cap.count(tool, max)</code> for fire-count caps; <code>Cap.sum(tool, via=fn, max)</code> for arg-derived caps ($-cap, byte-budget, token-budget). The runtime owns a <code>PolicyContext</code> with the journal-by-reference and per-cap running totals. Both evaluation points fire in this slice — <em>stage-time</em> (fail fast, before journalling) and <em>commit-time</em> (re-walk the whole journal). For args-only rules the verdicts match at both points; the bracket lands as architecture so Slice 6.5's world-state-aware rules slot in via the <code>ctx.read(...)</code> placeholder seam without engine surgery.</p>
 
           <h4>What it unlocks</h4>
-          <p>The operator can hand an agent a budget and a permission set and trust them. Tools and arguments are inspected; the policy decides per-effect <em>and</em> per-transaction. Capability enforcement becomes a first-class commit-time primitive &mdash; one of the three wedges that nobody else has.</p>
+          <p>The operator hands an agent a budget and a permission set and trusts them. Tools and arguments are inspected per-effect; spend folds across the txn. Crucially, the commit-time bracket runs <em>before</em> the staged-fire loop — irreversibles never fire under a commit-time denial. That's the strongest containment property the architecture can offer: a TOCTOU-detected violation never reaches the external world. Capability enforcement becomes a first-class commit-time primitive — one of the three wedges that nobody else has.</p>
 
           <h4>How it traverses the journal</h4>
-          <div class="fold-line">Walk + diff. Walk the journal to compute aggregates ("total spend so far", "domains contacted"); diff each effect's request against the policy's grant set. Same operations, new predicate &mdash; that is why it bolts onto Slice 1 without a rewrite.</p>
+          <div class="fold-line">Walk + diff, twice. <em>Stage-time:</em> evaluate the rule against the new effect plus the journal-so-far; on Allow, accumulate cap contributions. <em>Commit-time:</em> reset caps, re-walk every effect through every rule. Slice 6's args-only rules give identical verdicts at both points — the bracket is the architecture for Slice 6.5's world-state-aware rules to slot in. Same fold, two evaluation points; the predicate just got bigger.</div>
         </article>
 
         <!-- ============ SLICE 7 ============ -->
