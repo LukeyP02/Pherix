@@ -1,9 +1,24 @@
 """Run the DevOps dogfood end to end against a real model.
 
+    # cloud Anthropic (default — needs ANTHROPIC_API_KEY in .env):
     python -m examples.dogfood.devops
 
-Needs an Anthropic key in ``.env`` at the repo root (see ``.env.example``) and
-``pip install -e '.[dogfood]'``. Two phases:
+    # a local OpenAI-compatible model (Ollama / vLLM — no network needed):
+    python -m examples.dogfood.devops --local
+    python -m examples.dogfood.devops --local \
+        --base-url http://localhost:11434/v1 --model qwen2.5-coder:7b
+
+``--local`` points the *same* release at a local open-source model: same four
+tools, same engineered smoke failure, same atomic unwind. Pherix never sees the
+difference — it is model-blind and deployment-blind by construction — so a
+clean ``--local`` run *is* the proof that local governance == cloud governance.
+The local endpoint is taken from ``--base-url`` (or ``OPENAI_BASE_URL``,
+defaulting to Ollama's ``http://localhost:11434/v1``) and the model from
+``--model`` (or ``PHERIX_LOCAL_MODEL``).
+
+Needs ``pip install -e '.[dogfood]'``. The cloud path needs an Anthropic key in
+``.env`` at the repo root (see ``.env.example``); the local path needs a running
+local server and no key. Two phases:
 
   1. **Dry-run preview.** Fold the release forward against a snapshot, then
      discard it — printing the migration's structured ``state_diff`` (the rows
@@ -22,6 +37,10 @@ on-disk file backup) so the unwind is genuine, not simulated.
 """
 
 from __future__ import annotations
+
+import os
+import sys
+from dataclasses import dataclass
 
 from examples.dogfood.devops.scenario import (
     DeployTarget,
@@ -61,7 +80,33 @@ def _print_journal(audit: AuditJournal, txn_id: str) -> None:
         )
 
 
-def preview_release(audit: AuditJournal) -> None:
+@dataclass
+class Backend:
+    """Which chat backend the run drives — cloud Anthropic or a local endpoint.
+
+    Pherix is identical across both; this only changes which model the harness
+    talks to. ``model=None`` lets the harness pick its default (the cloud
+    Sonnet) on the Anthropic path.
+    """
+
+    api: str = "anthropic"
+    base_url: str | None = None
+    model: str | None = None
+
+    @property
+    def label(self) -> str:
+        if self.api == "openai":
+            return f"LOCAL ({self.model or '?'} @ {self.base_url})"
+        return f"CLOUD ({self.model or 'claude-sonnet-4-6'})"
+
+    def run_agent_kwargs(self) -> dict:
+        kw: dict = {"api": self.api, "base_url": self.base_url}
+        if self.model is not None:
+            kw["model"] = self.model
+        return kw
+
+
+def preview_release(audit: AuditJournal, backend: Backend) -> None:
     """Phase 1 — a dry-run that prints the migration's state_diff, then discards."""
     _banner("1. DRY-RUN PREVIEW — what the release would do (nothing committed)")
     REGISTRY.clear()
@@ -89,6 +134,7 @@ def preview_release(audit: AuditJournal) -> None:
             client_id="devops-preview",
             mode="dry_run",
             audit=audit,
+            **backend.run_agent_kwargs(),
         )
         result = run.dry_run_result
         print(f"  journal materialised: {len(result.journal)} effects "
@@ -105,7 +151,7 @@ def preview_release(audit: AuditJournal) -> None:
               f"history={target.history}")
 
 
-def real_release(audit: AuditJournal) -> None:
+def real_release(audit: AuditJournal, backend: Backend) -> None:
     """Phase 2 — the real release; the failing smoke test unwinds everything."""
     _banner("2. REAL RELEASE — engineered smoke failure unwinds atomically")
     REGISTRY.clear()
@@ -126,8 +172,11 @@ def real_release(audit: AuditJournal) -> None:
             conn=db.conn,
             fs_root=tree,
             target=target,
-            client=None,  # real Anthropic client (needs a key)
+            client=None,  # real client built by the harness (cloud key / local endpoint)
             audit=audit,
+            api=backend.api,
+            base_url=backend.base_url,
+            model=backend.model,
         )
 
         print()
@@ -147,10 +196,52 @@ def real_release(audit: AuditJournal) -> None:
         _print_journal(audit, run.txn_id)
 
 
-def main() -> None:
+_USAGE = """usage: python -m examples.dogfood.devops [--local] [--base-url URL] [--model ID]
+
+  (no args)        run against cloud Anthropic (needs ANTHROPIC_API_KEY in .env)
+  --local          run against a local OpenAI-compatible endpoint (Ollama/vLLM)
+  --base-url URL   local endpoint (default OPENAI_BASE_URL or
+                   http://localhost:11434/v1); implies --local
+  --model ID       model id (default PHERIX_LOCAL_MODEL for --local; the
+                   harness default on the cloud path)
+"""
+
+_OLLAMA_DEFAULT = "http://localhost:11434/v1"
+
+
+def _parse_args(argv: list[str]) -> Backend:
+    """Turn argv into a :class:`Backend`. ``--base-url`` implies ``--local``."""
+    local = False
+    base_url: str | None = None
+    model: str | None = None
+    it = iter(argv)
+    for arg in it:
+        if arg == "--local":
+            local = True
+        elif arg == "--base-url":
+            base_url = next(it, None)
+            local = True
+        elif arg == "--model":
+            model = next(it, None)
+        elif arg in ("-h", "--help"):
+            print(_USAGE, file=sys.stderr)
+            raise SystemExit(0)
+        else:
+            print(f"unknown argument {arg!r}\n\n{_USAGE}", file=sys.stderr)
+            raise SystemExit(2)
+    if not local:
+        return Backend(api="anthropic", model=model)
+    base_url = base_url or os.environ.get("OPENAI_BASE_URL") or _OLLAMA_DEFAULT
+    model = model or os.environ.get("PHERIX_LOCAL_MODEL")
+    return Backend(api="openai", base_url=base_url, model=model)
+
+
+def main(argv: list[str] | None = None) -> None:
+    backend = _parse_args(list(sys.argv[1:] if argv is None else argv))
+    print(f"DevOps dogfood — backend: {backend.label}")
     audit = AuditJournal.in_memory()
-    preview_release(audit)
-    real_release(audit)
+    preview_release(audit, backend)
+    real_release(audit, backend)
     print()
     print("DevOps dogfood done.")
 

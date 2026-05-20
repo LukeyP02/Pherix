@@ -9,8 +9,10 @@ dependencies = []
 dev = ["pytest"]
 # Real-agent dogfoods only (examples/dogfood/). The library itself stays
 # dependency-free — this extra is never needed to import or use pherix, only
-# to run the keyed real-agent scripts.
-dogfood = ["anthropic"]
+# to run the keyed real-agent scripts. `anthropic` drives the cloud path;
+# `openai` drives any OpenAI-compatible local endpoint (Ollama / vLLM) for the
+# model-blind / air-gapped runs.
+dogfood = ["anthropic", "openai"]
 
 [build-system]
 requires = ["hatchling"]
