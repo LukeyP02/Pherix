@@ -171,8 +171,9 @@
          aria-label="Beyond Slice 8: speculative ambition (Slice 9+). See future.html.">9+<span class="lbl">beyond</span></a>
     </div>
     <p class="status-note">
-      <strong>Phase 1 is complete — all 8 slices merged.</strong> The determinism engine: reversible engine (<code>ad4e9c0</code>), filesystem adapter (<code>c926f97</code>), irreversible lane (<code>a13018b</code>), isolation/MVCC (<code>0fab344</code>), replay (<code>9ff69a6</code>), policy engine (<code>c2318d5</code>), speculative dry-run (<code>6ee8980</code>), and the MCP gateway (<code>9d41df8</code>) — Pherix is now both a Python library and an MCP server driving the same core. The gateway landed with <code>core/</code> essentially untouched (one nullable <code>client_id</code> audit column + the absorbed <code>StateDiffable</code> sub-protocol), so the front-end-agnostic discipline held across all eight slices. <strong>331 tests green.</strong>
-      <strong>Phase 2 next — the guardrails MVP:</strong> production-harden, land a design partner, and stand up the audit pillar, on the way to a YC-ready application. See <code>phases.html</code> for the three-act product roadmap.
+      <strong>Phase 1 is complete — all 8 slices merged.</strong> The determinism engine: reversible engine (<code>ad4e9c0</code>), filesystem adapter (<code>c926f97</code>), irreversible lane (<code>a13018b</code>), isolation/MVCC (<code>0fab344</code>), replay (<code>9ff69a6</code>), policy engine (<code>c2318d5</code>), speculative dry-run (<code>6ee8980</code>), and the MCP gateway (<code>9d41df8</code>) — Pherix is now both a Python library and an MCP server driving the same core. The gateway landed with <code>core/</code> essentially untouched (one nullable <code>client_id</code> audit column + the absorbed <code>StateDiffable</code> sub-protocol), so the front-end-agnostic discipline held across all eight slices.
+      <strong>The real-agent dogfood suite has since landed</strong> (<code>add6709</code>) — a shared harness + DevOps / audit / coding-sandbox / live-MCP streams — and on day one the audit dogfood surfaced a genuine Slice-4 isolation bug all the deterministic tests missed (fix in flight). <strong>367 tests green.</strong>
+      <strong>Phase 2 now — the guardrails MVP:</strong> run the dogfoods for real (the first-user signal), land a design partner, stand up the audit pillar, toward a YC application. See <code>phases.html</code> for the three-act roadmap and <code>dogfood.html</code> &rarr; <em>Start here</em> to run the agents.
       Beyond: the trilogy of <em>determinism, memory, audit</em> — see <code>future.html</code>.
     </p>
   </section>
@@ -204,8 +205,8 @@
       <span class="url">future.html</span>
     </a>
     <a class="card" href="dogfood.html">
-      <div class="card-head"><h2>Dogfood verticals</h2><span class="badge vision">Vision</span></div>
-      <p>Four prototypes to prove Pherix in production: DevOps / SRE, migration fleet bot, reconciliation, filing automation. Each stresses a different Pherix surface; the dogfood matrix <em>is</em> product discovery. Plus an honest rejected-verticals appendix (sales, support, healthcare, legal, marketing, coding, voice).</p>
+      <div class="card-head"><h2>Dogfood suite</h2><span class="badge learn">Run it</span></div>
+      <p>Real LLM agents with Pherix in the tool-call path — shipped and runnable. DevOps (atomic release unwind), audit (concurrent + attributed), coding sandbox (agent-agnostic governance), plus the air-gapped local-agent capstone. Includes a <em>Start here</em> run guide and the story of the Slice-4 bug a real agent found that 367 tests missed.</p>
       <span class="url">dogfood.html</span>
     </a>
   </section>

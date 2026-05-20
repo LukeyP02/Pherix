@@ -632,23 +632,23 @@
   <div class="state-grid">
     <div class="state-col now">
       <p class="ftag">On main</p>
-      <h4>Phase 1 complete — eight slices, 331 tests, the engine earned three times over.</h4>
+      <h4>Phase 1 complete + the real-agent dogfood suite landed — 367 tests.</h4>
       <ul>
-        <li><strong>331 tests green</strong> across <code>core/</code>, the adapters, the runtime, the audit journal, replay, isolation, policy, dry-run, and the MCP gateway.</li>
-        <li><strong>All eight slices merged.</strong> The journal exists, the adapter protocol holds for SQL + FS, irreversibles stage cleanly, MVCC isolation enforces, replay works in both verify and reconstruct modes, real policy fires at both brackets, dry-run discards the world bit-identically, and the MCP gateway drives the same core as a second front-end &mdash; with <code>core/</code> essentially untouched, proving the front-end-agnostic discipline held across all eight slices.</li>
-        <li><strong>The engine has earned its keep three times already.</strong> Rollback (Slice 1), replay (Slice 5), and dry-run (Slice 7) all reuse the same <code>(snapshot, apply, restore)</code> primitive. Each new use was cheap because the abstraction was correct.</li>
-        <li><strong>The journal is the asset that compounds.</strong> Every slice has added one way of reading or writing it; none has needed to alter its shape.</li>
+        <li><strong>All eight slices merged</strong> (the determinism engine): journal, SQL + FS adapters, irreversible lane, MVCC isolation, replay, two-bracket policy, dry-run, and the MCP gateway — with <code>core/</code> essentially untouched by the gateway, proving the front-end-agnostic discipline held across all eight.</li>
+        <li><strong>The dogfood suite merged</strong> (<code>add6709</code>): a shared real-agent harness + four streams (DevOps, audit, coding sandbox, live MCP). <strong>367 tests green</strong>, fully offline.</li>
+        <li><strong>And on day one it earned its keep:</strong> the audit dogfood surfaced a genuine Slice-4 isolation bug that all 367 deterministic tests missed (a read-then-write of the same key, only manifesting on a real on-disk DB). A real agent found a correctness bug the unit suite structurally couldn't — exactly what dogfooding is for.</li>
+        <li><strong>The journal is the asset that compounds.</strong> Every slice and every dogfood reads or writes the same shape; none has needed to alter it.</li>
       </ul>
     </div>
     <div class="state-col next">
       <p class="ftag">In flight &middot; near horizon</p>
-      <h4>Slice 8 and the deferred half-slices.</h4>
+      <h4>Fix the bug, run the dogfoods for real, then sell.</h4>
       <ul>
-        <li><strong>Phase 2 &middot; guardrails MVP</strong> is next — and its exit is commercial, not technical: <em>someone pays</em>. Production-harden the deferred gaps, stand up the audit pillar (the trust evidence a security buyer needs), pick the bolt-on that serves a concrete first user, dogfood one vertical, and land a design partner — on the way to a YC-ready application. See <code>phases.html</code> for the full arc.</li>
-        <li><strong>First Phase 2 validation:</strong> live MCP-client interop ("test the fucker") — connect a real client (Claude Code itself) to the gateway and run an actual agent loop. Offline tests proved the wire spec-correct; this proves the product.</li>
-        <li><strong>Slice 6.5</strong> &mdash; world-state-aware policy reads via <code>ctx.read(...)</code>; the placeholder seam is already in Slice 6 awaiting the fill-in.</li>
-        <li><strong>Slice 7.5</strong> &mdash; per-adapter structured state diff (rows added, files written) and concurrency-aware dry-run; both deferred from Slice 7 to keep the "nearly free" framing honest.</li>
-        <li><strong>Beyond Slice 8</strong> &mdash; the trilogy of <em>determinism, memory, audit</em> as natural extensions of the journal. Three further interception layers (gateway / git / CI/CD) flagged but not designed.</li>
+        <li><strong><code>fix/isolation-self-write</code></strong> — the Slice-4 read-then-write false-conflict fix the audit dogfood surfaced. High priority: it's a correctness bug in the exact isolation guarantee "agent ACID" is sold on.</li>
+        <li><strong><code>feat/local-openclaw</code></strong> — local-model support for the harness + OpenClaw wired through both interception models (MCP + sandbox) + the air-gapped adversarial capstone. The cross-deployment moat, made runnable.</li>
+        <li><strong>Run the dogfoods for real</strong> (key + spare machine) — "test the fucker." This is the first-user signal: whichever facet (atomic-unwind / audit-trail / gated-coding) lands hardest with the regulated-enterprise buyer is the Phase 2 wedge. See <code>dogfood.html</code> &rarr; <em>Start here</em>.</li>
+        <li><strong>Phase 2 &middot; guardrails MVP</strong> — exit is commercial (<em>someone pays</em>): take the demo to a design partner, build the audit pillar <em>for</em> them, on the way to a YC application. See <code>phases.html</code>.</li>
+        <li><strong>Backlog:</strong> Slice 6.5 (world-state-aware policy), Slice 7.5 (per-adapter state diff), and the trilogy beyond Slice 8 (determinism · memory · audit).</li>
       </ul>
     </div>
   </div>
@@ -659,9 +659,11 @@
   <h2>Closing</h2>
   <div class="closing">
     <p>
-      Six slices compose into a coherent thing. The architecture has
-      held under every capability that has been asked of it, because each
-      capability has had to fit through the same engine.
+      Eight slices and a real-agent dogfood suite compose into a coherent
+      thing. The architecture has held under every capability asked of it,
+      because each capability has had to fit through the same engine — and
+      when a real agent finally drove it against a real backend, the bug it
+      found was a missing test, not a broken design.
     </p>
     <p>
       The journal is the asset that compounds &mdash; every slice writes
@@ -678,7 +680,7 @@
 
 <footer>
   <p>Pherix &middot; <code>docs/where-we-are.html</code> &middot; orientation artifact. Update on each slice merge per the HTML-hygiene rule in <code>CLAUDE.md</code>.</p>
-  <p>Phase 1 complete &mdash; all 8 slices merged. 331 tests on <code>main</code>. Phase 2 (guardrails MVP) next.</p>
+  <p>Phase 1 complete + dogfood suite merged (<code>add6709</code>). 367 tests on <code>main</code>. Next: fix the Slice-4 bug the dogfood found, run the dogfoods for real, then Phase 2 (guardrails MVP).</p>
 </footer>
 
 </main>

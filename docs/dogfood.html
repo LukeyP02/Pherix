@@ -94,6 +94,8 @@
   .reframe p { color: var(--ink); }
   .reframe p:first-child { margin-top: 0; }
   .reframe p:last-child { margin-bottom: 0; }
+  pre { font-family: ui-monospace, monospace; font-size: 0.82rem; line-height: 1.5; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 5px; padding: 0.7rem 0.95rem; overflow-x: auto; color: var(--ink); margin: 0.55rem 0; }
+  .start-note { font-size: 0.92rem; color: var(--ink-3); }
 
   /* harness panel */
   .harness {
@@ -217,6 +219,7 @@
 </header>
 
 <nav class="toc">
+  <a href="#start">Start here</a>
   <a href="#reframe">The reframe</a>
   <a href="#harness">The harness</a>
   <a href="#suite">The four streams</a>
@@ -225,6 +228,46 @@
   <a href="#moat">Local agents / the moat</a>
   <a href="#icp">The punchline</a>
 </nav>
+
+<!-- ===================================================================== -->
+<section id="start">
+  <h2>Start here — run the dogfoods</h2>
+  <p>
+    Three real-agent dogfoods run <em>today</em> — each a real Claude agent
+    with Pherix wrapping every tool call. The fourth (a local open-source
+    agent on a local model, air-gapped) is the capstone, and its wiring is
+    in progress. If you don't know where to begin, begin here.
+  </p>
+  <div class="reframe">
+    <p><strong>1 · Add your key.</strong> Put it in <code>.env</code> at the repo root (gitignored; <code>.env.example</code> is the template):</p>
+    <pre>ANTHROPIC_API_KEY=sk-ant-...</pre>
+    <p><strong>2 · Install the agent dependency</strong> — kept out of the dependency-free library, so it's an opt-in extra:</p>
+    <pre>pip install -e '.[dogfood]'</pre>
+    <p><strong>3 · Run one</strong> from the repo root. Start with DevOps — it's the most visceral (you watch a whole release unwind):</p>
+    <pre>python -m examples.dogfood.devops   # migrate + deploy; a failing smoke test unwinds the release
+python -m examples.dogfood.audit    # two concurrent agents reconcile a ledger, attributed + isolated
+python -m examples.dogfood.coding   # an out-of-box CLI governed inside the sandbox</pre>
+    <p class="start-note">Default model is <code>claude-sonnet-4-6</code>. Each script prints the agent's transcript, the Pherix journal it produced, and what got gated / unwound / audited — the thing to watch is the moment the agent does something that would hurt and Pherix contains it.</p>
+  </div>
+
+  <h3>What each one shows you</h3>
+  <ul>
+    <li><strong>DevOps</strong> — the agent runs a migration + writes config + fires a deploy; the smoke test fails, and the migration, the config, and the deploy all unwind <em>together</em>. Atomicity, made visible. <em>("agent ACID for your pipeline.")</em></li>
+    <li><strong>Audit</strong> — two agents hit the same ledger at once; every adjustment is attributed by <code>client_id</code> and isolation stops them corrupting each other; the journal is a per-client compliance view. <em>(This is the dogfood that found the Slice-4 bug below.)</em></li>
+    <li><strong>Coding</strong> — a coding CLI's file/shell actions route through the sandbox; a forbidden action (write <code>/etc</code>, push to main) is gated. Agent-agnostic — the environment governs, not the agent.</li>
+  </ul>
+
+  <h3>The fourth — the air-gapped capstone <span style="color:var(--accent-warn); font-family:ui-monospace,monospace; font-size:0.7rem; letter-spacing:0.1em;">IN PROGRESS</span></h3>
+  <p class="start-note">
+    The headline demo: an open-source local agent (<strong>OpenClaw</strong>) on a
+    <em>local</em> model, inside the sandbox, on a disposable machine with the
+    wifi off — let it genuinely try to wreck the box (<code>rm -rf</code>, drop
+    a table, push to main) and watch Pherix hold the line. That's the
+    cross-agent + cross-model + cross-deployment proof no cloud vendor can
+    serve. The wiring is the <code>local-openclaw</code> task; the three above
+    run now.
+  </p>
+</section>
 
 <!-- ===================================================================== -->
 <section id="reframe">

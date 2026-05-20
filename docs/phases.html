@@ -233,13 +233,14 @@
   <div class="phase active" id="p2">
     <div class="phase-head">
       <h3>Phase 2 — Earn a design partner (guardrails MVP)</h3>
-      <span class="badge">⟳ next</span>
+      <span class="badge">⟳ underway</span>
     </div>
-    <p class="theme">From "passes 331 tests" to "one real user runs it against real resources and <em>trusts</em> it."</p>
+    <p class="theme">From "passes 367 tests" to "one real user runs it against real resources and <em>trusts</em> it." <em>The dogfood suite has landed; the work now is running it for real and finding the buyer.</em></p>
     <div class="exit"><b>Exit criterion</b>A security / platform team <em>pays</em> for governed + audited agent actions. The exit is commercial, not "code shipped" — which makes this the hardest phase, and the one most likely to stall on go-to-market rather than engineering.</div>
     <h4>The MVP facet-set: control + recovery + audit</h4>
     <ul>
-      <li><strong>Live MCP-client interop ("test the fucker")</strong> — connect a real client (Claude Code itself) to the gateway and run an actual agent loop. The first validation; the offline suite proved the wire spec-correct but not live interop.</li>
+      <li><strong>Live MCP-client interop ("test the fucker") — <span style="color:var(--done)">done</span>.</strong> The dogfood suite shipped a real-subprocess parity test (gateway as a child process over real stdio) — the boundary gap Slice 8 flagged is closed. Next: point a real out-of-box CLI at it (the <code>local-openclaw</code> capstone).</li>
+      <li><strong>Run the dogfoods for real</strong> — three real-agent dogfoods are runnable now (see <code>dogfood.html</code> &rarr; Start here); running them with a key + a spare machine is the first-user signal that picks the wedge.</li>
       <li><strong>Production-harden the deferred gaps</strong> — Slice 6.5 (world-state-aware policy reads), FS cross-process arbitration, Serialize cross-process enforcement, the meta-connection lifecycle, the accumulated nits.</li>
       <li><strong>Audit pillar v1</strong> — query surface over the journal, compliance/provenance views, journal-as-MCP-resource. The trust evidence a security buyer needs to sign off.</li>
       <li><strong>One wedge bolt-on</strong> — GitAdapter (coding-agent shop) <em>or</em> CI/CD primitive (deploy shop). Picked by the dogfood vertical, not in the abstract.</li>
