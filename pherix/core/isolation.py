@@ -48,14 +48,24 @@ class Conflict:
 
     ``version_at_read`` is the version recorded into ``Effect.read_keys`` at
     read-time; ``version_now`` is the value the adapter reports at commit
-    time. They differ iff some other transaction committed a write to the
-    same key between this txn opening and this txn's commit-time diff.
+    time. ``version_expected`` is what the diff actually compared
+    ``version_now`` against — the committed base at read on the
+    committed-only path, or the version after my last own write
+    (``last_my_write``) on the own-write-visible path. The conflict fired
+    because ``version_now != version_expected``.
+
+    Carrying ``version_expected`` is what makes a future false-positive
+    self-explaining: the old message read "read v0, now v0" (a self-bump
+    on the committed-only path looked like a conflict because the diff
+    compared against ``last_my_write`` instead of the committed base),
+    which gave no hint of what was actually being compared.
     """
 
     resource: str
     key: tuple
     version_at_read: object
     version_now: object
+    version_expected: object = None
 
 
 class IsolationConflict(RuntimeError):
@@ -70,7 +80,7 @@ class IsolationConflict(RuntimeError):
         self.conflicts = list(conflicts)
         lines = "; ".join(
             f"{c.resource}:{c.key} (read v{c.version_at_read!r}, "
-            f"now v{c.version_now!r})"
+            f"expected v{c.version_expected!r}, now v{c.version_now!r})"
             for c in conflicts
         )
         super().__init__(f"isolation conflict on {lines}")
@@ -190,14 +200,35 @@ def check_conflicts(
     genuine lost-update where another transaction ALSO bumped the same
     key was silently swallowed alongside the self-bump.
 
-    The fix: ``write_keys`` triples carry ``(resource, key,
-    version_after_my_write)``. For each read key, we compute "my expected
-    current" as the version after my LAST write of that key (or, if I
-    didn't write the key, the version when I read it). The diff fires
-    when the adapter's live version is anything other than that. The
-    structure is monotonic — my own bumps move the expected current
-    upward consistently; only a cross-transaction write moves the live
-    version past it.
+    The expected-current computation depends on whether the adapter's
+    ``read_version`` reflects this txn's own uncommitted writes — the two
+    SQLite paths disagree, and a fix that is correct on one is wrong on
+    the other unless reconciled (the on-disk read-then-write false
+    conflict, "read v0, now v0"):
+
+    - **Own-write-visible** path (``:memory:`` SQLite main connection, the
+      :class:`FakeAdapter`, FS): ``read_version`` sees my own bumps, so my
+      expected current is the version after my LAST write of that key —
+      ``last_my_write`` — (or, if I only read the key, ``v_at_read``). A
+      live version beyond that means a cross-txn write. This is monotonic:
+      my bumps move the expected current up consistently; only another
+      transaction moves the live version past it.
+
+    - **Committed-only** path (on-disk SQLite, via the meta connection):
+      ``read_version`` does NOT see my own uncommitted writes — at read
+      time AND at commit time. My self-bumps therefore cancel on both
+      ends, and the correct comparison is the committed base at read
+      (``v_at_read``) vs the committed base now (``v_now``). Using
+      ``last_my_write`` here is the bug: ``last_my_write`` lives on the
+      main-connection scale (it counts my bumps), but ``v_now`` does not,
+      so they differ by my own writes and fire a spurious conflict.
+
+    An adapter signals the committed-only path via ``reads_committed_only()``;
+    adapters that don't expose it default to the own-write-visible branch,
+    so the :class:`FakeAdapter` unit pins and the FS adapter are unchanged.
+    Either way the invariant is identical: a conflict means *another*
+    transaction committed a write to a key I read between my read and my
+    commit — my own pre-commit writes never count.
     """
     # Per (resource, key): the version produced by my LAST write. Iteration
     # order in ``effect.write_keys`` is append-order, and write_keys is
@@ -217,11 +248,16 @@ def check_conflicts(
             if adapter is None or not adapter.supports_rollback():
                 continue
             key_tuple = tuple(key)
-            # "Expected current" per key:
-            # - If I wrote the key after reading it: the version after my
-            #   last write (we expect the adapter to still report that).
-            # - If I only read the key: v_at_read.
-            v_expected = last_my_write.get((resource, key_tuple), v_at_read)
+            # "Expected current" per key — see the docstring. On the
+            # committed-only path my own writes are invisible to
+            # read_version on both ends, so the committed base at read
+            # (v_at_read) is what the committed base now must still equal.
+            # On the own-write-visible path read_version reflects my bumps,
+            # so the expected current is the version after my last write.
+            if _reads_committed_only(adapter):
+                v_expected = v_at_read
+            else:
+                v_expected = last_my_write.get((resource, key_tuple), v_at_read)
             v_now = adapter.read_version(key_tuple)
             if v_now != v_expected:
                 conflicts.append(
@@ -230,9 +266,21 @@ def check_conflicts(
                         key=key_tuple,
                         version_at_read=v_at_read,
                         version_now=v_now,
+                        version_expected=v_expected,
                     )
                 )
     return conflicts
+
+
+def _reads_committed_only(adapter: Any) -> bool:
+    """Whether ``adapter.read_version`` excludes this txn's own uncommitted
+    writes. Adapters that don't expose ``reads_committed_only`` default to
+    ``False`` (the own-write-visible branch) — so the FakeAdapter unit pins
+    and the filesystem adapter keep their existing ``last_my_write``
+    semantics with no change.
+    """
+    probe = getattr(adapter, "reads_committed_only", None)
+    return bool(probe()) if callable(probe) else False
 
 
 # --- JournalRegistry (D5 in-process arbitration substrate) -------------------

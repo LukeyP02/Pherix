@@ -158,6 +158,28 @@ class SQLiteAdapter:
         # contains a nested dict.
         return json.dumps(list(key), sort_keys=True)
 
+    def reads_committed_only(self) -> bool:
+        """Whether :meth:`read_version` reflects ONLY committed state —
+        i.e. it does NOT see this transaction's own uncommitted writes.
+
+        True on-disk: ``read_version`` goes through the committed-only meta
+        connection, which sits outside our ``BEGIN`` and therefore cannot
+        observe the version bumps ``write_version`` makes on the main
+        connection until the txn commits. So at both read time and
+        commit-time-diff, our own self-bumps are invisible and cancel:
+        the commit-time diff must compare the committed base at read
+        against the committed base now (``v_at_read`` vs ``v_now``), NOT
+        against the version after our own write.
+
+        False in-memory: ``meta_conn`` is None, ``read_version`` falls back
+        to the main connection which DOES see our uncommitted bumps — so
+        the diff keeps using ``last_my_write`` as the expected current.
+
+        This flag is what lets :func:`pherix.core.isolation.check_conflicts`
+        reconcile the two visibilities instead of being correct on only one.
+        """
+        return self._meta_conn is not None
+
     def read_version(self, key: tuple) -> int:
         # Use the meta-connection if available (D5: it bypasses the main
         # connection's BEGIN snapshot, so cross-process bumps are visible
