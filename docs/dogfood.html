@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Dogfood verticals · Pherix</title>
+<title>The dogfood suite · Pherix</title>
 <style>
   :root {
     --bg: #faf8f4;
@@ -19,7 +19,14 @@
     --accent-3: #2c4a6a;
     --accent-warn: #8a6a14;
     --shade: rgba(22, 21, 19, 0.05);
-    --grid: rgba(22, 21, 19, 0.08);
+    --code-bg: rgba(22, 21, 19, 0.06);
+    --done: #355c3a;
+    --done-bg: rgba(53, 92, 58, 0.10);
+    --active: #8a6a14;
+    --active-bg: rgba(138, 106, 20, 0.10);
+    --future: #7a7268;
+    --bug: #9a2f2f;
+    --bug-bg: rgba(154, 47, 47, 0.08);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -36,7 +43,14 @@
       --accent-3: #7ea0c8;
       --accent-warn: #d4ac56;
       --shade: rgba(255, 250, 240, 0.04);
-      --grid: rgba(255, 250, 240, 0.06);
+      --code-bg: rgba(255, 250, 240, 0.06);
+      --done: #6ba070;
+      --done-bg: rgba(107, 160, 112, 0.12);
+      --active: #d4ac56;
+      --active-bg: rgba(212, 172, 86, 0.12);
+      --future: #8a8478;
+      --bug: #e08a8a;
+      --bug-bg: rgba(224, 138, 138, 0.10);
     }
   }
   * { box-sizing: border-box; }
@@ -52,170 +66,134 @@
     font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase;
     color: var(--ink-3); margin: 0 0 0.5rem;
   }
-  h1 {
-    font-size: 2.6rem; line-height: 1.05; margin: 0 0 1rem;
-    font-weight: 500; letter-spacing: -0.012em;
-  }
-  h2 {
-    font-size: 1.55rem; line-height: 1.2; margin: 3.5rem 0 1rem;
-    font-weight: 500; letter-spacing: -0.005em;
-    border-top: 1px solid var(--rule); padding-top: 1.5rem;
-  }
-  h3 {
-    font-size: 1.25rem; margin: 1.75rem 0 0.4rem;
-    font-weight: 500; letter-spacing: -0.003em;
-  }
-  .lede {
-    color: var(--ink-2); font-size: 1.12rem; max-width: 64ch; margin: 0;
-  }
+  h1 { font-size: 2.5rem; line-height: 1.06; margin: 0 0 1rem; font-weight: 500; letter-spacing: -0.012em; }
+  h2 { font-size: 1.55rem; line-height: 1.2; margin: 3.5rem 0 1rem; font-weight: 500; letter-spacing: -0.005em; border-top: 1px solid var(--rule); padding-top: 1.5rem; }
+  h3 { font-size: 1.25rem; margin: 1.75rem 0 0.4rem; font-weight: 600; letter-spacing: -0.003em; }
+  .lede { color: var(--ink-2); font-size: 1.12rem; max-width: 66ch; margin: 0; }
   p { color: var(--ink-2); margin: 0.6rem 0 0.9rem; }
   p strong { color: var(--ink); font-weight: 600; }
-  code {
-    font-family: ui-monospace, monospace; font-size: 0.88em;
-    background: var(--shade); padding: 1px 5px; border-radius: 3px;
-  }
+  code { font-family: ui-monospace, monospace; font-size: 0.88em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
   em { color: var(--ink); font-style: italic; }
-  ul, ol { color: var(--ink-2); padding-left: 1.4rem; }
-  ul li, ol li { margin: 0.45rem 0; }
+  ul, ol { color: var(--ink-2); padding-left: 1.35rem; }
+  ul li, ol li { margin: 0.4rem 0; }
 
-  /* --- the matrix --- */
-  .matrix-wrap { margin: 1.4rem 0 0.6rem; overflow-x: auto; }
-  table.matrix {
-    width: 100%; border-collapse: separate; border-spacing: 0;
-    font-family: ui-monospace, monospace;
-    font-size: 0.82rem;
-    background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
-    overflow: hidden;
-  }
-  table.matrix th, table.matrix td {
-    padding: 0.7rem 0.85rem;
-    text-align: left;
-    border-bottom: 1px solid var(--rule);
-    border-right: 1px solid var(--rule);
-    vertical-align: middle;
-  }
-  table.matrix th:last-child, table.matrix td:last-child { border-right: 0; }
-  table.matrix tr:last-child th, table.matrix tr:last-child td { border-bottom: 0; }
-  table.matrix thead th {
-    background: var(--panel-2);
-    font-weight: 600; color: var(--ink);
-    letter-spacing: 0.02em;
-  }
-  table.matrix tbody th {
-    background: var(--panel-2);
-    font-weight: 500; color: var(--ink);
-    width: 22%;
-  }
-  table.matrix tbody th .sub {
-    display: block; font-size: 0.7rem; color: var(--ink-3);
-    font-weight: 400; letter-spacing: 0.04em; margin-top: 2px;
-  }
-  /* intensity cells */
-  .cell { display: flex; align-items: center; gap: 0.55rem; }
-  .dot {
-    display: inline-block; width: 10px; height: 10px;
-    border-radius: 50%; border: 1px solid currentColor;
-    flex: 0 0 auto;
-  }
-  .dot.heavy   { background: currentColor; }
-  .dot.medium  { background: color-mix(in srgb, currentColor 40%, transparent); }
-  .dot.light   { background: color-mix(in srgb, currentColor 10%, transparent); }
-  .dot.none    { background: transparent; opacity: 0.25; }
-  .cell.devops { color: var(--accent); }
-  .cell.mig    { color: var(--accent-2); }
-  .cell.recon  { color: var(--accent-3); }
-  .cell.filing { color: var(--accent-warn); }
-  .cell-label { color: var(--ink-2); font-size: 0.78rem; }
+  .meta-row { margin-top: 1rem; font-family: ui-monospace, monospace; font-size: 0.78rem; color: var(--ink-3); }
+  .meta-row span { display: inline-block; margin-right: 1.2rem; }
+  .meta-row b { color: var(--ink); font-weight: 600; }
 
-  /* --- pick cards --- */
-  .pick {
-    margin: 1.2rem 0 1.5rem;
-    padding: 1.4rem 1.5rem 1.55rem;
-    background: var(--panel);
-    border: 1px solid var(--rule);
+  nav.toc { margin: 2rem 0 2.5rem; padding: 1rem 1.4rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; font-family: ui-monospace, monospace; font-size: 0.86rem; }
+  nav.toc a { display: inline-block; margin-right: 1.2rem; color: var(--ink-2); text-decoration: none; }
+  nav.toc a:hover { color: var(--accent); }
+
+  /* reframe callout */
+  .reframe {
+    margin: 1.4rem 0 1rem; padding: 1.2rem 1.5rem;
+    background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px;
     border-left: 4px solid var(--accent);
-    border-radius: 6px;
   }
-  .pick.mig    { border-left-color: var(--accent-2); }
-  .pick.recon  { border-left-color: var(--accent-3); }
-  .pick.filing { border-left-color: var(--accent-warn); }
-  .pick h3 { margin: 0 0 0.4rem; }
-  .pick .meta {
-    font-family: ui-monospace, monospace; font-size: 0.74rem;
-    color: var(--ink-3); letter-spacing: 0.06em; text-transform: uppercase;
-    margin: 0 0 0.85rem;
-  }
-  .pick .meta .tag {
-    display: inline-block; padding: 1px 8px;
-    border: 1px solid currentColor; border-radius: 99px;
-    margin-right: 0.4rem; color: var(--accent);
-  }
-  .pick.mig    .meta .tag { color: var(--accent-2); }
-  .pick.recon  .meta .tag { color: var(--accent-3); }
-  .pick.filing .meta .tag { color: var(--accent-warn); }
-  .pick .pherix-stress {
-    font-family: ui-monospace, monospace; font-size: 0.78rem;
-    color: var(--ink-3); margin-top: 0.7rem;
-    padding-top: 0.7rem; border-top: 1px dashed var(--rule);
-  }
-  .pick .pherix-stress b { color: var(--ink); }
+  .reframe p { color: var(--ink); }
+  .reframe p:first-child { margin-top: 0; }
+  .reframe p:last-child { margin-bottom: 0; }
 
-  /* --- rejected verticals --- */
-  details.reject {
-    margin: 0.5rem 0;
-    padding: 0.5rem 0.9rem 0.5rem 1rem;
-    background: var(--panel);
-    border: 1px solid var(--rule); border-radius: 5px;
+  /* harness panel */
+  .harness {
+    margin: 1.2rem 0; padding: 1.2rem 1.5rem;
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 8px;
   }
-  details.reject summary {
-    cursor: pointer;
-    font-family: ui-monospace, monospace;
-    font-size: 0.84rem; color: var(--ink-2);
-    padding: 0.3rem 0;
-    list-style: none;
+  .harness h3 { margin-top: 0; }
+  .harness .flow {
+    font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--ink-2);
+    background: var(--code-bg); padding: 0.7rem 0.9rem; border-radius: 5px;
+    margin: 0.7rem 0; line-height: 1.7;
   }
-  details.reject summary::-webkit-details-marker { display: none; }
-  details.reject summary::before {
-    content: "▸ "; color: var(--ink-3); margin-right: 4px;
+  .harness .flow b { color: var(--ink); }
+
+  /* dogfood cards */
+  .dog {
+    margin: 1.2rem 0; padding: 1.4rem 1.6rem;
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 8px;
+    border-left: 5px solid var(--accent);
   }
-  details.reject[open] summary::before { content: "▾ "; }
-  details.reject summary b { color: var(--ink); font-weight: 600; }
-  details.reject summary .verdict {
-    float: right; color: var(--ink-faint);
-    font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;
+  .dog.audit  { border-left-color: var(--accent-3); }
+  .dog.sandbox{ border-left-color: var(--accent-2); }
+  .dog.mcp    { border-left-color: var(--accent-warn); }
+  .dog-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .dog h3 { margin: 0; }
+  .dog .badge {
+    font-family: ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 0.18rem 0.6rem; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; color: var(--done);
   }
-  details.reject .body {
-    margin: 0.5rem 0 0.3rem;
-    padding: 0.5rem 0 0.2rem;
-    border-top: 1px dashed var(--rule);
-    font-family: 'Iowan Old Style', Palatino, Charter, Georgia, serif;
-    font-size: 0.96rem;
-    color: var(--ink-2);
+  .dog .badge.poc { color: var(--active); }
+  .dog .proves {
+    margin: 0.8rem 0; padding: 0.55rem 0.95rem; background: var(--panel-2); border-radius: 5px;
+    font-size: 0.95rem; color: var(--ink);
   }
-  details.reject .body p { margin: 0.45rem 0; }
-  details.reject .body .when {
-    font-family: ui-monospace, monospace; font-size: 0.78rem;
-    color: var(--ink-3); margin-top: 0.5rem;
+  .dog .proves b { font-family: ui-monospace, monospace; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 0.2rem; }
+
+  /* interception split */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; margin: 1.2rem 0; }
+  @media (max-width: 720px) { .split { grid-template-columns: 1fr; } }
+  .split .col {
+    padding: 1.1rem 1.3rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 7px;
+  }
+  .split .col .lab { font-family: ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.3rem; }
+  .split .col h4 { margin: 0 0 0.4rem; font-size: 1.05rem; font-weight: 600; color: var(--ink); }
+  .split .col p { font-size: 0.94rem; margin: 0.4rem 0; }
+
+  /* moat / capstone */
+  .moat {
+    margin: 1.2rem 0; padding: 1.3rem 1.5rem;
+    background: var(--done-bg); border: 1px solid var(--accent-2); border-radius: 8px;
+  }
+  .moat h3 { margin-top: 0; color: var(--ink); }
+  .moat .key { color: var(--ink); font-weight: 600; }
+
+  /* the bug — distinct visual weight */
+  .finding {
+    margin: 1.6rem 0; padding: 1.5rem 1.7rem;
+    background: var(--bug-bg); border: 1.5px solid var(--bug); border-radius: 10px;
+  }
+  .finding .tag {
+    font-family: ui-monospace, monospace; font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--bug); display: block; margin-bottom: 0.4rem;
+  }
+  .finding h3 { margin: 0 0 0.6rem; color: var(--ink); font-size: 1.35rem; }
+  .finding p { color: var(--ink-2); }
+  .finding p strong { color: var(--ink); }
+  .finding .lesson {
+    margin-top: 1rem; padding-top: 0.9rem; border-top: 1px dashed var(--bug);
+    font-style: italic; color: var(--ink);
+  }
+  .finding .chain {
+    font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--ink-2);
+    background: var(--code-bg); padding: 0.7rem 0.95rem; border-radius: 5px; margin: 0.8rem 0;
+    line-height: 1.7;
+  }
+  .finding .chain b { color: var(--ink); }
+
+  /* punchline / ICP */
+  .icp {
+    margin: 1.3rem 0; padding: 1.3rem 1.6rem;
+    background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px;
+    border-left: 5px solid var(--accent-3);
+  }
+  .icp p:first-child { margin-top: 0; }
+  .icp p:last-child { margin-bottom: 0; }
+  .facets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.55rem; margin: 0.9rem 0; }
+  @media (max-width: 720px) { .facets { grid-template-columns: 1fr 1fr; } }
+  .facet { padding: 0.7rem 0.85rem; background: var(--bg); border: 1px solid var(--rule); border-radius: 5px; }
+  .facet .fl { font-family: ui-monospace, monospace; font-size: 0.64rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.2rem; }
+  .facet .ft { font-weight: 600; color: var(--ink); font-size: 0.92rem; }
+  .facet .fd { font-size: 0.8rem; color: var(--ink-2); margin-top: 0.25rem; }
+
+  .retired {
+    margin-top: 1.4rem; font-size: 0.9rem; color: var(--ink-3);
+    padding: 0.7rem 1rem; background: var(--shade); border-radius: 5px;
   }
 
-  /* --- structural callout --- */
-  .callout {
-    margin: 1.5rem 0 0; padding: 1.2rem 1.5rem;
-    background: var(--panel-2);
-    border: 1px solid var(--rule); border-radius: 6px;
-    border-left: 4px solid var(--accent-2);
-  }
-  .callout p { color: var(--ink); }
-  .callout p:first-child { margin-top: 0; }
-  .callout p:last-child { margin-bottom: 0; }
-
-  footer {
-    margin-top: 5rem; padding-top: 2rem;
-    border-top: 1px solid var(--rule);
-    font-size: 0.86rem; color: var(--ink-3);
-  }
+  footer { margin-top: 5rem; padding-top: 2rem; border-top: 1px solid var(--rule); font-size: 0.86rem; color: var(--ink-3); }
   footer p { margin: 0.35rem 0; }
-  footer a { color: var(--ink-2); }
+  footer a { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -223,261 +201,282 @@
 
 <header>
   <p class="eyebrow">Pherix · dogfood</p>
-  <h1>Four verticals to prove Pherix in production.</h1>
+  <h1>The dogfood suite — real agents, in the path.</h1>
   <p class="lede">
-    The reframe: these aren't Pherix's verticals. They are <em>test surfaces for Pherix-as-infrastructure</em> — each prototype evaluates Pherix at a different point in capability-space. Build them as a solo founder, learn where the engine carries us through and where it hits a wall, and feed every failure mode back into the roadmap as a customer-driven feature request.
+    The 367-test deterministic suite proves the engine is <em>correct</em>.
+    The dogfoods test whether it is <em>useful</em> — a real LLM making real,
+    sometimes wrong decisions, with Pherix genuinely in the tool-call path
+    catching what would otherwise hurt. A scripted "dogfood" would just be a
+    redundant integration test; these aren't scripted.
   </p>
+  <div class="meta-row">
+    <span><b>Merged:</b> <code>add6709</code></span>
+    <span><b>Tests:</b> 367 green</span>
+    <span><b>Streams:</b> 4 (one harness + DevOps, audit, sandbox, MCP)</span>
+  </div>
 </header>
 
-<!-- ============================================================= -->
-<section>
+<nav class="toc">
+  <a href="#reframe">The reframe</a>
+  <a href="#harness">The harness</a>
+  <a href="#suite">The four streams</a>
+  <a href="#split">Two interception models</a>
+  <a href="#finding">The bug it found</a>
+  <a href="#moat">Local agents / the moat</a>
+  <a href="#icp">The punchline</a>
+</nav>
+
+<!-- ===================================================================== -->
+<section id="reframe">
   <h2>The reframe</h2>
-  <p>
-    The vertical-AI play is an integration business: compliance, distribution-via-existing-network, accumulated industry knowledge. The moat is non-portable; the ceiling is set by how much industry context the founder brings. That isn't Pherix's shape and it isn't the solo-founder leverage curve we're optimising for.
-  </p>
-  <p>
-    But a prototype <em>inside</em> a vertical, where the agent uses Pherix internally, is a different proposition entirely. The thing built is not the vertical product; it is the <strong>evidence that Pherix carries the agent through real production-shaped conditions</strong>. The dogfood signal is &laquo;where does Pherix carry us through, and where does it hit a wall we have to fix or document?&raquo;
-  </p>
-  <p>Two implications.</p>
-  <ol>
-    <li><strong>Pick prototypes that stress different parts of Pherix's roadmap.</strong> Three SQL-shaped variations of the same agent teach Pherix nothing new; three different adapter mixes plus audit profiles teach Pherix four times.</li>
-    <li><strong>Each prototype's failure mode is a customer-driven Pherix follow-up.</strong> When the SRE bot needs result-piped compensators because <code>kubectl scale</code> returned a count the compensator needs, that's no longer a speculative cleanup — it's a feature request from the dogfood itself. The dogfood matrix <em>is</em> product discovery.</li>
-  </ol>
-</section>
-
-<!-- ============================================================= -->
-<section>
-  <h2>The dogfood matrix</h2>
-  <p>
-    Each cell shows the intensity of stress that vertical puts on a Pherix surface. The pattern to want: <strong>different verticals hit different cells</strong>. If you only build prototypes whose rows all light up the same column, the dogfood teaches the same lesson four times.
-  </p>
-
-  <div class="matrix-wrap">
-    <table class="matrix">
-      <thead>
-        <tr>
-          <th>Pherix surface</th>
-          <th>DevOps / SRE</th>
-          <th>Migration bot</th>
-          <th>Reconciliation</th>
-          <th>Filing automation</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <th>Slice 1 — SQL (reversible)<span class="sub">SAVEPOINT lane</span></th>
-          <td><div class="cell devops"><span class="dot medium"></span><span class="cell-label">medium · ledger writes alongside infra ops</span></div></td>
-          <td><div class="cell mig"><span class="dot light"></span><span class="cell-label">light · metadata only</span></div></td>
-          <td><div class="cell recon"><span class="dot heavy"></span><span class="cell-label">heavy · journal entries are the product</span></div></td>
-          <td><div class="cell filing"><span class="dot medium"></span><span class="cell-label">medium · submission state</span></div></td>
-        </tr>
-        <tr>
-          <th>Slice 2 — Filesystem (CoW)<span class="sub">copy-on-write lane</span></th>
-          <td><div class="cell devops"><span class="dot light"></span><span class="cell-label">light · config files at most</span></div></td>
-          <td><div class="cell mig"><span class="dot heavy"></span><span class="cell-label">heavy · the agent's primary write surface</span></div></td>
-          <td><div class="cell recon"><span class="dot light"></span><span class="cell-label">light · report exports</span></div></td>
-          <td><div class="cell filing"><span class="dot medium"></span><span class="cell-label">medium · prepared filings on disk</span></div></td>
-        </tr>
-        <tr>
-          <th>Slice 3 — HTTP (irreversible)<span class="sub">staging + gate + compensator</span></th>
-          <td><div class="cell devops"><span class="dot heavy"></span><span class="cell-label">heavy · every action irreversible</span></div></td>
-          <td><div class="cell mig"><span class="dot medium"></span><span class="cell-label">medium · git pushes, PR opens</span></div></td>
-          <td><div class="cell recon"><span class="dot medium"></span><span class="cell-label">medium · ledger postings to source systems</span></div></td>
-          <td><div class="cell filing"><span class="dot heavy"></span><span class="cell-label">heavy · the submission itself</span></div></td>
-        </tr>
-        <tr>
-          <th>Slice 4 — Isolation<span class="sub">MVCC, conflict diff</span></th>
-          <td><div class="cell devops"><span class="dot heavy"></span><span class="cell-label">heavy · on-call rotation + automation interleave</span></div></td>
-          <td><div class="cell mig"><span class="dot medium"></span><span class="cell-label">medium · parallel-repo work conflicts</span></div></td>
-          <td><div class="cell recon"><span class="dot heavy"></span><span class="cell-label">heavy · multiple agents reading the same ledger</span></div></td>
-          <td><div class="cell filing"><span class="dot light"></span><span class="cell-label">light · usually one filing at a time</span></div></td>
-        </tr>
-        <tr>
-          <th>Audit pillar<span class="sub">Slice 8++ — the journal-as-product</span></th>
-          <td><div class="cell devops"><span class="dot heavy"></span><span class="cell-label">heavy · "who killed that pod" is the regulator's question</span></div></td>
-          <td><div class="cell mig"><span class="dot medium"></span><span class="cell-label">medium · PR provenance</span></div></td>
-          <td><div class="cell recon"><span class="dot heavy"></span><span class="cell-label">heavy · SOX-adjacent trail of every entry</span></div></td>
-          <td><div class="cell filing"><span class="dot heavy"></span><span class="cell-label">heavy · regulator wants the artifact</span></div></td>
-        </tr>
-        <tr>
-          <th>Cross-resource txn<span class="sub">D3 from Slice 2</span></th>
-          <td><div class="cell devops"><span class="dot heavy"></span><span class="cell-label">heavy · SQL state + HTTP infra in one txn</span></div></td>
-          <td><div class="cell mig"><span class="dot heavy"></span><span class="cell-label">heavy · FS + HTTP must commit-or-rollback together</span></div></td>
-          <td><div class="cell recon"><span class="dot medium"></span><span class="cell-label">medium · SQL + bank-API post</span></div></td>
-          <td><div class="cell filing"><span class="dot medium"></span><span class="cell-label">medium · FS-prepared + HTTP-submitted</span></div></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <p style="font-size: 0.92rem; color: var(--ink-3); margin-top: 0.8rem;">
-    <strong>Reading the matrix:</strong> the four columns cover the Pherix capability-space with low overlap. DevOps and reconciliation are the two heaviest stress tests overall — DevOps on the irreversible / isolation / audit axes, reconciliation on the SQL / isolation / audit axes. Migration is the only one that stresses the filesystem adapter heavily, which is why it earns a slot even though it overlaps lightly elsewhere. Filing is the smallest dogfood by Pherix-surface, but it's the only one where audit-grade artifacts <em>are</em> the user-facing product, not a side effect.
-  </p>
-</section>
-
-<!-- ============================================================= -->
-<section>
-  <h2>The four picks</h2>
-
-  <article class="pick">
-    <h3>1. DevOps / SRE incident-response agent</h3>
-    <p class="meta"><span class="tag">strongest pick</span> if you build only one — build this</p>
+  <div class="reframe">
     <p>
-      An agent that runs runbooks against prod infrastructure — <code>kubectl</code> actions, database failovers, log queries, monitoring acknowledgements, scale operations. Triggered by alerts or invoked by an on-call human; produces a clear audit trail of every action it took. Co-exists with human operators (the on-call rotation) so multi-agent concurrency is the norm, not the exception.
+      <strong>Dogfoods are real LLM agents, not scripted demos.</strong> A
+      scripted walk-through can only ever assert what the author already knew
+      to assert — it is an integration test wearing a costume. The point of a
+      dogfood is the part the author <em>couldn't</em> predict: a real model
+      reaches a decision, sometimes the wrong one, and we watch whether Pherix
+      — actually wired into the tool-call path — contains the damage.
     </p>
     <p>
-      <strong>Why this is the strongest pick.</strong> Every action is irreversible (Slice 3's lane is the entire game). Most actions need pre-approval gates — &laquo;who killed that pod&raquo; is exactly the question a regulator or post-incident review asks. Compensators are real: a failover has an undo, a scale-down has a scale-up. Multi-agent concurrency is the natural shape: the on-call rotation plus automated alerts interleave on the same infra, exercising Slice 4 isolation. And the buyer for this prototype (SRE leads, platform teams) is also Pherix's eventual buyer — meaning success in this dogfood doubles as customer development.
-    </p>
-    <p>
-      <strong>Solo-founder buildable.</strong> kubectl + Datadog / Grafana / PagerDuty APIs + an LLM with tool-use + Pherix wrapping the writes. The agent half is straightforward; the load-bearing piece is the audit trail and the gate UX, which is precisely what Pherix already does.
-    </p>
-    <p class="pherix-stress">
-      <b>Pherix surfaces exercised:</b> Slice 3 (every action), Slice 4 isolation (concurrent human + automation), Audit pillar (the product), Cross-resource txn (SQL state alongside HTTP infra calls). <br>
-      <b>Failure modes to expect that become roadmap items:</b> result-piped compensators (the <code>kubectl scale</code> output needs to flow into the compensator — Slice-3 FU#1); compensator execution as a separate audit row (Slice-3 FU#2 — &laquo;when did the scale-back actually fire&raquo; is a real question here); Serialize across hosts (the gateway dependency from Slice-4 FU#4).
-    </p>
-  </article>
-
-  <article class="pick mig">
-    <h3>2. Devtools migration / dependency-upgrade fleet bot</h3>
-    <p class="meta"><span class="tag">build second</span> covers FS + cross-resource that DevOps doesn't</p>
-    <p>
-      "Upgrade Stripe SDK across 47 repos", or "migrate Mongoose v6 to v7 across the monorepos", or "apply this codemod across the org's package manifests and open PRs". The agent reads the codebase, plans the diff, writes the changes, opens the PR, monitors CI, and on failure rolls everything back to a clean state.
-    </p>
-    <p>
-      <strong>Why this earns a slot.</strong> It's the only one of the four that stresses the filesystem adapter heavily — copy-on-write earns its keep precisely when a migration step on file 32 of 47 needs to roll back. The cross-resource transaction (D3 from Slice 2) is the point: a half-migrated repo plus a closed PR plus a deleted branch is the worst-of-all-worlds state Pherix exists to prevent. The agent writes to filesystem (Slice 2), opens PRs (Slice 3 HTTP), and the success criterion is that those two commit-or-rollback together.
-    </p>
-    <p>
-      <strong>Solo-founder feasible.</strong> The GitHub API is well-documented; codemod tooling exists per ecosystem; the agent's job is plan-then-apply-then-watch-CI. Visible win is concrete and shareable: &laquo;our upgrade bot never leaves a repo in a broken half-state.&raquo;
-    </p>
-    <p class="pherix-stress">
-      <b>Pherix surfaces exercised:</b> Slice 2 (FS — primary write surface), Slice 3 (HTTP — PR opens, branch pushes), Cross-resource txn (the FS+HTTP commit-together story is the whole point). <br>
-      <b>Failure modes to expect:</b> needing to capture the PR number from the HTTP fire as a journalled result so a compensator can close it (this maps directly to Slice-3 FU#1 result-piped compensators again — different vertical, same feature request).
-    </p>
-  </article>
-
-  <article class="pick recon">
-    <h3>3. Back-office finance / reconciliation agent</h3>
-    <p class="meta"><span class="tag">build third</span> covers the boring-load-bearing SQL axis</p>
-    <p>
-      Match transactions across Stripe / accounting ledger / bank feed; flag and resolve discrepancies; post journal entries; produce the monthly close artifact. Boring on purpose — that's where the audit-pillar value lives, and where the competitors aren't paying attention.
-    </p>
-    <p>
-      <strong>Why this earns a slot.</strong> SQL-heavy (Slice 1 is the workhorse), strict idempotency requirements (Slice 3's <code>effect_id</code> earns its weight when daily reconciliation re-runs the same matches against the same source data), audit is a regulatory artifact (SOX-adjacent for any company with finance compliance — a real <em>budget line item</em>, unlike "agent safety" which is still seeking one). The pitch — &laquo;every journal entry has a deterministic trail back to its source events&raquo; — sells the Slice-8++ audit pillar to a real buyer <em>before</em> Pherix ships it.
-    </p>
-    <p>
-      <strong>Solo-founder feasible.</strong> Stripe / Mercury / QuickBooks / Xero APIs are well-documented; the agent's job is rule-driven matching plus exception handling, which LLMs handle adequately and Pherix journals deterministically. The reconciliation logic doesn't need industry credentials to prototype against fake data; the production sale would need a design partner, but the dogfood doesn't.
-    </p>
-    <p class="pherix-stress">
-      <b>Pherix surfaces exercised:</b> Slice 1 (SQL — daily ledger writes), Slice 4 isolation (multiple reconciliation agents on the same ledger), Audit pillar (the actual product). <br>
-      <b>Failure modes to expect:</b> read/write keys not in the audit row (Slice-4 FU#2 — &laquo;show me which rows this reconciliation touched&raquo; is a basic compliance ask); durable-by-default audit journal (Slice-1 FU#4 — the audit can't be in-memory for a finance use case).
-    </p>
-  </article>
-
-  <article class="pick filing">
-    <h3>4. Narrow regulatory filing automation</h3>
-    <p class="meta"><span class="tag">build only if you have access</span> smallest market, sharpest pitch</p>
-    <p>
-      Pick <em>one</em> filing type in <em>one</em> jurisdiction — UK VAT, US 1099, a specific FCA submission, the Companies House confirmation statement. The agent prepares the filing, runs it through validation, submits to the regulator's API or portal, returns the receipt. Audit pillar isn't a feature; audit pillar <em>is</em> the deliverable.
-    </p>
-    <p>
-      <strong>Why this earns a slot.</strong> A submitted filing is gone (HMRC will not accept &laquo;actually we'd like to roll that back&raquo;). The gate via <code>approve_irreversible</code> is the operational pattern, not the exception — every filing goes through a human or higher-trust-policy sign-off. Audit must be regulator-grade. Smallest market of the four, but the narrowest scope is its strength: a solo founder can be the canonical name for "this specific filing" within weeks.
-    </p>
-    <p>
-      <strong>Why "only if you have access".</strong> Regulator portals and APIs vary wildly; some require live test environments only granted to incorporated entities; some require professional accreditations to submit. The market isn't competitive because the access barrier is real. If you have the access (you've filed this type yourself; you know an accountant who'd be a design partner), it's the cleanest Pherix-pitch in market. If you don't, the activation energy outweighs the dogfood gain.
-    </p>
-    <p class="pherix-stress">
-      <b>Pherix surfaces exercised:</b> Slice 3 (the submission itself), Slice 6 policy (filings have rule-based pre-checks), Audit pillar (regulator-grade), Slice 2 (prepared filings on disk before submission). <br>
-      <b>Failure modes to expect:</b> Slice-6 policy engine arriving in time (Slice 1's allow-list is insufficient — filings need content-aware rules); audit-row schema bumps to capture the filing's full content (Slice-4 FU#2 plus a schema decision).
-    </p>
-  </article>
-
-</section>
-
-<!-- ============================================================= -->
-<section>
-  <h2>What NOT to build &mdash; and honest reasons</h2>
-  <p>
-    For completeness. None of these are wrong businesses; they are wrong <em>dogfood</em> for Pherix. The reasoning matters: each one fails a different Pherix-shaped test, and seeing the failure modes sharpens the picture of which dogfoods earn their slot.
-  </p>
-
-  <details class="reject">
-    <summary><b>Sales / outreach agents</b> &mdash; the obvious AI-vertical play.<span class="verdict">reject · wrong wedge</span></summary>
-    <div class="body">
-      <p>An agent that drafts cold emails, sequences them, books meetings, updates the CRM. Hot vertical (Apollo, Outreach, Clay, hundreds more); GTM-heavy (you compete on distribution, not on technical wedge); and almost every action is <em>recoverable</em>: an email can be unsent in spirit by a follow-up, a calendar invite can be cancelled, a CRM row can be edited. The agent's failure modes are <strong>quality</strong> ("did the AI write something stupid") rather than <strong>containment</strong> ("did the AI cause irreversible harm"). AI-guardrails — content classifiers, tone detectors — are the right tool layer; Pherix's wedge is genuinely weak here.</p>
-      <p class="when"><b>When it could be right:</b> if you already have the distribution network, sales agents are a real business — but as Pherix dogfood it stresses the wrong surfaces. Build it as a business; not as a Pherix test.</p>
-    </div>
-  </details>
-
-  <details class="reject">
-    <summary><b>Customer support agents</b> &mdash; the other obvious AI-vertical play.<span class="verdict">reject · wrong wedge</span></summary>
-    <div class="body">
-      <p>Decagon, Sierra, Ada and the long tail of Intercom-clones-with-AI. The agent reads tickets, drafts replies, escalates to humans, occasionally takes an action against a billing system or knowledge base. Most actions are <em>reads</em>; the writes that exist (email replies, CRM updates) are reversible at the social rather than transactional level. The buyer's pain is &laquo;will the AI say something embarrassing&raquo;, not &laquo;will the AI cause an irreversible outcome&raquo;. Same wedge mismatch as sales: detection &gt; containment for this category. Pherix would be invisible.</p>
-      <p class="when"><b>When it could be right:</b> if the support agent has authority to <em>refund</em>, <em>cancel subscriptions</em>, <em>escalate to compliance review</em>, then a narrow band of it becomes Pherix-shaped. But the headline use case (reply to tickets) isn't.</p>
-    </div>
-  </details>
-
-  <details class="reject">
-    <summary><b>Healthcare / medical-record automation</b> &mdash; Abridge / Suki / OpenEvidence territory.<span class="verdict">reject · regulatory tail unmanageable</span></summary>
-    <div class="body">
-      <p>The wedge is actually a near-perfect match — every action is irreversible-adjacent, audit is regulator-required, multi-agent concurrency exists across clinicians and AI scribes. The problem is HIPAA, BAAs, the cost of an information-security audit, and the requirement for live test environments only available to entities with healthcare insurance. As a solo-founder dogfood, the regulator-tail activation energy dwarfs the engineering work. The right way to enter healthcare is with a clinician co-founder or via a partnered design firm; neither is the solo-founder dogfood loop.</p>
-      <p class="when"><b>When it could be right:</b> with a healthcare-side co-founder, this becomes the strongest Pherix vertical of all. Park it.</p>
-    </div>
-  </details>
-
-  <details class="reject">
-    <summary><b>Legal automation</b> &mdash; Harvey / Spellbook / EvenUp territory.<span class="verdict">reject · industry-knowledge moat</span></summary>
-    <div class="body">
-      <p>The wedge alignment is genuine (contract execution, filing, settlement disbursement are all irreversible) but the moat in legal AI is &laquo;which firm trusts you with their workflows&raquo;, which is bought with industry credibility, not technical superiority. A solo founder without legal-industry trust can build the best legal-AI agent technically and lose to the worst one with three former Big Law partners on the cap table. Pherix as substrate-for-legal-AI is a real positioning long-term, but as solo-founder dogfood it stresses the GTM muscle Pherix is deliberately not building.</p>
-      <p class="when"><b>When it could be right:</b> Pherix-as-platform sold to existing legal-AI vendors (Harvey buys your engine, doesn't replace it). Sales motion not Pherix-shaped today.</p>
-    </div>
-  </details>
-
-  <details class="reject">
-    <summary><b>Marketing / copywriting agents</b> &mdash; Jasper / Copy.ai etc.<span class="verdict">reject · no irreversibility</span></summary>
-    <div class="body">
-      <p>The agent's outputs are <em>text</em>: drafts, social posts, blog articles. Every "side effect" is reversible at the click-of-delete level. There's no &laquo;wire transfer&raquo;-shaped action, no &laquo;regulatory filing&raquo;-shaped action, no &laquo;production deploy&raquo;-shaped action. Pherix's wedge requires irreversibility somewhere in the agent's action set; marketing agents structurally don't have it. The right tool layer here is content quality (detection: brand-voice classifiers, hallucination filters) and editorial review, not transactional containment.</p>
-      <p class="when"><b>When it could be right:</b> if the marketing agent <em>fires</em> the content (auto-posts to social, auto-sends emails to a list), the fire step is Pherix-shaped. The drafting step isn't.</p>
-    </div>
-  </details>
-
-  <details class="reject">
-    <summary><b>Coding agents</b> &mdash; Cursor / Copilot / Devin-style.<span class="verdict">reject · git makes reversibility cheap</span></summary>
-    <div class="body">
-      <p>Hot space, real money, but every action a coding agent takes is reversible via <code>git</code> — branches, reverts, stashes, undo-buffers. The cost of an undo is approximately zero (a commit). The AI-guardrails tool layer (linters, type-checks, CI) already does most of what could go wrong. Pherix's wedge — making irreversible side effects survivable — adds little when the underlying medium is git-reversible by default. The interesting Pherix-shape inside coding agents is the <em>fleet</em> version (migration bots, pick #2 above): fan out work across many repos and need cross-repo transactional semantics. The single-repo coding agent isn't it.</p>
-      <p class="when"><b>When it could be right:</b> production-deploy actions inside the coding loop (auto-deploy on green CI) — but that's just the DevOps pick (#1) wearing a different hat.</p>
-    </div>
-  </details>
-
-  <details class="reject">
-    <summary><b>Voice agents</b> &mdash; phone agents, real-time conversational.<span class="verdict">reject · continuous channel</span></summary>
-    <div class="body">
-      <p>We covered this earlier in the conversation. The speech itself is the irreversible side effect; it's continuous and entangled with an un-pausable real-time channel; there's no clean stage-then-commit boundary because the agent is narrating in real time; and the gate is human-speed, which kills the call. The backend resource layer beneath a phone agent (the actual booking, the actual charge) could be Pherix-transacted — but that's the booking-system / payment-system pick, not the voice agent itself.</p>
-      <p class="when"><b>When it could be right:</b> as the resource-layer infrastructure beneath voice products, never as the voice product itself.</p>
-    </div>
-  </details>
-
-  <p style="margin-top: 1.5rem; font-size: 0.94rem; color: var(--ink-3);">
-    <strong>The pattern in the rejections.</strong> Every one fails on one of three axes: <em>wrong wedge</em> (the agent's actions are reversible by default, so Pherix's containment story is invisible), <em>wrong moat</em> (the buyer's decision is bought with industry credibility, not technical alignment), or <em>wrong channel</em> (real-time / streaming kills staging). The four picks fail none of these — and between them, they cover Pherix's capability matrix with low overlap.
-  </p>
-</section>
-
-<!-- ============================================================= -->
-<section>
-  <h2>The structural advantage worth naming</h2>
-  <div class="callout">
-    <p>
-      Each prototype's failure modes feed Pherix's roadmap <em>directly</em>. The SRE bot needs result-piped compensators because <code>kubectl scale</code> returns a count the compensator needs &mdash; that's Slice-3 FU#1 becoming a customer-driven feature request rather than a speculative cleanup. The reconciliation agent needs the audit row to persist read / write keys so &laquo;which rows did this match touch&raquo; is answerable &mdash; that's Slice-4 FU#2 turning into a real ask. The migration bot needs the audit journal to survive a process crash so it can resume across a CI restart &mdash; that's Slice-1 FU#4 (durable-default audit) becoming load-bearing for a real use case.
-    </p>
-    <p>
-      The dogfood matrix <em>is</em> product discovery. Three small prototypes will surface more roadmap signal than three months of speculative spec work, and each one is also evidence we can hand to a buyer or a YC partner: &laquo;here's the agent running against real conditions; here's the journal; here's the rollback in action.&raquo; The verticals don't need to <em>succeed as businesses</em> for the dogfood to deliver its value. They need to <em>survive their failure modes</em> through Pherix.
+      So the suite splits cleanly. The deterministic tests answer
+      <em>"is the engine correct?"</em> (yes, 367 times). The dogfoods answer a
+      different question the unit suite structurally cannot: <em>"is the engine
+      useful when a real agent drives it against a real backend?"</em> One of
+      them, below, found a correctness bug the 367 tests all missed.
     </p>
   </div>
 </section>
 
-<!-- ============================================================= -->
+<!-- ===================================================================== -->
+<section id="harness">
+  <h2>The shared real-agent harness</h2>
+  <p>
+    Merged at <code>add6709</code>, 367 tests green, fully offline-tested via a
+    mocked client; <em>real runs are online and operator-driven</em>. One harness
+    underpins the lot: an Anthropic tool-use loop running inside
+    <code>agent_txn</code> / <code>dry_run</code>, dispatching each tool call the
+    model emits to the matching Pherix <code>@tool</code>.
+  </p>
+  <div class="harness">
+    <h3>How the loop closes</h3>
+    <div class="flow">
+      model emits tool call → harness routes to the matching <b>@tool</b> →
+      Pherix snapshots / stages / journals → result (or <b>policy denial</b>)
+      flows back<br>
+      &nbsp;&nbsp;↳ a denial is fed back to the model as a <b>tool_result error</b>
+      → the agent <b>adapts</b> its next move
+    </div>
+    <p>
+      That feedback edge matters: Pherix isn't a silent wall the agent crashes
+      into. A denied capability returns to the model as a structured error, and
+      a real model <em>re-plans around it</em> — which is the live behaviour no
+      scripted test exercises.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="suite">
+  <h2>The four streams</h2>
+
+  <article class="dog">
+    <div class="dog-head">
+      <h3>1 · DevOps dogfood</h3>
+      <span class="badge">✓ built</span>
+    </div>
+    <p>
+      A real agent migrates a database, writes config, and fires an
+      <em>irreversible</em> deploy. The post-deploy smoke test fails
+      <em>inside the commit fire-loop</em> — exactly the worst moment, after the
+      irreversible action has already gone out. <code>_partial_unwind</code>
+      compensates the deploy and restores the reversible writes around it,
+      leaving the world clean.
+    </p>
+    <div class="proves"><b>Proves</b>Atomic release unwind, driven by a real model — "agent ACID for your pipeline." The blast-radius case: highest stakes, most irreversible.</div>
+  </article>
+
+  <article class="dog audit">
+    <div class="dog-head">
+      <h3>2 · Audit dogfood</h3>
+      <span class="badge">✓ built</span>
+    </div>
+    <p>
+      Two agents reconcile a ledger <em>concurrently</em>, under two distinct
+      <code>client_id</code>s. Every adjustment is attributed to its agent and
+      isolated from the other, then queryable as a per-client compliance view —
+      the journal handed straight to an auditor.
+    </p>
+    <div class="proves"><b>Proves</b>"Hand it to your auditor." Per-client attribution + isolation as a compliance artifact. <strong>And it surfaced the headline finding below.</strong></div>
+  </article>
+
+  <article class="dog sandbox">
+    <div class="dog-head">
+      <h3>3 · Coding sandbox</h3>
+      <span class="badge poc">PoC</span>
+    </div>
+    <p>
+      An <em>agent-agnostic, environment-level</em> interception: a Pherix
+      copy-on-write filesystem overlay plus shimmed <code>git</code> /
+      <code>sh</code> binaries on <code>PATH</code> that route a coding CLI's
+      built-in file and shell actions back through Pherix. This is deliberately
+      <em>not</em> a custom coding agent — enterprises run out-of-box Claude
+      Code, Cursor, Gemini CLI, or open-source agents — and <em>not</em> a
+      Claude-Code-only hook.
+    </p>
+    <div class="proves"><b>Proves</b>"Build once, govern everything." Agent-agnostic governance: the environment is wrapped, so the agent identity is irrelevant.</div>
+  </article>
+
+  <article class="dog mcp">
+    <div class="dog-head">
+      <h3>4 · Live MCP</h3>
+      <span class="badge">✓ built</span>
+    </div>
+    <p>
+      A runnable <code>python -m pherix.frontends.proxy</code> gateway entry
+      point, plus a real-subprocess JSON-RPC parity test: it spawns the gateway
+      as a child process, talks <em>real stdio</em> over the wire, and asserts
+      parity with the in-process stub.
+    </p>
+    <div class="proves"><b>Proves</b>Closes the honest gap Slice 8 flagged — the wire is now proven over a real process boundary, not just by inspection.</div>
+  </article>
+</section>
+
+<!-- ===================================================================== -->
+<section id="split">
+  <h2>Two interception models — why the split</h2>
+  <p>
+    The streams don't all hook in the same way, and that's the design, not an
+    accident. It turns on a single fact about MCP: <strong>MCP can only
+    <em>add</em> tools — it cannot intercept an agent's <em>built-in</em>
+    ones.</strong>
+  </p>
+  <div class="split">
+    <div class="col">
+      <div class="lab">Domain tools → library shape</div>
+      <h4>DevOps + audit</h4>
+      <p>
+        These agents call <em>tools we define</em> — <code>run_migration</code>,
+        <code>query_ledger</code>, and so on. The realistic shape is the library
+        use case: a real LLM tool-use loop where every tool is
+        <code>@tool</code>-wrapped. The shared harness handles this directly.
+      </p>
+    </div>
+    <div class="col">
+      <div class="lab">Built-in tools → environment shape</div>
+      <h4>Coding sandbox</h4>
+      <p>
+        A coding agent uses <em>built-in</em> tools (Edit / Write / Bash). MCP
+        cannot reach those. So coding needs the environment-level sandbox: wrap
+        the filesystem and the shell binaries the agent shells out to, and the
+        agent's own tools route through Pherix without knowing it.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="finding">
+  <h2>The bug the dogfood found</h2>
+  <div class="finding">
+    <span class="tag">★ headline finding — the proof the approach works</span>
+    <h3>A real-agent dogfood caught a Slice-4 isolation bug all 367 deterministic tests missed.</h3>
+    <p>
+      The audit dogfood ran two agents against a ledger and tripped a false
+      <code>IsolationConflict</code>: a transaction that <em>read</em> a key and
+      then <em>wrote</em> the same key was flagged as conflicting with itself.
+      The cause was two internal version-checkers disagreeing —
+    </p>
+    <div class="chain">
+      checker A: <b>sees-own-uncommitted-writes</b> (this txn's pending view)<br>
+      checker B: <b>committed-only</b> (what's durably on disk)<br>
+      &nbsp;&nbsp;↳ on a read-then-write of one key, A and B return different
+      versions → spurious conflict
+    </div>
+    <p>
+      The decisive detail: <strong>the bug only manifests on a real on-disk
+      database</strong> — the exact path the convenient in-memory unit tests
+      never exercised. The deterministic suite couldn't have caught it, because
+      its world-shape didn't include the surface where the disagreement appears.
+      A real agent, against a real backend, walked straight onto it.
+    </p>
+    <p>
+      That is <em>precisely</em> what dogfooding is for: not re-confirming what
+      the unit suite already knows, but reaching the conditions the unit suite
+      structurally can't. Fix in flight.
+    </p>
+    <p class="lesson">
+      The lesson: test against the real backend shape, not the convenient
+      in-memory one. Two version-checkers that agree on a toy store can quietly
+      disagree on disk — and only a real run finds the seam.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="moat">
+  <h2>Local agents — the air-gapped capstone and the moat</h2>
+  <p>
+    Because Pherix <strong>never calls the model</strong>, it is model-blind
+    <em>and</em> deployment-blind by construction. The sandbox governs the
+    <em>environment</em>, so it does not care whether the agent is cloud Claude
+    or a local open-source agent — e.g. OpenClaw (Peter Steinberger's local-first
+    open-source agent) — running on a local model (Ollama / vLLM) with the wifi
+    physically off.
+  </p>
+  <div class="moat">
+    <h3>The capstone validation</h3>
+    <p>
+      Run an open-source agent on a local model, inside the sandbox, on a
+      <span class="key">disposable machine</span> — and let it <em>genuinely
+      attempt destructive actions</em>: <code>rm -rf</code>, drop table, push to
+      main. A real adversarial red-team, safe precisely because the box is
+      disposable and Pherix is in the path.
+    </p>
+    <p>
+      This configuration — <span class="key">cross-agent + cross-model +
+      cross-deployment</span> — is something no cloud vendor can serve. Anthropic
+      will not ship the tool that also polices a local Llama running offline on
+      someone else's laptop. <strong>That neutrality is the moat.</strong>
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="icp">
+  <h2>The punchline — one buyer, four facets</h2>
+  <div class="icp">
+    <p>
+      These are not four verticals. They are four facets of <strong>one
+      buyer</strong>: the security / platform team at a regulated or
+      security-conscious enterprise.
+    </p>
+    <div class="facets">
+      <div class="facet"><div class="fl">Sandbox</div><div class="ft">Code agents</div><div class="fd">Engineer productivity, governed.</div></div>
+      <div class="facet"><div class="fl">DevOps</div><div class="ft">Automation</div><div class="fd">Highest blast radius.</div></div>
+      <div class="facet"><div class="fl">Local</div><div class="ft">Air-gapped</div><div class="fd">Data can't touch a cloud API.</div></div>
+      <div class="facet"><div class="fl">Audit</div><div class="ft">Compliance</div><div class="fd">The signoff that closes.</div></div>
+    </div>
+    <p>
+      One team wants all four: code agents for productivity, devops automation
+      where the blast radius is highest, local agents because the data can't
+      leave the building, and audit because someone has to sign off. The dogfood
+      matrix <em>is</em> the product discovery — whichever facet demos hardest to
+      that buyer is the Phase-2 wedge. <strong>Current lead: governed code
+      agents, with audit as the closer.</strong>
+    </p>
+  </div>
+  <p class="retired">
+    Earlier we considered sales / support / healthcare / legal / marketing /
+    voice and rejected them — these three streams plus the local dimension
+    converge on one real buyer, which the rejects didn't.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
 <footer>
   <p>Pherix · <code>docs/dogfood.html</code> · served by the same local <code>python -m http.server</code> at the repo root.</p>
-  <p>For agents reading this: see <code>CLAUDE.md</code> at the repo root for the project spec, and the §"How to explain things to the operator" section for the explanation register.</p>
+  <p>Suite merged at <code>add6709</code> — 367 tests green, offline via a mocked client; real runs are online and operator-driven. See <a href="phases.html">phases.html</a> (the commercial arc) and <a href="roadmap.html">roadmap.html</a> (the slice-level engine).</p>
 </footer>
 
 </main>
