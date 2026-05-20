@@ -7,6 +7,10 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# Real-agent dogfoods only (examples/dogfood/). The library itself stays
+# dependency-free — this extra is never needed to import or use pherix, only
+# to run the keyed real-agent scripts.
+dogfood = ["anthropic"]
 
 [build-system]
 requires = ["hatchling"]
