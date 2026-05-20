@@ -110,6 +110,8 @@ def test_moved_version_produces_conflict():
         key=("k",),
         version_at_read=5,
         version_now=6,
+        # Read-only key (no own write) → expected current is v_at_read.
+        version_expected=5,
     )
 
 
