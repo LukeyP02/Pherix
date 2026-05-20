@@ -369,9 +369,9 @@
   <h1>Pherix — Build Roadmap</h1>
   <div class="sub">A visual map of the eight-slice build. Each slice ships something demoable; the system gets <em>deeper</em>, not just wider. Hover the timeline, expand a card, follow a thread.</div>
   <div class="meta">
-    <span><b>Status:</b> Slices 1–6 merged · Slice 7 next (speculative dry-run)</span>
-    <span><b>Tests on <code>main</code>:</b> 280 passing</span>
-    <span><b>Last merge:</b> <code>Slice 6</code> (policy engine)</span>
+    <span><b>Status:</b> Slices 1–7 merged · Slice 8 next (MCP gateway)</span>
+    <span><b>Tests on <code>main</code>:</b> 299 passing</span>
+    <span><b>Last merge:</b> <code>Slice 7</code> (dry-run)</span>
     <span><b>Today:</b> 2026-05-19</span>
   </div>
 </header>
@@ -410,8 +410,8 @@
         <tr><td>Isolation</td><td><span class="pill">diff</span> read/write keys + versions against the journal</td><td><span class="badge done">4 done</span></td></tr>
         <tr><td>Replay</td><td>fold <span class="pill">forward</span> against fresh state, assert identical results</td><td><span class="badge done">5 done</span></td></tr>
         <tr><td>Policy (stage + commit)</td><td>walk the journal at stage-time AND again at commit-time, re-evaluate every rule against every effect</td><td><span class="badge done">6 done</span></td></tr>
-        <tr><td>Speculative dry-run</td><td>fold forward against a snapshot, then discard</td><td><span class="badge active">7 next</span></td></tr>
-        <tr><td>MCP gateway</td><td>same engine, different front-end driving the same journal</td><td><span class="badge future">8</span></td></tr>
+        <tr><td>Speculative dry-run</td><td>fold forward against a snapshot, then discard</td><td><span class="badge done">7 done</span></td></tr>
+        <tr><td>MCP gateway</td><td>same engine, different front-end driving the same journal</td><td><span class="badge active">8 next</span></td></tr>
       </tbody>
     </table>
   </section>
@@ -442,11 +442,11 @@
           </pattern>
         </defs>
 
-        <!-- "you are here" band wrapping Slice 7 (next on path) -->
+        <!-- "you are here" band wrapping Slice 8 (next on path) -->
         <g>
-          <rect x="858" y="215" width="134" height="124" fill="url(#diag)" color="var(--active)" />
-          <text x="925" y="208" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">you are here</text>
-          <path d="M925 211 L925 219" stroke="var(--active)" stroke-width="1.5"/>
+          <rect x="8" y="215" width="124" height="124" fill="url(#diag)" color="var(--active)" />
+          <text x="70" y="208" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">you are here</text>
+          <path d="M70 211 L70 219" stroke="var(--active)" stroke-width="1.5"/>
         </g>
 
         <!-- main backbone arrows -->
@@ -577,23 +577,23 @@
           <text x="60" y="102" text-anchor="middle" font-size="10" fill="var(--done)">✓ merged</text>
         </g>
 
-        <!-- SLICE 7 (next · active) -->
+        <!-- SLICE 7 (done · merged 6ee8980) -->
         <g class="node-card" data-slice="7" transform="translate(865,220)">
-          <rect class="node-bg" width="120" height="110" rx="8" fill="var(--active-bg)" stroke="var(--active)" stroke-width="2"/>
-          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">SLICE 7</text>
+          <rect class="node-bg" width="120" height="110" rx="8" fill="var(--done-bg)" stroke="var(--done)" stroke-width="1.5"/>
+          <text x="60" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--done)">SLICE 7</text>
           <text x="60" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">Dry-run</text>
-          <text x="60" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">speculative diff</text>
-          <text x="60" y="92" text-anchor="middle" font-size="10" fill="var(--active)">⟳ next</text>
+          <text x="60" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">fold then discard</text>
+          <text x="60" y="92" text-anchor="middle" font-size="10" fill="var(--done)">✓ merged</text>
         </g>
 
-        <!-- SLICE 8 -->
+        <!-- SLICE 8 (next · active) -->
         <g class="node-card" data-slice="8" transform="translate(15,220)">
-          <rect class="node-bg" width="110" height="110" rx="8" fill="var(--future-bg)" stroke="var(--future)" stroke-width="1.5"/>
-          <text x="55" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--future)">SLICE 8</text>
+          <rect class="node-bg" width="110" height="110" rx="8" fill="var(--active-bg)" stroke="var(--active)" stroke-width="2"/>
+          <text x="55" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">SLICE 8</text>
           <text x="55" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">MCP gateway</text>
           <text x="55" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">same engine,</text>
           <text x="55" y="78" text-anchor="middle" font-size="11" fill="var(--ink-soft)">proxy front-end</text>
-          <text x="55" y="100" text-anchor="middle" font-size="10" fill="var(--future)">future</text>
+          <text x="55" y="100" text-anchor="middle" font-size="10" fill="var(--active)">⟳ next</text>
           <!-- Slice-4 FU Serialize cross-process (decide alongside Slice 8 scope) -->
           <g class="followup-dot" data-fu="S4-serialize">
             <circle cx="105" cy="10" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
@@ -719,15 +719,15 @@
 
   <!-- =========================================== -->
   <section id="you-are-here">
-    <h2>Where am I? <span class="hint">— between Slice 6 and Slice 7</span></h2>
+    <h2>Where am I? <span class="hint">— between Slice 7 and Slice 8</span></h2>
     <div class="compare">
       <div>
-        <h4>What's behind you <span class="tag now">Slices 1–6, merged</span></h4>
-        The engine is complete in the <em>ACI</em> sense (atomicity, consistency-within-a-txn, isolation), the journal is <em>executable</em>, and policy is now a real predicate fold over it. Slice 1 (<code>ad4e9c0</code>) shipped the reversible-path engine. Slice 2 (<code>c926f97</code>) proved the adapter protocol with copy-on-write filesystem snapshots. Slice 3 (<code>a13018b</code>) added the irreversible lane: staging, compensators-as-tools, the gate, partial-commit unwind. Slice 4 (<code>0fab344</code>) brought isolation online with read/write-set capture, per-adapter versioning, the commit-time diff, and three resolution policies. Slice 5 (<code>9ff69a6</code>) made the journal executable through <code>pherix.replay(...)</code>. Slice 6 (<code>c2318d5</code>) turned <code>Policy</code> from a tool-name allow-list into a real predicate over <code>(effect, ctx)</code>: <code>@policy.rule</code> Python callables returning <code>Allow | Deny(reason)</code>, <code>Cap.count</code> and <code>Cap.sum</code> spend-cap primitives folding over the journal-so-far, a stage-time AND commit-time evaluation bracket that runs <em>before</em> the staged-fire loop (so irreversibles are pre-empted under commit-time denial), enriched <code>PolicyViolation</code> carrying <code>where</code>/<code>rule</code>/<code>reason</code>/<code>effect_index</code>. <strong>280 tests green</strong> (+28 over Slice 5 baseline).
+        <h4>What's behind you <span class="tag now">Slices 1–7, merged</span></h4>
+        The determinism engine is complete. Slice 1 (<code>ad4e9c0</code>) shipped the reversible-path engine. Slice 2 (<code>c926f97</code>) proved the adapter protocol with copy-on-write filesystem snapshots. Slice 3 (<code>a13018b</code>) added the irreversible lane. Slice 4 (<code>0fab344</code>) brought isolation online. Slice 5 (<code>9ff69a6</code>) made the journal executable through <code>pherix.replay(...)</code>. Slice 6 (<code>c2318d5</code>) turned <code>Policy</code> into a real predicate fold over <code>(effect, ctx)</code> with stage-time AND commit-time evaluation. Slice 7 (<code>6ee8980</code>) added speculative dry-run: <code>pherix.dry_run(adapters)</code> runs the body identically to <code>agent_txn</code> but ends in <code>adapter.rollback()</code> — the world is bit-identical pre/post; <code>DryRunResult</code> carries the journal, the <code>would_have_fired</code> filter, and policy verdicts captured via <code>try_evaluate</code>/<code>collect_verdicts</code> (capture-mode siblings of <code>evaluate</code>/<code>evaluate_journal</code>, never raise on <code>Deny</code>). <strong>299 tests green</strong> (+19 over Slice 6 baseline). Slices 6.5 and 7.5 sit open as scoped follow-ups — world-state-aware policy reads, per-adapter structured state diff, concurrency-aware dry-run.
       </div>
       <div>
-        <h4>What's in flight <span class="tag next">Slice 7 — speculative dry-run</span></h4>
-        With the journal canonical and executable, Slice 7 is "nearly free" — fold the journal forward against a <em>snapshot</em> of state, return the diff, then discard the snapshot. Same engine, different terminator. An agent gets to preview the full state diff, policy verdict, and irreversible-effect list of a proposed transaction before any of it is real. Implementation reuses Slice 1–6's commit fold; the slice's work is the snapshot-then-discard wrapping plus the diff surface.
+        <h4>What's in flight <span class="tag next">Slice 8 — MCP gateway frontend</span></h4>
+        Slice 8 is the test of the front-end-agnostic discipline. Same engine, same journal, same compensator-as-tool pattern — but driven through Anthropic's Model Context Protocol so any MCP-speaking agent (Claude Code, Aider, Cursor agentic mode) can be wrapped by Pherix without writing Python against the library directly. The interception-axis discussion (see <code>future.html</code>) sharpens the first specific user: a security team allowing coding-CLI provisioning <em>because</em> Pherix sits in front of it. Decision aid pending.
       </div>
     </div>
   </section>
@@ -889,22 +889,33 @@
       </article>
 
       <!-- SLICE 7 -->
-      <article class="slice active">
+      <article class="slice done">
         <h3><span class="num">07</span> Speculative dry-run</h3>
-        <div class="badges"><span class="badge active">next on path</span></div>
-        <p class="one-liner">Fold the journal forward against a snapshot, then discard the snapshot. Same engine; different terminator.</p>
+        <div class="badges"><span class="badge done">done · merged</span><span class="badge dim">6ee8980</span><span class="badge dim">299 tests · +19</span></div>
+        <p class="one-liner">Same forward fold as <code>agent_txn</code> ending in <code>adapter.rollback()</code> instead of <code>adapter.commit()</code>. World is bit-identical pre/post; the agent walks away with a <code>DryRunResult</code> describing the journal it would have produced.</p>
         <details>
-          <summary>What an agent gets out of this</summary>
+          <summary>What shipped · the five decisions, realised</summary>
           <div class="body">
-            <p>Agents that can <em>preview</em> the consequences of their tool calls — full state diff, policy result, irreversible-effect list — before any of it is real. The implementation is the commit fold, but pointed at an ephemeral copy of state, with the diff returned as the result. Like Slice 5, this is "nearly free once the journal exists."</p>
+            <p><span class="label">The shift, in retrospect.</span> Slice 7 is the smallest slice in the build because it mostly <em>composes</em>. The snapshot/rollback bracket (Slice 1), the journal (Slice 1), the irreversible staging path (Slice 3), and the policy fold (Slice 6) all already existed. The whole contribution was a new entry point, a result dataclass, capture-mode sibling methods on <code>Policy</code>, and a one-column audit schema bump. The "nearly free" framing held — until you reach per-adapter structured state diff, which is the bit deferred to Slice 7.5.</p>
+            <p><span class="label">Locked &amp; shipped.</span></p>
+            <ul>
+              <li><span class="label">D1 — Top-level <code>dry_run()</code> context manager, not an <code>agent_txn</code> flag.</span> Mirrors the <code>agent_txn</code> / <code>run_txn</code> / <code>replay</code> register. Internally shares <code>TxnContext</code>; externally is its own entry point.</li>
+              <li><span class="label">D2 — Irreversibles stage as normal, never fire.</span> Slice 3's staging path already does this; dry-run just never reaches the staged-fire loop. <code>result.would_have_fired</code> filters the journal to <code>(reversible=False, status=STAGED)</code>.</li>
+              <li><span class="label">D3 — <code>DryRunResult</code> ships three layers; the fourth defers.</span> Journal (free), <code>would_have_fired</code> (filter, free), <code>policy_verdicts</code> (capture, free). Per-adapter structured state diff defers to Slice 7.5 via an opt-in <code>StateDiffable</code> sub-protocol.</li>
+              <li><span class="label">D4 — Capture-mode policy, never raises on <code>Deny</code>.</span> New sibling methods <code>Policy.try_evaluate</code> (stage-time, per-effect) and <code>Policy.collect_verdicts</code> (commit-time, whole journal). Caps still only accumulate on Allow — the load-bearing equality between raise-mode and capture-mode. The worker picked the sibling-method route over catch-in-context (cleaner semantics, no exception-as-control-flow).</li>
+              <li><span class="label">D5 — Strict state preservation; audit is opt-in.</span> Reversibles restore via existing bracket; irreversibles never invoked; audit lands in operator-supplied <code>target_audit</code> (default in-memory) with a <code>dry_run=1</code> column for filtering.</li>
+            </ul>
+            <p><span class="label">Demo.</span> <code>examples/slice7_demo.py</code> walks three scenarios: clean mixed SQL+FS+HTTP dry-run; policy denial captured (body keeps running); world-state assertion (SQL rows + FS content hashes byte-identical before/after).</p>
+            <p><span class="label">Backwards-compat preserved.</span> Slice 6's <code>Policy.evaluate</code> / <code>Policy.evaluate_journal</code> raise-mode contracts are untouched — capture-mode is purely additive. The 280-baseline tests stay green untouched.</p>
+            <p><span class="label">Slice 7.5 deferrals.</span> Per-adapter structured state diff (<code>StateDiffable</code> sub-protocol on adapters), and concurrency-aware dry-run (<code>JournalRegistry</code> soft-claim semantics, cross-process arbitration). Both are scoped follow-ups; neither blocks Slice 8.</p>
           </div>
         </details>
       </article>
 
       <!-- SLICE 8 -->
-      <article class="slice future">
+      <article class="slice active">
         <h3><span class="num">08</span> MCP gateway front-end</h3>
-        <div class="badges"><span class="badge future">future</span></div>
+        <div class="badges"><span class="badge active">next on path</span></div>
         <p class="one-liner">The same core engine, driven by an MCP proxy instead of a Python <code>import</code>. Validates the <code>frontends/</code> discipline.</p>
         <details>
           <summary>Why it's the last slice, not the first</summary>

@@ -66,6 +66,55 @@ class TransactionalResourceAdapter(ResourceAdapter, Protocol):
     def rollback(self) -> None: ...
 
 
+@runtime_checkable
+class StateDiffable(ResourceAdapter, Protocol):
+    """Adapters that can describe a transaction's structural effect (Slice 8).
+
+    Slice 7's :class:`~pherix.core.dry_run.DryRunResult` carries the
+    *journal* — the per-effect record of *intent*. Slice 8 adds the
+    *structural* answer a gateway client wants: "which rows would have been
+    inserted? which files would have been written?". That answer is a diff
+    of the resource's current state against a baseline captured at
+    transaction begin.
+
+    Two methods, captured-then-compared:
+
+    - :meth:`state_baseline` is called once at transaction begin — it
+      returns an opaque, JSON-light snapshot of the *queryable* resource
+      state (for SQL: ``{table: {pk: row}}`` over user tables; for FS:
+      ``{relpath: sha256}`` over the rooted tree). This is **not** the
+      per-effect ``snapshot`` — a SQLite ``SAVEPOINT`` is not separately
+      queryable as a before-image, so the diff cannot read the pre-image
+      from inside it. The baseline is a parallel, read-only capture that
+      never touches the snapshot/apply/restore lane.
+    - :meth:`state_diff` is called at the dry-run finalise hook, *before*
+      the rollback discards the world, and compares the live resource
+      against ``baseline``.
+
+    Required output shapes (the cross-driver contract — front-ends assert
+    on these keys, so do not rename them):
+
+    - SQL: ``{"rows_added": [...], "rows_modified": [...],
+      "rows_deleted": [...]}``
+    - FS:  ``{"files_added": [...], "files_modified": [...],
+      "files_deleted": [...]}``
+
+    Adapters whose "diff" is not a state comparison do not conform.
+    :class:`~pherix.core.adapters.http.HTTPAdapter` is the example: it is
+    irreversible, has no queryable state to baseline, and its structural
+    record is the journal's ``would_have_fired`` list — not a row/file
+    delta. It deliberately does **not** implement these methods.
+    """
+
+    def state_baseline(self) -> Any:
+        """Capture a read-only baseline of the resource at txn begin."""
+        ...
+
+    def state_diff(self, baseline: Any) -> dict:
+        """Diff the live resource against ``baseline``; return the delta dict."""
+        ...
+
+
 class VersionedResourceAdapter(ResourceAdapter, Protocol):
     """Adapters that participate in isolation (Slice 4).
 

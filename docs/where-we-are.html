@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Where we are · Pherix</title>
+<style>
+  :root {
+    --bg: #faf8f4;
+    --panel: #f1ece2;
+    --panel-2: #ebe3d2;
+    --ink: #161513;
+    --ink-2: #4a443c;
+    --ink-3: #7a7268;
+    --ink-faint: #a89e8c;
+    --rule: #d0c7b5;
+    --accent: #b4421e;
+    --accent-2: #355c3a;
+    --accent-3: #2c4a6a;
+    --accent-warn: #8a6a14;
+    --shade: rgba(22, 21, 19, 0.05);
+    --code-bg: rgba(22, 21, 19, 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14130f;
+      --panel: #1c1a14;
+      --panel-2: #221f17;
+      --ink: #ece6d8;
+      --ink-2: #c0baac;
+      --ink-3: #8a8478;
+      --ink-faint: #5a544a;
+      --rule: #3a342a;
+      --accent: #e07a4e;
+      --accent-2: #6ba070;
+      --accent-3: #7ea0c8;
+      --accent-warn: #d4ac56;
+      --shade: rgba(255, 250, 240, 0.04);
+      --code-bg: rgba(255, 250, 240, 0.06);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
+    font-size: 17px; line-height: 1.6;
+    padding: 4rem 1.5rem 6rem;
+  }
+  main { max-width: 920px; margin: 0 auto; }
+  .eyebrow {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-3); margin: 0 0 0.5rem;
+  }
+  h1 {
+    font-size: 2.5rem; line-height: 1.06; margin: 0 0 1rem;
+    font-weight: 500; letter-spacing: -0.012em;
+  }
+  h2 {
+    font-size: 1.55rem; line-height: 1.2; margin: 3.5rem 0 1rem;
+    font-weight: 500; letter-spacing: -0.005em;
+    border-top: 1px solid var(--rule); padding-top: 1.5rem;
+  }
+  h3 {
+    font-size: 1.2rem; margin: 1.6rem 0 0.4rem;
+    font-weight: 500; letter-spacing: -0.003em;
+  }
+  .lede {
+    color: var(--ink-2); font-size: 1.12rem; max-width: 64ch; margin: 0;
+  }
+  p { color: var(--ink-2); margin: 0.6rem 0 0.9rem; }
+  p strong { color: var(--ink); font-weight: 600; }
+  code {
+    font-family: ui-monospace, monospace; font-size: 0.88em;
+    background: var(--code-bg); padding: 1px 5px; border-radius: 3px;
+  }
+  em { color: var(--ink); font-style: italic; }
+  ul, ol { color: var(--ink-2); padding-left: 1.4rem; }
+  ul li, ol li { margin: 0.4rem 0; }
+
+  nav.toc {
+    margin: 2rem 0 2.5rem; padding: 1rem 1.4rem;
+    background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 6px;
+    font-family: ui-monospace, monospace; font-size: 0.86rem;
+  }
+  nav.toc .label {
+    display: block; color: var(--ink-3);
+    font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  nav.toc a {
+    display: inline-block; padding: 2px 0; margin-right: 1.2rem;
+    color: var(--ink-2); text-decoration: none;
+  }
+  nav.toc a:hover { color: var(--accent); }
+
+  .meta-row {
+    margin-top: 1rem;
+    font-family: ui-monospace, monospace; font-size: 0.78rem;
+    color: var(--ink-3);
+  }
+  .meta-row span { display: inline-block; margin-right: 1.2rem; }
+  .meta-row b { color: var(--ink); font-weight: 600; }
+
+  .premise {
+    margin: 1.4rem 0 2rem;
+    padding: 1.3rem 1.5rem;
+    background: var(--panel-2);
+    border: 1px solid var(--rule); border-radius: 6px;
+  }
+  .premise p:first-child { margin-top: 0; }
+  .premise p:last-child { margin-bottom: 0; }
+  .premise em { font-weight: 500; }
+
+  .reassure {
+    margin: 1.2rem 0 0;
+    padding: 1.1rem 1.4rem;
+    background: var(--panel);
+    border-left: 4px solid var(--accent-warn);
+    border-radius: 4px;
+  }
+  .reassure p { margin: 0; color: var(--ink); }
+  .reassure .rlabel {
+    font-family: ui-monospace, monospace; font-size: 0.72rem;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent-warn); margin-bottom: 0.3rem;
+  }
+
+  /* slice cards */
+  .slices { display: grid; gap: 1rem; margin: 1.2rem 0 1.5rem; }
+  .slice {
+    padding: 1.1rem 1.3rem 1.2rem;
+    background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 5px;
+    border-left: 4px solid var(--accent-2);
+  }
+  .slice .shead {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap;
+  }
+  .slice h3 {
+    margin: 0; font-size: 1.1rem; font-weight: 600;
+    color: var(--ink);
+  }
+  .slice .sha {
+    font-family: ui-monospace, monospace; font-size: 0.78rem;
+    color: var(--ink-3);
+  }
+  .slice .failmode {
+    font-style: italic; color: var(--ink-2); margin: 0.3rem 0 0.6rem;
+    font-size: 0.98rem;
+  }
+  .slice .body { margin: 0.4rem 0 0.7rem; }
+  .slice .traversal {
+    font-family: ui-monospace, monospace; font-size: 0.78rem;
+    color: var(--accent-2);
+    border-top: 1px dashed var(--rule); padding-top: 0.55rem;
+    margin: 0.7rem 0 0;
+  }
+  .slice .traversal::before { content: "fold · "; color: var(--ink-3); }
+
+  /* axiom section — visually heaviest */
+  .axiom-panel {
+    margin: 1.4rem 0 1.5rem;
+    padding: 1.5rem 1.6rem;
+    background: var(--panel-2);
+    border: 1px solid var(--rule); border-radius: 6px;
+    border-left: 4px solid var(--accent);
+  }
+  .axiom-panel p:first-child { margin-top: 0; }
+  .axiom-panel p:last-child { margin-bottom: 0; }
+  .axiom-panel .axline {
+    font-family: ui-monospace, monospace; font-size: 0.74rem;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 0.5rem;
+  }
+  .axiom-panel .big {
+    font-size: 1.18rem; color: var(--ink); margin: 0.4rem 0 0.9rem;
+  }
+  .axiom-panel .big em { font-style: italic; }
+
+  .diagram {
+    margin: 1.4rem auto 0.6rem;
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+  .diagram-cap {
+    font-family: ui-monospace, monospace; font-size: 0.74rem;
+    color: var(--ink-3); text-align: center; margin: 0.2rem 0 1.5rem;
+  }
+
+  table.ops {
+    width: 100%; border-collapse: collapse; margin: 1.2rem 0 0.6rem;
+    font-size: 0.95rem;
+  }
+  table.ops th, table.ops td {
+    text-align: left; padding: 0.55rem 0.8rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  table.ops th {
+    font-family: ui-monospace, monospace; font-size: 0.74rem;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 500;
+  }
+  table.ops td { color: var(--ink-2); }
+  table.ops td.cap { color: var(--ink); font-weight: 600; }
+  table.ops td.op { font-family: ui-monospace, monospace; font-size: 0.86rem; }
+  table.ops td.slice-cell {
+    font-family: ui-monospace, monospace; font-size: 0.82rem;
+    color: var(--ink-3);
+  }
+  table.ops tr:last-child td { border-bottom: none; }
+  table.ops tr.future td { color: var(--ink-3); font-style: italic; }
+  table.ops tr.future td.cap { color: var(--ink-2); font-style: italic; }
+
+  .state-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+    margin: 1.2rem 0 0.6rem;
+  }
+  @media (max-width: 720px) { .state-grid { grid-template-columns: 1fr; } }
+  .state-col {
+    padding: 1.05rem 1.25rem;
+    background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 5px;
+  }
+  .state-col.now  { border-top: 4px solid var(--accent-2); }
+  .state-col.next { border-top: 4px solid var(--accent-warn); }
+  .state-col h4 {
+    margin: 0 0 0.5rem; font-size: 1.02rem; font-weight: 600;
+    color: var(--ink);
+  }
+  .state-col .ftag {
+    font-family: ui-monospace, monospace; font-size: 0.72rem;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    margin-bottom: 0.4rem;
+  }
+  .state-col.now  .ftag { color: var(--accent-2); }
+  .state-col.next .ftag { color: var(--accent-warn); }
+  .state-col ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+  .state-col li { font-size: 0.96rem; margin: 0.3rem 0; }
+
+  .closing {
+    margin: 1.5rem 0 0; padding: 1.2rem 1.5rem;
+    background: var(--panel-2);
+    border: 1px solid var(--rule); border-radius: 6px;
+    border-left: 4px solid var(--accent-2);
+  }
+  .closing p { font-style: italic; color: var(--ink); }
+  .closing p:first-child { margin-top: 0; }
+  .closing p:last-child { margin-bottom: 0; }
+
+  footer {
+    margin-top: 5rem; padding-top: 2rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.86rem; color: var(--ink-3);
+  }
+  footer p { margin: 0.35rem 0; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <p class="eyebrow">Pherix · where we are</p>
+  <h1>Six slices in, one engine, one journal.</h1>
+  <p class="lede">
+    This is a grounding artifact, not a status report. When "send it"
+    momentum has outrun the mental model, the cure is to sit with each
+    landing and re-see the through-line. What was built, why each piece
+    follows from the last, and the single axiom that ties them together.
+  </p>
+  <div class="meta-row">
+    <span><b>Tests:</b> 280 on <code>main</code></span>
+    <span><b>Shipped:</b> Slices 1&ndash;6</span>
+    <span><b>In worktree:</b> Slice 7</span>
+    <span><b>Today:</b> 2026-05-19</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <span class="label">Contents</span>
+  <a href="#premise">Premise</a>
+  <a href="#s1">Slice 1</a>
+  <a href="#s2">Slice 2</a>
+  <a href="#s3">Slice 3</a>
+  <a href="#s4">Slice 4</a>
+  <a href="#s5">Slice 5</a>
+  <a href="#s6">Slice 6</a>
+  <a href="#axiom">The axiom</a>
+  <a href="#state">Where we stand</a>
+  <a href="#closing">Closing</a>
+</nav>
+
+<!-- ===================================================================== -->
+<section id="premise">
+  <h2>Premise &mdash; you have not built junk</h2>
+  <div class="premise">
+    <p>
+      Over-vibing is the natural cost of build-pace momentum. It is not
+      that the code is sloppy; it is that six slices have landed faster
+      than the mental model has had time to consolidate around them. The
+      shape of the system has been hidden by the speed of laying it down.
+      What follows re-exposes that shape.
+    </p>
+    <p>
+      <strong>Pherix in one sentence.</strong> A Python library that
+      makes the side-effects an AI agent has on the outside world &mdash;
+      SQL writes, filesystem writes, HTTP calls &mdash; behave like
+      database transactions. Atomicity, isolation, capability enforcement,
+      durability, over <em>external</em> resources. The operator wraps
+      their agent's tool-call layer with <code>agent_txn(...)</code> and
+      keeps the rest of their stack unchanged. Pherix is not an agent
+      framework; it does not call LLMs; it does not orchestrate prompts.
+      It sits at the tool-call boundary and enforces.
+    </p>
+  </div>
+
+  <div class="reassure">
+    <p class="rlabel">The reassurance</p>
+    <p>
+      Six slices compose into a coherent thing. The architecture has not
+      drifted &mdash; if anything, the discipline has tightened with each
+      slice, because each new capability has had to fit through the same
+      engine. The next three pages walk that engine.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="slices">
+  <h2>What shipped &mdash; six slices, one engine</h2>
+  <p>
+    Each slice adds <em>one</em> capability to the same engine. The
+    engine itself &mdash; the journal of effects and the adapter
+    protocol &mdash; was built in Slice 1; everything since is a
+    different way of traversing it.
+  </p>
+
+  <div class="slices">
+
+    <article class="slice" id="s1">
+      <div class="shead">
+        <h3>Slice 1 &mdash; the engine itself</h3>
+        <span class="sha"><code>ad4e9c0</code></span>
+      </div>
+      <p class="failmode">
+        The failure mode: an agent's tool call fires immediately,
+        irreversibly, unaudited &mdash; no transaction boundary exists.
+      </p>
+      <p class="body">
+        <code>with agent_txn(adapters): ...</code> intercepts every
+        registered tool call and records it as an <code>Effect</code>
+        in an ordered, append-only <em>journal</em> held by the
+        <code>Transaction</code>. SQL writes route through a
+        <code>SAVEPOINT</code>; <code>rollback()</code> issues
+        <code>ROLLBACK TO SAVEPOINT</code> and the row is gone;
+        <code>commit()</code> finalises and the row stays. The journal
+        is the spine of everything that follows.
+      </p>
+      <p class="traversal">Forward fold &mdash; <code>adapter.apply</code> per effect</p>
+    </article>
+
+    <article class="slice" id="s2">
+      <div class="shead">
+        <h3>Slice 2 &mdash; the engine is not SQL-specific</h3>
+        <span class="sha"><code>c926f97</code></span>
+      </div>
+      <p class="failmode">
+        The failure mode: agents touch the filesystem too, and a SQL-only
+        transaction boundary cannot cover them.
+      </p>
+      <p class="body">
+        A <code>FilesystemAdapter</code> implements the same
+        <code>(snapshot, apply, restore)</code> triple via copy-on-write
+        of touched paths. One transaction can now carry SQL writes <em>and</em>
+        filesystem writes together; on rollback, both unwind; on commit,
+        both land. This is the slice that proves
+        <code>ResourceAdapter</code> is a real abstraction and not a
+        SQL-shaped hole pretending to be general.
+      </p>
+      <p class="traversal">Same forward fold &mdash; second adapter under the same protocol</p>
+    </article>
+
+    <article class="slice" id="s3">
+      <div class="shead">
+        <h3>Slice 3 &mdash; irreversible things</h3>
+        <span class="sha"><code>a13018b</code></span>
+      </div>
+      <p class="failmode">
+        The failure mode: a credit-card charge cannot be rolled back &mdash;
+        it has already happened.
+      </p>
+      <p class="body">
+        Irreversible tools are <em>staged</em>: the effect is recorded
+        in the journal with <code>status=STAGED</code> and the agent
+        receives a placeholder <code>StagedResult</code> rather than a
+        real return value. The actual call only fires at <code>commit()</code>
+        time. If the txn rolls back, it simply never fires. If a tool
+        registers a <em>compensator</em> &mdash; a semantic left-inverse
+        like <code>refund</code> after <code>charge</code> &mdash; it
+        auto-commits; rollback runs the compensator. With no compensator,
+        the txn lands in <code>STUCK</code> and waits for human review.
+        Pherix is honest about what it cannot undo.
+      </p>
+      <p class="traversal">Forward fold with deferred terminator &mdash; staged-fire loop runs at commit</p>
+    </article>
+
+    <article class="slice" id="s4">
+      <div class="shead">
+        <h3>Slice 4 &mdash; concurrent agents on the same resource</h3>
+        <span class="sha"><code>0fab344</code></span>
+      </div>
+      <p class="failmode">
+        The failure mode: two agents read the same row, both write back,
+        and one of them silently clobbers the other.
+      </p>
+      <p class="body">
+        Every effect records the keys it read and wrote, with versions.
+        At commit time the runtime diffs this txn's read/write set against
+        what other live transactions have done in the meantime; if anyone
+        moved a key this txn depended on, <code>IsolationConflict</code>
+        fires. Three resolution policies are available: <code>Abort</code>
+        (give up), <code>Retry(N)</code> (re-run the agent body), and
+        <code>Serialize</code> (block until the conflict clears). This is
+        MVCC-style isolation &mdash; the database concept &mdash; lifted
+        to the level of agent tool calls.
+      </p>
+      <p class="traversal">Diff of read/write key-sets across journals</p>
+    </article>
+
+    <article class="slice" id="s5">
+      <div class="shead">
+        <h3>Slice 5 &mdash; replay</h3>
+        <span class="sha"><code>9ff69a6</code></span>
+      </div>
+      <p class="failmode">
+        The failure mode: yesterday's transaction did something
+        interesting; today there is no way to ask "what would running it
+        again, against fresh state, actually do?"
+      </p>
+      <p class="body">
+        The journal becomes executable. <code>pherix.replay(txn_id, adapters)</code>
+        re-fires the recorded effects against a fresh adapter target.
+        <em>Verify mode</em> asserts the new results match the old &mdash;
+        a determinism check on the agent's tool layer. <em>Reconstruct mode</em>
+        rebuilds world state from scratch by re-applying every reversible
+        effect in order &mdash; disaster recovery from the audit log alone.
+        Irreversibles are not re-fired; their original results are
+        replayed-as-data.
+      </p>
+      <p class="traversal">Forward fold against fresh state &mdash; with equality check</p>
+    </article>
+
+    <article class="slice" id="s6">
+      <div class="shead">
+        <h3>Slice 6 &mdash; real policy</h3>
+        <span class="sha"><code>c2318d5</code></span>
+      </div>
+      <p class="failmode">
+        The failure mode: an allow-list cannot express "this agent may
+        spend at most &pound;100 today" or "this agent may not publish to
+        enterprise tenants."
+      </p>
+      <p class="body">
+        <code>Policy</code> is now a predicate fold over
+        <code>(effect, ctx)</code>. The operator registers Python
+        callables with <code>@policy.rule</code> that return
+        <code>Allow</code> or <code>Deny(reason)</code>. <code>Cap.count</code>
+        and <code>Cap.sum</code> fold the journal-so-far to enforce spend
+        and frequency caps. Rules fire at <em>stage-time</em> (fail fast)
+        and again at <em>commit-time</em> (because the world may have
+        moved between the two evaluations &mdash; the TOCTOU problem,
+        where the truth of a predicate depends on when you ask). Crucially,
+        the commit-time bracket runs <em>before</em> the staged-fire loop,
+        so a denial at commit pre-empts every irreversible. The strongest
+        containment the architecture can offer.
+      </p>
+      <p class="traversal">Predicate fold over the journal &mdash; evaluated twice</p>
+    </article>
+
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="axiom">
+  <h2>The axiom &mdash; one engine, six operations</h2>
+
+  <div class="axiom-panel">
+    <p class="axline">The unifying claim</p>
+    <p class="big">
+      <em>Every capability Pherix offers is a different traversal of the
+      same journal.</em>
+    </p>
+    <p>
+      The journal is an ordered, append-only sequence of <code>Effect</code>
+      records. The adapter protocol exposes a <code>(snapshot, apply, restore)</code>
+      triple per resource. Once those two primitives exist, every
+      capability the system needs is just a different walk over the
+      sequence, possibly under a different terminator. This is not
+      retrofitted phrasing &mdash; it is the design axiom that made the
+      build coherent.
+    </p>
+  </div>
+
+  <svg class="diagram" viewBox="0 0 600 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The journal as an ordered sequence of effects with six different operations branching off it.">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+      </marker>
+    </defs>
+    <style>
+      .lbl { font-family: ui-monospace, monospace; font-size: 10px; fill: currentColor; }
+      .lbl-mid { font-family: ui-monospace, monospace; font-size: 10px; fill: currentColor; text-anchor: middle; }
+      .op-lbl { font-family: ui-monospace, monospace; font-size: 10px; fill: currentColor; }
+      .cell { fill: none; stroke: currentColor; stroke-width: 1; }
+      .arrow { stroke: currentColor; fill: none; stroke-width: 1; }
+      .axis { stroke: currentColor; stroke-width: 1; opacity: 0.4; }
+    </style>
+    <g color="#7a7268">
+      <text x="20" y="22" class="lbl">the journal &mdash; ordered, append-only</text>
+    </g>
+    <g color="#161513">
+      <rect x="20"  y="35" width="70" height="34" rx="3" class="cell"/>
+      <rect x="100" y="35" width="70" height="34" rx="3" class="cell"/>
+      <rect x="180" y="35" width="70" height="34" rx="3" class="cell"/>
+      <rect x="260" y="35" width="70" height="34" rx="3" class="cell"/>
+      <rect x="340" y="35" width="70" height="34" rx="3" class="cell"/>
+      <rect x="420" y="35" width="70" height="34" rx="3" class="cell"/>
+      <rect x="500" y="35" width="70" height="34" rx="3" class="cell"/>
+      <text x="55"  y="56" class="lbl-mid">e&#x2080;</text>
+      <text x="135" y="56" class="lbl-mid">e&#x2081;</text>
+      <text x="215" y="56" class="lbl-mid">e&#x2082;</text>
+      <text x="295" y="56" class="lbl-mid">e&#x2083;</text>
+      <text x="375" y="56" class="lbl-mid">e&#x2084;</text>
+      <text x="455" y="56" class="lbl-mid">&hellip;</text>
+      <text x="535" y="56" class="lbl-mid">e&#x2099;</text>
+    </g>
+    <g color="#355c3a">
+      <path class="arrow" d="M 25 78 L 540 78" marker-end="url(#arr)"/>
+      <text x="120" y="93" class="op-lbl">forward fold &middot; commit &middot; replay &middot; dry-run</text>
+    </g>
+    <g color="#b4421e">
+      <path class="arrow" d="M 540 110 L 25 110" marker-end="url(#arr)"/>
+      <text x="120" y="125" class="op-lbl">backward fold &middot; rollback (adapter.restore per effect)</text>
+    </g>
+    <g color="#2c4a6a">
+      <path class="arrow" d="M 25 142 L 540 142" stroke-dasharray="4 3"/>
+      <text x="40" y="157" class="op-lbl">diff of read/write key-sets &middot; isolation (Slice 4)</text>
+    </g>
+    <g color="#8a6a14">
+      <path class="arrow" d="M 25 174 L 540 174" stroke-dasharray="2 3"/>
+      <text x="40" y="189" class="op-lbl">predicate fold over (effect, ctx) &middot; policy (Slice 6)</text>
+    </g>
+    <g color="#7a7268">
+      <text x="20" y="212" class="lbl">all four operations &middot; same sequence &middot; same adapters</text>
+    </g>
+  </svg>
+  <p class="diagram-cap">Four walks over one sequence. Two terminators (commit, rollback). Two predicate folds (isolation diff, policy predicate). The whole architecture.</p>
+
+  <p>
+    Spelled out as a table, the capability-to-operation map is exact:
+  </p>
+
+  <table class="ops">
+    <thead>
+      <tr>
+        <th>Capability</th>
+        <th>Operation on the journal</th>
+        <th>Slice</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="cap">Commit</td>
+        <td class="op">forward fold &rarr; <code>adapter.apply</code> per effect</td>
+        <td class="slice-cell">1</td>
+      </tr>
+      <tr>
+        <td class="cap">Rollback</td>
+        <td class="op">backward fold &rarr; <code>adapter.restore</code> or compensator</td>
+        <td class="slice-cell">1, 3</td>
+      </tr>
+      <tr>
+        <td class="cap">Multi-resource txn</td>
+        <td class="op">forward fold across N adapters under one bracket</td>
+        <td class="slice-cell">2</td>
+      </tr>
+      <tr>
+        <td class="cap">Irreversible staging</td>
+        <td class="op">forward fold with terminator deferred to commit</td>
+        <td class="slice-cell">3</td>
+      </tr>
+      <tr>
+        <td class="cap">Isolation</td>
+        <td class="op">diff of read/write key-sets across live journals</td>
+        <td class="slice-cell">4</td>
+      </tr>
+      <tr>
+        <td class="cap">Replay</td>
+        <td class="op">forward fold against fresh state &middot; equality check</td>
+        <td class="slice-cell">5</td>
+      </tr>
+      <tr>
+        <td class="cap">Policy</td>
+        <td class="op">predicate fold over <code>(effect, ctx)</code>, evaluated twice</td>
+        <td class="slice-cell">6</td>
+      </tr>
+      <tr class="future">
+        <td class="cap">Dry-run</td>
+        <td class="op">forward fold then discard (rollback terminator)</td>
+        <td class="slice-cell">7 &middot; in worktree</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    Read down the middle column. Every entry is a fold or a diff over
+    the same sequence. The system is not seven subsystems &mdash; it is
+    one engine with seven uses. That is what makes Pherix coherent
+    rather than a pile of features, and that is the mental model the
+    over-vibing has obscured.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="state">
+  <h2>Where we stand right now</h2>
+
+  <div class="state-grid">
+    <div class="state-col now">
+      <p class="ftag">On main</p>
+      <h4>Seven slices, 299 tests, the engine earned three times over.</h4>
+      <ul>
+        <li><strong>299 tests green</strong> across <code>core/</code>, the adapters, the runtime, the audit journal, replay, isolation, policy, and dry-run.</li>
+        <li><strong>Seven slices merged.</strong> The journal exists, the adapter protocol holds for SQL + FS, irreversibles stage cleanly, MVCC isolation enforces, replay works in both verify and reconstruct modes, real policy fires at both brackets, dry-run runs the agent body and discards the world bit-identically.</li>
+        <li><strong>The engine has earned its keep three times already.</strong> Rollback (Slice 1), replay (Slice 5), and dry-run (Slice 7) all reuse the same <code>(snapshot, apply, restore)</code> primitive. Each new use was cheap because the abstraction was correct.</li>
+        <li><strong>The journal is the asset that compounds.</strong> Every slice has added one way of reading or writing it; none has needed to alter its shape.</li>
+      </ul>
+    </div>
+    <div class="state-col next">
+      <p class="ftag">In flight &middot; near horizon</p>
+      <h4>Slice 8 and the deferred half-slices.</h4>
+      <ul>
+        <li><strong>Slice 8 &middot; MCP gateway frontend</strong> is next on the critical path. Same engine, new mouth: Anthropic's Model Context Protocol so any MCP-speaking agent (Claude Code, Aider, Cursor) can be wrapped by Pherix without writing Python against the library directly. The test of the frontend-agnostic discipline.</li>
+        <li><strong>Slice 6.5</strong> &mdash; world-state-aware policy reads via <code>ctx.read(...)</code>; the placeholder seam is already in Slice 6 awaiting the fill-in.</li>
+        <li><strong>Slice 7.5</strong> &mdash; per-adapter structured state diff (rows added, files written) and concurrency-aware dry-run; both deferred from Slice 7 to keep the "nearly free" framing honest.</li>
+        <li><strong>Beyond Slice 8</strong> &mdash; the trilogy of <em>determinism, memory, audit</em> as natural extensions of the journal. Three further interception layers (gateway / git / CI/CD) flagged but not designed.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="closing">
+  <h2>Closing</h2>
+  <div class="closing">
+    <p>
+      Six slices compose into a coherent thing. The architecture has
+      held under every capability that has been asked of it, because each
+      capability has had to fit through the same engine.
+    </p>
+    <p>
+      The journal is the asset that compounds &mdash; every slice writes
+      to the same shape, and every new walk over it is cheaper than the
+      last. The over-vibing did not corrupt the build; it just outran
+      the moment to look back at it. This page is that moment.
+    </p>
+    <p>
+      If a future feature does not reduce to a fold or a diff over the
+      journal, it is the wrong feature. So far, everything has.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <p>Pherix &middot; <code>docs/where-we-are.html</code> &middot; orientation artifact. Update on each slice merge per the HTML-hygiene rule in <code>CLAUDE.md</code>.</p>
+  <p>Slices 1&ndash;7 merged. 299 tests on <code>main</code>. Slice 8 next on the critical path.</p>
+</footer>
+
+</main>
+</body>
+</html>

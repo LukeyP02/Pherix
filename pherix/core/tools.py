@@ -85,6 +85,14 @@ class ToolRegistry:
     def get(self, name: str) -> ToolSpec:
         return self._tools[name]
 
+    def tool_names(self) -> list[str]:
+        """Registered tool names in registration order.
+
+        The public enumeration the MCP gateway's ``tools/list`` needs — a
+        dict preserves insertion order, so this is registration order.
+        """
+        return list(self._tools)
+
     def __contains__(self, name: object) -> bool:
         return name in self._tools
 

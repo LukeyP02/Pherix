@@ -289,3 +289,46 @@ class FilesystemAdapter:
     def write_version(self, key: tuple) -> str:
         # Compute from on-disk content *after* the write — no cache.
         return self.read_version(key)
+
+    # --- state diff (Slice 8 — StateDiffable) ------------------------------
+
+    def _walk_hashes(self) -> dict:
+        """``{relpath: sha256}`` over every file under ``root``.
+
+        Read-only walk, parallel to the per-effect backup lane and never
+        touching it. The per-txn backup root lives in a system tempdir
+        (``begin()`` mkdtemp), not under ``root``, so it cannot pollute the
+        walk. ``relpath`` is POSIX-style (``as_posix``) so diff keys match
+        the ``rel_path`` strings tools pass to :class:`FsHandle`.
+        """
+        out: dict = {}
+        if not self._root.exists():
+            return out
+        for path in self._root.rglob("*"):
+            if path.is_file():
+                rel = path.relative_to(self._root).as_posix()
+                out[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+        return out
+
+    def state_baseline(self) -> dict:
+        return self._walk_hashes()
+
+    def state_diff(self, baseline: dict) -> dict:
+        """Diff the live tree against ``baseline`` into added/modified/deleted.
+
+        A path is *added* if absent from the baseline, *modified* if present
+        but the content hash changed, *deleted* if it was in the baseline but
+        is gone now. Entries are the relative path strings — the same shape a
+        front-end uses to address files through :class:`FsHandle`.
+        """
+        now = self._walk_hashes()
+        added = [rel for rel in now if rel not in baseline]
+        modified = [
+            rel for rel, h in now.items() if rel in baseline and baseline[rel] != h
+        ]
+        deleted = [rel for rel in baseline if rel not in now]
+        return {
+            "files_added": added,
+            "files_modified": modified,
+            "files_deleted": deleted,
+        }

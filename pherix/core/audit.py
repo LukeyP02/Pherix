@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL,
     replayed_from TEXT,
-    dry_run       INTEGER NOT NULL DEFAULT 0
+    dry_run       INTEGER NOT NULL DEFAULT 0,
+    client_id     TEXT
 );
 CREATE TABLE IF NOT EXISTS effects (
     txn_id     TEXT NOT NULL,
@@ -100,7 +101,7 @@ class AuditJournal:
     # --- transactions ---
 
     def record_transaction(
-        self, txn: Transaction, *, dry_run: bool = False
+        self, txn: Transaction, *, dry_run: bool = False, client_id: str | None = None
     ) -> None:
         """Insert the per-transaction audit row.
 
@@ -109,12 +110,20 @@ class AuditJournal:
         operator entered via :func:`pherix.dry_run`. The column lives on
         ``transactions`` so operators can filter dry-runs out of
         compliance views with a plain ``WHERE dry_run = 0``.
+
+        Slice 8 adds ``client_id`` as the third instance of the same
+        additive pattern (``replayed_from``, ``dry_run``, ``client_id``): a
+        nullable column, keyword-only param, default NULL. A gateway
+        front-end serving many MCP clients through one core passes the
+        calling client's identity so audit rows carry provenance; library
+        callers never supply one and the column stays NULL.
         """
         now = _now()
         self._conn.execute(
             "INSERT INTO transactions "
-            "(txn_id, state, created_at, updated_at, replayed_from, dry_run) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(txn_id, state, created_at, updated_at, replayed_from, dry_run, "
+            "client_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 txn.txn_id,
                 txn.state.name,
@@ -122,6 +131,7 @@ class AuditJournal:
                 now,
                 txn.replayed_from,
                 int(dry_run),
+                client_id,
             ),
         )
         self._conn.commit()

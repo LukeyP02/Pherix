@@ -186,6 +186,84 @@ class SQLiteAdapter:
         row = cur.fetchone()
         return int(row[0])
 
+    # --- state diff (Slice 8 — StateDiffable) ------------------------------
+
+    # Internal version side-table is Pherix bookkeeping, not user state, so it
+    # is excluded from both the baseline and the diff.
+    _VERSIONS_TABLE = "_pherix_versions"
+
+    def _user_tables(self) -> list[str]:
+        """Names of user-created tables, excluding internal bookkeeping.
+
+        ``sqlite_%`` covers SQLite's own internal tables; the version
+        side-table is Pherix's. Read off the same connection the txn writes
+        through, so a table the txn itself created (then will roll back) is
+        still visible to the diff — which is what makes "rows_added against a
+        brand-new table" come out correct under dry-run.
+        """
+        rows = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' AND name != ?",
+            (self._VERSIONS_TABLE,),
+        ).fetchall()
+        return [r[0] for r in rows]
+
+    def _dump_table(self, table: str) -> dict:
+        """``{rowid: row_tuple}`` for one table, keyed by the stable rowid.
+
+        SQLite's implicit ``rowid`` gives every row a stable identity even
+        when the user declared no primary key, so update-vs-insert can be told
+        apart without parsing the schema. ``table`` comes from
+        :meth:`_user_tables` (SQLite's own catalogue), never user input, so
+        interpolating the identifier is safe by construction — SQLite cannot
+        parameterise identifiers regardless.
+        """
+        cur = self._conn.execute(f"SELECT rowid, * FROM {table}")
+        out: dict = {}
+        for row in cur.fetchall():
+            out[row[0]] = tuple(row[1:])
+        return out
+
+    def state_baseline(self) -> dict:
+        return {t: self._dump_table(t) for t in self._user_tables()}
+
+    def state_diff(self, baseline: dict) -> dict:
+        """Diff live tables against ``baseline`` into added/modified/deleted.
+
+        A row is *added* if its rowid is absent from the baseline,
+        *modified* if present but the tuple changed, *deleted* if it was in
+        the baseline but is gone now. Each emitted entry is
+        ``{"table": name, "row": tuple}`` so a front-end can attribute the
+        change to a table without re-deriving it.
+        """
+        added: list[dict] = []
+        modified: list[dict] = []
+        deleted: list[dict] = []
+        for table in self._user_tables():
+            before = baseline.get(table, {})
+            now = self._dump_table(table)
+            for rowid, row in now.items():
+                if rowid not in before:
+                    added.append({"table": table, "row": row})
+                elif before[rowid] != row:
+                    modified.append({"table": table, "row": row})
+            for rowid, row in before.items():
+                if rowid not in now:
+                    deleted.append({"table": table, "row": row})
+        # A table present in the baseline but dropped during the txn: its rows
+        # count as deletions so the diff stays honest about lost data.
+        live_tables = set(self._user_tables())
+        for table, before in baseline.items():
+            if table not in live_tables:
+                deleted.extend(
+                    {"table": table, "row": row} for row in before.values()
+                )
+        return {
+            "rows_added": added,
+            "rows_modified": modified,
+            "rows_deleted": deleted,
+        }
+
 
 # --- Slice 4 isolation helper ---------------------------------------------
 
