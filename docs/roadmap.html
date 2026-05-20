@@ -369,10 +369,10 @@
   <h1>Pherix — Build Roadmap</h1>
   <div class="sub">A visual map of the eight-slice build. Each slice ships something demoable; the system gets <em>deeper</em>, not just wider. Hover the timeline, expand a card, follow a thread.</div>
   <div class="meta">
-    <span><b>Status:</b> Slices 1–7 merged · Slice 8 next (MCP gateway)</span>
-    <span><b>Tests on <code>main</code>:</b> 299 passing</span>
-    <span><b>Last merge:</b> <code>Slice 7</code> (dry-run)</span>
-    <span><b>Today:</b> 2026-05-19</span>
+    <span><b>Status:</b> All 8 slices merged · Phase 1 complete · Phase 2 next</span>
+    <span><b>Tests on <code>main</code>:</b> 331 passing</span>
+    <span><b>Last merge:</b> <code>Slice 8</code> (MCP gateway)</span>
+    <span><b>Today:</b> 2026-05-20</span>
   </div>
 </header>
 
@@ -411,7 +411,7 @@
         <tr><td>Replay</td><td>fold <span class="pill">forward</span> against fresh state, assert identical results</td><td><span class="badge done">5 done</span></td></tr>
         <tr><td>Policy (stage + commit)</td><td>walk the journal at stage-time AND again at commit-time, re-evaluate every rule against every effect</td><td><span class="badge done">6 done</span></td></tr>
         <tr><td>Speculative dry-run</td><td>fold forward against a snapshot, then discard</td><td><span class="badge done">7 done</span></td></tr>
-        <tr><td>MCP gateway</td><td>same engine, different front-end driving the same journal</td><td><span class="badge active">8 next</span></td></tr>
+        <tr><td>MCP gateway</td><td>same engine, different front-end driving the same journal</td><td><span class="badge done">8 done</span></td></tr>
       </tbody>
     </table>
   </section>
@@ -442,11 +442,11 @@
           </pattern>
         </defs>
 
-        <!-- "you are here" band wrapping Slice 8 (next on path) -->
+        <!-- Phase 1 complete — all 8 slices merged; "you are here" now points beyond -->
         <g>
-          <rect x="8" y="215" width="124" height="124" fill="url(#diag)" color="var(--active)" />
-          <text x="70" y="208" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">you are here</text>
-          <path d="M70 211 L70 219" stroke="var(--active)" stroke-width="1.5"/>
+          <rect x="8" y="215" width="124" height="124" rx="8" fill="none" stroke="var(--done)" stroke-width="2" stroke-dasharray="2 3" opacity="0.7" />
+          <text x="70" y="208" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--done)">✓ Phase 1 complete</text>
+          <path d="M70 211 L70 219" stroke="var(--done)" stroke-width="1.5"/>
         </g>
 
         <!-- main backbone arrows -->
@@ -586,19 +586,19 @@
           <text x="60" y="92" text-anchor="middle" font-size="10" fill="var(--done)">✓ merged</text>
         </g>
 
-        <!-- SLICE 8 (next · active) -->
+        <!-- SLICE 8 (done · merged 9d41df8) -->
         <g class="node-card" data-slice="8" transform="translate(15,220)">
-          <rect class="node-bg" width="110" height="110" rx="8" fill="var(--active-bg)" stroke="var(--active)" stroke-width="2"/>
-          <text x="55" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--active)">SLICE 8</text>
+          <rect class="node-bg" width="110" height="110" rx="8" fill="var(--done-bg)" stroke="var(--done)" stroke-width="1.5"/>
+          <text x="55" y="22" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="var(--done)">SLICE 8</text>
           <text x="55" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">MCP gateway</text>
           <text x="55" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">same engine,</text>
           <text x="55" y="78" text-anchor="middle" font-size="11" fill="var(--ink-soft)">proxy front-end</text>
-          <text x="55" y="100" text-anchor="middle" font-size="10" fill="var(--active)">⟳ next</text>
-          <!-- Slice-4 FU Serialize cross-process (decide alongside Slice 8 scope) -->
+          <text x="55" y="100" text-anchor="middle" font-size="10" fill="var(--done)">✓ merged</text>
+          <!-- Slice-4 FU Serialize cross-process — now a Phase 2 production-hardening item -->
           <g class="followup-dot" data-fu="S4-serialize">
             <circle cx="105" cy="10" r="9" fill="var(--warn)" stroke="var(--panel)" stroke-width="2"/>
             <text x="105" y="13.5" text-anchor="middle" font-size="8" font-weight="700" fill="white">sz</text>
-            <title>Slice-4 FU — Serialize cross-process documented as Abort-degrade, not enforced. Decide alongside Slice 8 gateway scope.</title>
+            <title>Slice-4 FU — Serialize cross-process documented as Abort-degrade, not enforced. Now a Phase 2 production-hardening item.</title>
           </g>
         </g>
 
@@ -719,15 +719,15 @@
 
   <!-- =========================================== -->
   <section id="you-are-here">
-    <h2>Where am I? <span class="hint">— between Slice 7 and Slice 8</span></h2>
+    <h2>Where am I? <span class="hint">— Phase 1 complete; into Phase 2</span></h2>
     <div class="compare">
       <div>
-        <h4>What's behind you <span class="tag now">Slices 1–7, merged</span></h4>
-        The determinism engine is complete. Slice 1 (<code>ad4e9c0</code>) shipped the reversible-path engine. Slice 2 (<code>c926f97</code>) proved the adapter protocol with copy-on-write filesystem snapshots. Slice 3 (<code>a13018b</code>) added the irreversible lane. Slice 4 (<code>0fab344</code>) brought isolation online. Slice 5 (<code>9ff69a6</code>) made the journal executable through <code>pherix.replay(...)</code>. Slice 6 (<code>c2318d5</code>) turned <code>Policy</code> into a real predicate fold over <code>(effect, ctx)</code> with stage-time AND commit-time evaluation. Slice 7 (<code>6ee8980</code>) added speculative dry-run: <code>pherix.dry_run(adapters)</code> runs the body identically to <code>agent_txn</code> but ends in <code>adapter.rollback()</code> — the world is bit-identical pre/post; <code>DryRunResult</code> carries the journal, the <code>would_have_fired</code> filter, and policy verdicts captured via <code>try_evaluate</code>/<code>collect_verdicts</code> (capture-mode siblings of <code>evaluate</code>/<code>evaluate_journal</code>, never raise on <code>Deny</code>). <strong>299 tests green</strong> (+19 over Slice 6 baseline). Slices 6.5 and 7.5 sit open as scoped follow-ups — world-state-aware policy reads, per-adapter structured state diff, concurrency-aware dry-run.
+        <h4>What's behind you <span class="tag now">Phase 1 — all 8 slices, merged</span></h4>
+        The determinism engine is complete. Slice 1 (<code>ad4e9c0</code>) the reversible-path engine; Slice 2 (<code>c926f97</code>) the adapter protocol via copy-on-write FS; Slice 3 (<code>a13018b</code>) the irreversible lane; Slice 4 (<code>0fab344</code>) isolation; Slice 5 (<code>9ff69a6</code>) replay; Slice 6 (<code>c2318d5</code>) the real policy fold over <code>(effect, ctx)</code> at stage + commit; Slice 7 (<code>6ee8980</code>) speculative dry-run; Slice 8 (<code>9d41df8</code>) the MCP gateway — Pherix is now a Python library <em>and</em> an MCP server driving the same core. The gateway landed with <code>core/</code> essentially untouched (one nullable <code>client_id</code> column + the absorbed <code>StateDiffable</code> sub-protocol), so the front-end-agnostic discipline held across all eight slices. <strong>331 tests green.</strong> Open scoped follow-ups roll into Phase 2 production-hardening: 6.5 world-state-aware policy reads, FS cross-process arbitration, Serialize cross-process enforcement.
       </div>
       <div>
-        <h4>What's in flight <span class="tag next">Slice 8 — MCP gateway frontend</span></h4>
-        Slice 8 is the test of the front-end-agnostic discipline. Same engine, same journal, same compensator-as-tool pattern — but driven through Anthropic's Model Context Protocol so any MCP-speaking agent (Claude Code, Aider, Cursor agentic mode) can be wrapped by Pherix without writing Python against the library directly. The interception-axis discussion (see <code>future.html</code>) sharpens the first specific user: a security team allowing coding-CLI provisioning <em>because</em> Pherix sits in front of it. Decision aid pending.
+        <h4>What's next <span class="tag next">Phase 2 — guardrails MVP</span></h4>
+        The engine is built; now it has to be sold. Phase 2's exit isn't "code shipped," it's "someone pays" — production-harden the deferred gaps, stand up the audit pillar (the trust evidence a security buyer needs), pick the one bolt-on that serves a concrete first user, and dogfood one vertical end-to-end. The highest-leverage move is landing a design partner, on the way to a YC-ready application. See <code>phases.html</code> for the full three-act arc.
       </div>
     </div>
   </section>
@@ -913,14 +913,26 @@
       </article>
 
       <!-- SLICE 8 -->
-      <article class="slice active">
+      <article class="slice done">
         <h3><span class="num">08</span> MCP gateway front-end</h3>
-        <div class="badges"><span class="badge active">next on path</span></div>
-        <p class="one-liner">The same core engine, driven by an MCP proxy instead of a Python <code>import</code>. Validates the <code>frontends/</code> discipline.</p>
+        <div class="badges"><span class="badge done">done · merged</span><span class="badge dim">9d41df8</span><span class="badge dim">331 tests · +32</span></div>
+        <p class="one-liner">The same core engine, driven by an MCP proxy instead of a Python <code>import</code>. The validation slice — and the discipline held.</p>
         <details>
-          <summary>Why it's the last slice, not the first</summary>
+          <summary>What shipped · the discipline verdict</summary>
           <div class="body">
-            <p>Building Pherix as a <em>library</em> first forces the core to be front-end-agnostic. The MCP proxy is a different driver for the same engine — if the architectural discipline in <code>core/</code> vs <code>frontends/</code> has held, this slice is small (a process boundary, a wire format) and adds no new semantics. If it requires changes in <code>core/</code>, the discipline failed somewhere earlier and we'd rather find out now than at v1.0.</p>
+            <p><span class="label">The verdict.</span> Success was measured by how little <code>core/</code> changed — and the change was purely additive: a nullable <code>client_id</code> audit column (third instance of the <code>replayed_from</code>/<code>dry_run</code> pattern), the absorbed <code>StateDiffable</code> sub-protocol + <code>diff()</code> on SQL and FS adapters, a public <code>ToolRegistry.tool_names()</code>, and <code>client_id</code> threaded keyword-only through <code>TxnContext</code> exactly as <code>dry_run</code> was. No reshaping of the state machine, the journal, the lanes, or the adapter base. <strong>The front-end-agnostic discipline held across all eight slices.</strong></p>
+            <p><span class="label">What's in <code>frontends/proxy/</code>.</span> <code>PherixGateway</code> (an identity→<code>Policy</code> selector, deliberately not an engine), an <code>MCPServer</code> speaking the tool-call subset (<code>initialize</code> / <code>tools/list</code> / <code>tools/call</code> / <code>ping</code>), a line-delimited JSON-RPC stdio transport, and an in-process client stub for offline tests.</p>
+            <p><span class="label">Locked &amp; shipped.</span></p>
+            <ul>
+              <li><span class="label">D1 — MCP tool-call subset only.</span> Resources/prompts/sampling are about feeding the model, not transacting effects — out of scope.</li>
+              <li><span class="label">D2 — Separate process, stdio.</span> The real test of the discipline; the agent is fully external with no Pherix import.</li>
+              <li><span class="label">D3 — Identity at handshake → operator-config policy.</span> The agent declares who it is; the operator decides what it may do. Slice 6 <code>Policy</code> reused verbatim; unknown identity falls back to a tight <code>default_policy</code>.</li>
+              <li><span class="label">D4 — <code>client_id</code> audit column.</span> Per-agent attribution; library callers leave it NULL.</li>
+              <li><span class="label">D5 — Result over the wire + absorbed state-diff.</span> <code>StateDiffable</code> shipped as a two-method <code>state_baseline()</code>/<code>state_diff(baseline)</code> split (a SQLite SAVEPOINT isn't a queryable before-image — a correct refinement of the original sketch); results serialise via <code>strict_json_default</code>.</li>
+              <li><span class="label">D6 — Cross-process arbitration via Slice 4's meta-connection.</span> The gateway is "just another process against the same file"; SQL cross-process caught, FS cross-process a documented Phase-2 gap.</li>
+            </ul>
+            <p><span class="label">The load-bearing pin.</span> A parity test proves a gateway <code>tools/call</code> yields an identical journal + audit row + policy outcome to a library-direct <code>agent_txn</code> — the only sanctioned difference being <code>client_id</code>.</p>
+            <p><span class="label">Honest limit (→ Phase 2).</span> Offline tests prove the wire is spec-correct by inspection but can't prove a live Claude Code client connects. That live-interop validation is the first item of the Phase 2 "test the fucker" ritual. Hand-rolled JSON-RPC (not the <code>mcp</code> SDK) keeps the suite offline and the library dependency-free; an optional <code>pherix[mcp]</code> extra is the future path.</p>
           </div>
         </details>
       </article>

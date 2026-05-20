@@ -617,10 +617,11 @@
 
   <p>
     Read down the middle column. Every entry is a fold or a diff over
-    the same sequence. The system is not seven subsystems &mdash; it is
-    one engine with seven uses. That is what makes Pherix coherent
-    rather than a pile of features, and that is the mental model the
-    over-vibing has obscured.
+    the same sequence. The system is not a pile of subsystems &mdash; it
+    is one engine with many uses, now reachable through two front-ends
+    (the Python library and the MCP gateway). That is what makes Pherix
+    coherent rather than a pile of features, and that is the mental
+    model the over-vibing has obscured.
   </p>
 </section>
 
@@ -631,10 +632,10 @@
   <div class="state-grid">
     <div class="state-col now">
       <p class="ftag">On main</p>
-      <h4>Seven slices, 299 tests, the engine earned three times over.</h4>
+      <h4>Phase 1 complete — eight slices, 331 tests, the engine earned three times over.</h4>
       <ul>
-        <li><strong>299 tests green</strong> across <code>core/</code>, the adapters, the runtime, the audit journal, replay, isolation, policy, and dry-run.</li>
-        <li><strong>Seven slices merged.</strong> The journal exists, the adapter protocol holds for SQL + FS, irreversibles stage cleanly, MVCC isolation enforces, replay works in both verify and reconstruct modes, real policy fires at both brackets, dry-run runs the agent body and discards the world bit-identically.</li>
+        <li><strong>331 tests green</strong> across <code>core/</code>, the adapters, the runtime, the audit journal, replay, isolation, policy, dry-run, and the MCP gateway.</li>
+        <li><strong>All eight slices merged.</strong> The journal exists, the adapter protocol holds for SQL + FS, irreversibles stage cleanly, MVCC isolation enforces, replay works in both verify and reconstruct modes, real policy fires at both brackets, dry-run discards the world bit-identically, and the MCP gateway drives the same core as a second front-end &mdash; with <code>core/</code> essentially untouched, proving the front-end-agnostic discipline held across all eight slices.</li>
         <li><strong>The engine has earned its keep three times already.</strong> Rollback (Slice 1), replay (Slice 5), and dry-run (Slice 7) all reuse the same <code>(snapshot, apply, restore)</code> primitive. Each new use was cheap because the abstraction was correct.</li>
         <li><strong>The journal is the asset that compounds.</strong> Every slice has added one way of reading or writing it; none has needed to alter its shape.</li>
       </ul>
@@ -643,7 +644,8 @@
       <p class="ftag">In flight &middot; near horizon</p>
       <h4>Slice 8 and the deferred half-slices.</h4>
       <ul>
-        <li><strong>Slice 8 &middot; MCP gateway frontend</strong> is next on the critical path. Same engine, new mouth: Anthropic's Model Context Protocol so any MCP-speaking agent (Claude Code, Aider, Cursor) can be wrapped by Pherix without writing Python against the library directly. The test of the frontend-agnostic discipline.</li>
+        <li><strong>Phase 2 &middot; guardrails MVP</strong> is next — and its exit is commercial, not technical: <em>someone pays</em>. Production-harden the deferred gaps, stand up the audit pillar (the trust evidence a security buyer needs), pick the bolt-on that serves a concrete first user, dogfood one vertical, and land a design partner — on the way to a YC-ready application. See <code>phases.html</code> for the full arc.</li>
+        <li><strong>First Phase 2 validation:</strong> live MCP-client interop ("test the fucker") — connect a real client (Claude Code itself) to the gateway and run an actual agent loop. Offline tests proved the wire spec-correct; this proves the product.</li>
         <li><strong>Slice 6.5</strong> &mdash; world-state-aware policy reads via <code>ctx.read(...)</code>; the placeholder seam is already in Slice 6 awaiting the fill-in.</li>
         <li><strong>Slice 7.5</strong> &mdash; per-adapter structured state diff (rows added, files written) and concurrency-aware dry-run; both deferred from Slice 7 to keep the "nearly free" framing honest.</li>
         <li><strong>Beyond Slice 8</strong> &mdash; the trilogy of <em>determinism, memory, audit</em> as natural extensions of the journal. Three further interception layers (gateway / git / CI/CD) flagged but not designed.</li>
@@ -676,7 +678,7 @@
 
 <footer>
   <p>Pherix &middot; <code>docs/where-we-are.html</code> &middot; orientation artifact. Update on each slice merge per the HTML-hygiene rule in <code>CLAUDE.md</code>.</p>
-  <p>Slices 1&ndash;7 merged. 299 tests on <code>main</code>. Slice 8 next on the critical path.</p>
+  <p>Phase 1 complete &mdash; all 8 slices merged. 331 tests on <code>main</code>. Phase 2 (guardrails MVP) next.</p>
 </footer>
 
 </main>
