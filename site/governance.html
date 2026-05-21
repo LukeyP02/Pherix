@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pherix — governance builder</title>
+<style>
+  :root {
+    --bg: #0c0d10; --panel: #14161b; --panel-2: #1a1d24; --ink: #e6e9ef;
+    --ink-2: #9aa3b2; --ink-3: #5e6675; --rule: #262a33;
+    --green: #5ad17f; --amber: #e0b341; --red: #e0614e; --accent: #6ea8fe;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  main { max-width: 1180px; margin: 0 auto; padding: 0 1.5rem 4rem; }
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    max-width: 1180px; margin: 0 auto; padding: 1.1rem 1.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  nav .brand { font-weight: 700; letter-spacing: 0.04em; }
+  nav .brand .dot { color: var(--green); }
+  nav .links a { color: var(--ink-2); margin-left: 1.3rem; font-size: 0.82rem; }
+
+  header.hero { padding: 2.4rem 0 1.4rem; }
+  .tag { color: var(--green); font-size: 0.74rem; letter-spacing: 0.08em;
+    margin: 0 0 0.7rem; text-transform: uppercase; }
+  h1 { font-size: 1.9rem; line-height: 1.1; margin: 0 0 0.7rem; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-2); max-width: 74ch; margin: 0; }
+
+  .starters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1.4rem 0 0.5rem; }
+  .starter {
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 999px;
+    padding: 0.32rem 0.85rem; font-size: 0.8rem; color: var(--ink); cursor: pointer;
+  }
+  .starter:hover { border-color: var(--green); color: var(--green); }
+  .starters .lbl { color: var(--ink-3); font-size: 0.74rem; align-self: center;
+    text-transform: uppercase; letter-spacing: 0.08em; margin-right: 0.3rem; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.3rem; margin-top: 1.4rem; }
+  @media (max-width: 920px) { .grid { grid-template-columns: 1fr; } }
+
+  .card { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px;
+    padding: 1.1rem 1.2rem; }
+  .card h2 { font-size: 0.95rem; margin: 0 0 0.2rem; }
+  .card .hint { color: var(--ink-3); font-size: 0.78rem; margin: 0 0 0.9rem; }
+  .section { margin-bottom: 1.1rem; }
+  .section > label { display: block; font-size: 0.74rem; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--ink-2); margin-bottom: 0.35rem; }
+
+  input[type=text], input[type=number], textarea, select {
+    background: var(--panel-2); border: 1px solid var(--rule); border-radius: 6px;
+    color: var(--ink); font-family: inherit; font-size: 0.84rem; padding: 0.4rem 0.55rem;
+    width: 100%;
+  }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 2.2rem; }
+  .row { display: flex; gap: 0.45rem; align-items: flex-start; margin-bottom: 0.45rem; }
+  .row > * { flex: 1; }
+  .row .narrow { flex: 0 0 5.5rem; }
+  .row .check { flex: 0 0 auto; align-self: center; }
+  .row .x { flex: 0 0 1.8rem; background: transparent; border: 1px solid var(--rule);
+    color: var(--ink-3); border-radius: 6px; cursor: pointer; padding: 0.4rem 0; }
+  .row .x:hover { color: var(--red); border-color: var(--red); }
+  .add { background: transparent; border: 1px dashed var(--rule); color: var(--ink-2);
+    border-radius: 6px; padding: 0.35rem 0.7rem; font-family: inherit; font-size: 0.8rem;
+    cursor: pointer; }
+  .add:hover { border-color: var(--green); color: var(--green); }
+  label.inline { display: flex; align-items: center; gap: 0.5rem; font-size: 0.84rem;
+    color: var(--ink-2); cursor: pointer; }
+  label.inline input { width: auto; }
+
+  /* preview */
+  .counts { display: flex; gap: 0.5rem; margin-bottom: 0.9rem; flex-wrap: wrap; }
+  .pill { font-size: 0.74rem; padding: 0.22rem 0.6rem; border-radius: 999px;
+    border: 1px solid var(--rule); }
+  .pill b { font-weight: 700; }
+  .pill.allow { color: var(--green); border-color: var(--green); }
+  .pill.deny { color: var(--red); border-color: var(--red); }
+  .pill.cap { color: var(--amber); border-color: var(--amber); }
+  .pill.gate { color: var(--accent); border-color: var(--accent); }
+  .clean { font-size: 0.8rem; margin-bottom: 0.9rem; }
+  .clean.yes { color: var(--green); } .clean.no { color: var(--amber); }
+
+  table.pv { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  table.pv th { text-align: left; color: var(--ink-3); font-weight: 500;
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--rule); }
+  table.pv td { padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--rule);
+    vertical-align: top; }
+  .badge { font-size: 0.72rem; font-weight: 700; padding: 0.14rem 0.5rem;
+    border-radius: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .badge.allow { background: rgba(90,209,127,0.13); color: var(--green); }
+  .badge.deny { background: rgba(224,97,78,0.14); color: var(--red); }
+  .badge.cap { background: rgba(224,179,65,0.14); color: var(--amber); }
+  .badge.gate { background: rgba(110,168,254,0.14); color: var(--accent); }
+  .reason { color: var(--ink-3); font-size: 0.76rem; }
+  .tool { color: var(--ink); }
+
+  /* export */
+  .exports { margin-top: 1.3rem; }
+  .tabs { display: flex; gap: 0.4rem; margin-bottom: 0.7rem; }
+  .tab { background: var(--panel); border: 1px solid var(--rule); color: var(--ink-2);
+    border-radius: 6px 6px 0 0; padding: 0.35rem 0.8rem; font-size: 0.8rem; cursor: pointer; }
+  .tab.active { color: var(--ink); border-bottom-color: var(--bg); background: var(--panel-2); }
+  pre.export { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px;
+    padding: 1rem 1.1rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.55;
+    color: var(--ink); margin: 0; white-space: pre; }
+  .btn { display: inline-flex; align-items: center; gap: 0.4rem; background: var(--green);
+    color: #08130c; border-radius: 6px; padding: 0.4rem 0.9rem; font-weight: 700;
+    font-size: 0.82rem; border: none; cursor: pointer; font-family: inherit; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--rule); }
+  .btn:hover { filter: brightness(1.08); }
+  .export-actions { display: flex; gap: 0.6rem; margin-top: 0.7rem; }
+  footer { border-top: 1px solid var(--rule); margin-top: 2.5rem; padding: 1.4rem 0 0;
+    color: var(--ink-3); font-size: 0.78rem; }
+</style>
+</head>
+<body>
+  <nav>
+    <span class="brand">pherix<span class="dot">.</span></span>
+    <span class="links">
+      <a href="index.html">home</a>
+      <a href="../docs/north-star.html">how it works</a>
+      <a href="../docs/operator/policy.md">policy doc</a>
+    </span>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <p class="tag">// policy axis — define governance visually</p>
+      <h1>Governance builder &amp; policy explainer</h1>
+      <p class="sub">Compose a Pherix policy from primitives, watch what it would
+      <b>allow / deny / gate / cap</b> against a sample journal — live, before it governs a
+      real agent — then export a policy the engine runs unchanged. The preview here is the
+      same fold the runtime does (<code>collect_verdicts</code>), pinned to the engine by tests.</p>
+
+      <div class="starters" id="starters"><span class="lbl">start from</span></div>
+    </header>
+
+    <div class="grid">
+      <!-- ── builder ───────────────────────────────────────── -->
+      <section class="card" id="builder">
+        <h2>Policy</h2>
+        <p class="hint">The clean slate you write rules against. Deny wins over allow;
+        an empty allow-list means allow-all.</p>
+
+        <div class="section">
+          <label>name</label>
+          <input type="text" id="p-name" placeholder="my-policy" />
+        </div>
+        <div class="section">
+          <label>description</label>
+          <textarea id="p-desc" placeholder="what this policy is for"></textarea>
+        </div>
+        <div class="section">
+          <label>allow-list (space-separated tools — blank = allow all)</label>
+          <input type="text" id="p-allow" placeholder="read_file sql_select" />
+        </div>
+        <div class="section">
+          <label>deny-list (space-separated tools)</label>
+          <input type="text" id="p-deny" placeholder="drop_table" />
+        </div>
+
+        <div class="section">
+          <label>caps</label>
+          <div id="caps"></div>
+          <button class="add" data-add="cap">+ cap</button>
+        </div>
+
+        <div class="section">
+          <label>rules (world-state &amp; arg templates)</label>
+          <div id="rules"></div>
+          <button class="add" data-add="rule">+ rule</button>
+        </div>
+
+        <div class="section">
+          <label class="inline"><input type="checkbox" id="p-gate" checked />
+          gate irreversibles — block uncompensable effects at commit for human approval</label>
+        </div>
+      </section>
+
+      <!-- ── preview ───────────────────────────────────────── -->
+      <section class="card" id="preview-card">
+        <h2>Preview</h2>
+        <p class="hint">A dry-run of the policy over the sample journal below — no
+        side effects, just the verdicts.</p>
+
+        <div class="counts" id="counts"></div>
+        <div class="clean" id="clean"></div>
+        <table class="pv">
+          <thead><tr><th>#</th><th>tool</th><th>verdict</th><th>why</th></tr></thead>
+          <tbody id="pv-body"></tbody>
+        </table>
+
+        <div class="section" style="margin-top:1.3rem;">
+          <label>sample journal (the effects the agent would attempt)</label>
+          <div id="effects"></div>
+          <button class="add" data-add="effect">+ effect</button>
+        </div>
+        <div class="section">
+          <label>world-state (live values the rules read via ctx.read)</label>
+          <div id="world"></div>
+          <button class="add" data-add="world">+ world entry</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── export ───────────────────────────────────────────── -->
+    <section class="exports">
+      <div class="tabs">
+        <button class="tab active" data-tab="json">policy.json</button>
+        <button class="tab" data-tab="python">policy.py</button>
+      </div>
+      <pre class="export" id="export-body"></pre>
+      <div class="export-actions">
+        <button class="btn" id="download">download</button>
+        <button class="btn ghost" id="copy">copy</button>
+        <span class="hint" id="export-note" style="align-self:center;"></span>
+      </div>
+    </section>
+
+    <footer>
+      pherix · governance builder · the JSON exports load via
+      <code>pherix.governance.from_spec</code>; the Python via plain import.
+      Preview pinned to the engine by <code>test_governance_js_conformance</code>.
+    </footer>
+  </main>
+
+  <script src="policy-eval.js"></script>
+  <script src="governance.js"></script>
+</body>
+</html>
