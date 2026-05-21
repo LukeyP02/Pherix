@@ -265,6 +265,29 @@
 
   <div class="callout"><strong>Two of these need you, not code:</strong> the privacy decision (Tier&nbsp;1) and which vertical is the spearhead (locks the Tier&nbsp;2 proof). Critical path: Tier&nbsp;1 → Tier&nbsp;2 → sign a partner → Tier&nbsp;3. Don't touch Tier&nbsp;3 until someone has signed.</div>
 
+  <h2>Pricing &amp; unit economics</h2>
+  <p>Gross margin is high — software plus cheap storage, ~80–90%. But "our only cost is hosting" is the gross-margin view, and it isn't where this business spends. For a security tool the dominant costs are <strong>go-to-market and trust</strong>: enterprise sales cycles, sales engineers, SOC&nbsp;2 / HIPAA certification, design-partner support, and the security investment that comes with being the thing standing in front of prod. <strong>Net margin is gated by sales efficiency, not servers.</strong></p>
+  <p>One real cost to turn into a revenue lever: Pherix is the append-only, delete-never audit store for <em>every</em> agent action, so storage genuinely scales. Price <strong>retention</strong> — e.g. 90 days included, long-term as an add-on — and the cost becomes a line item.</p>
+
+  <h3>How we charge</h3>
+  <ul>
+    <li><strong>Open-core boundary.</strong> OSS engine + adapters free — that is adoption and trust. Charge for the hosted control plane (policy UI, audit search &amp; retention, approvals, cross-agent coordination) and team / compliance features.</li>
+    <li><strong>Meter on governed agents, not seats.</strong> Agents multiply faster than people, and "agents under governance" <em>is</em> the unit of value. Seats undercharge.</li>
+    <li><strong>Hybrid: platform fee (by tier) + usage</strong> on governed actions above an allowance.</li>
+    <li><strong>Trap to avoid:</strong> never meter purely per-action, or a buyer throttles Pherix on their highest-volume — highest-risk — agent to save money. A per-agent base with a generous action allowance keeps the price aligned with safety.</li>
+  </ul>
+
+  <h3>How much</h3>
+  <p>Value-based, anchored to the security budget: you are cheaper than one incident, and the buyer's alternative is "ban the agent" or "build it in-house."</p>
+  <table>
+    <tr><th>Tier</th><th>Price</th><th>What</th></tr>
+    <tr><td><strong>OSS</strong></td><td>Free</td><td>Self-hosted library + gateway, single team.</td></tr>
+    <tr><td><strong>Team / Pro</strong> — self-serve</td><td>~$50–100 / active agent / mo (or ~$500–1k/mo fleet flat)</td><td>Hosted policy + audit search + Slack approvals.</td></tr>
+    <tr><td><strong>Business</strong></td><td>~$1–3k / mo</td><td>Multiple teams, longer retention, more usage.</td></tr>
+    <tr><td><strong>Enterprise</strong></td><td>$50–150k+ / yr ACV</td><td>SSO/RBAC, compliance certs, self-host, threat-policy library, SLA. Where the money is.</td></tr>
+  </table>
+  <div class="callout"><strong>Price against the incident, not the hosting bill.</strong> Cost-plus would leave most of the value on the table; the enterprise tier is funded by a security budget whose alternative outcomes are measured in breaches and failed audits.</div>
+
   <footer>
     <p>Served by one <code>python -m http.server</code> at the repo root. A direction statement, not marketing copy — argue with it.</p>
     <p>See <code>CLAUDE.md</code> for the engine spec and <code>docs/phases.html</code> for the commercial roadmap this slots into.</p>
