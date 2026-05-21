@@ -7,6 +7,11 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# Property-based / chaos / differential testing of the kernel laws
+# (tests/test_laws_*.py). Hypothesis is a TEST-ONLY dependency — the kernel
+# (pherix/core/) imports nothing from it; only the law suites do. Everything
+# still runs fully offline. See docs/operator/verification.md.
+test = ["pytest", "hypothesis"]
 # Real-agent dogfoods only (examples/dogfood/). The library itself stays
 # dependency-free — this extra is never needed to import or use pherix, only
 # to run the keyed real-agent scripts. `anthropic` drives the cloud path;
