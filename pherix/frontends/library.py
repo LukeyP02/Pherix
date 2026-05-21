@@ -29,7 +29,14 @@ from pherix.core.adapters.base import (
 )
 from pherix.core.adapters.filesystem import FilesystemAdapter
 from pherix.core.adapters.http import HTTPAdapter, IrreversibleAdapterError
+from pherix.core.adapters.memory import MemoryAdapter, MemoryHandle
 from pherix.core.adapters.sql import SQLiteAdapter
+from pherix.core.memory import (
+    MemoryTools,
+    memory_byte_cap,
+    no_pii,
+    register_memory_tools,
+)
 from pherix.core.audit import AuditJournal
 from pherix.core.dry_run import DryRunResult, dry_run
 from pherix.core.effects import StagedResult
@@ -157,6 +164,13 @@ __all__ = [
     "SQLiteAdapter",
     "FilesystemAdapter",
     "HTTPAdapter",
+    # governed memory — adapter + policy, not a new axis
+    "MemoryAdapter",
+    "MemoryHandle",
+    "MemoryTools",
+    "register_memory_tools",
+    "no_pii",
+    "memory_byte_cap",
     "AuditJournal",
     "ResourceAdapter",
     "TransactionalResourceAdapter",
