@@ -159,12 +159,22 @@ class Retry:
 class Serialize:
     """Block this commit until no other in-flight txn writes any of our reads.
 
-    Slice 4 limitation: in-process only. Multi-process Serialize is deferred
-    (the Slice 8 gateway is the natural arbiter). With the filesystem-shared
-    journal substrate Serialize cannot see other processes' in-flight write
-    plans, so a cross-process conflict falls through to the diff and is
-    reported as :class:`IsolationConflict` — i.e. Serialize degrades to
-    Abort across process boundaries.
+    Single-host coordination, two composed layers (#8):
+
+    - **In-process** — the :data:`REGISTRY` singleton holds live ``TxnContext``
+      objects; a waiter blocks on per-blocker :class:`threading.Event`\\ s.
+    - **Cross-process** — for adapters backed by a shareable on-disk SQLite
+      file, in-flight write plans are published as INTENTS into a shared
+      ``_pherix_intents`` side-table in that same file. A waiter polls the
+      table (backoff up to the timeout) and blocks while a conflicting live
+      intent from another process exists; it proceeds once that intent
+      clears (the writer committed/rolled back) — or the timeout expires,
+      at which point it falls through to the committed-state diff (degrading
+      to Abort, the honest fallback).
+
+    Cross-HOST Serialize is still out of scope — that needs the #12 control
+    plane as arbiter. Within one host (one on-disk DB), Serialize now waits
+    on both same-process Events and other-process intents.
 
     The actual waiting is driven by the runtime BEFORE the diff fires. By
     the time :meth:`resolve` is called the wait has already finished AND
@@ -283,6 +293,38 @@ def _reads_committed_only(adapter: Any) -> bool:
     return bool(probe()) if callable(probe) else False
 
 
+# --- cross-process intent coordination (#8, single-host tier) ----------------
+
+
+def _intent_adapters(ctx: Any) -> list[Any]:
+    """Distinct adapters on ``ctx`` that speak the intent-coordination
+    protocol (``publish_intent`` / ``clear_intents`` / ``conflicting_intents``).
+
+    Duck-typed rather than ``isinstance``-checked so :mod:`isolation` never
+    imports :mod:`adapters.sql` (no cycle) and so any future adapter that
+    implements the same three methods participates for free. Returns an empty
+    list for ``None`` (a ctx not in the registry) or a ctx with no such
+    adapter — both reduce :meth:`wait_for_blockers` to the in-process path.
+    """
+    if ctx is None:
+        return []
+    adapters = getattr(ctx, "_adapters", None)
+    if not adapters:
+        return []
+    seen: set[int] = set()
+    out: list[Any] = []
+    for a in adapters.values():
+        if id(a) in seen:
+            continue
+        if all(
+            callable(getattr(a, m, None))
+            for m in ("publish_intent", "clear_intents", "conflicting_intents")
+        ):
+            seen.add(id(a))
+            out.append(a)
+    return out
+
+
 # --- JournalRegistry (D5 in-process arbitration substrate) -------------------
 
 
@@ -306,12 +348,21 @@ class JournalRegistry:
         3. Wait on each event (or timeout).
         4. Re-take the lock to clean up.
 
-    Cross-host coordination is explicitly deferred to Slice 8 (the gateway
-    is the natural arbiter); cross-process single-host Serialize falls
-    back to the post-wait diff via the filesystem-shared SQLite side
-    table — which sees other processes' COMMITTED bumps, not their
-    in-flight plans.
+    Cross-PROCESS single-host coordination (#8) composes on top: when the
+    waiter's adapters include a SQLite adapter backed by a shareable on-disk
+    DB, :meth:`wait_for_blockers` ALSO polls the shared ``_pherix_intents``
+    side-table for live write intents published by txns in other processes,
+    and blocks while a conflicting intent exists. The two layers compose —
+    a Serialize commit waits on both same-process Events AND other-process
+    intents. Cross-HOST coordination is still deferred to the #12 control
+    plane (the natural arbiter across hosts).
     """
+
+    # Poll interval for the cross-process intent table, with a small backoff
+    # cap. Short enough that a freed intent is noticed promptly; long enough
+    # that a healthy wait does not hammer the DB.
+    _POLL_MIN = 0.005
+    _POLL_MAX = 0.05
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -329,6 +380,17 @@ class JournalRegistry:
         with self._lock:
             self._open.pop(ctx.txn_id, None)
             events = self._close_events.pop(ctx.txn_id, [])
+        # #8: clear this txn's cross-process write intents so a Serialize
+        # waiter in another process wakes and proceeds. Done here (not in
+        # commit/rollback) because unregister is the single finalisation
+        # seam the runtime AND dry_run already call — covers commit,
+        # rollback, gate-block, and partial-unwind alike with no runtime
+        # change. Best-effort: a clear failure must not break finalisation.
+        for adapter in _intent_adapters(ctx):
+            try:
+                adapter.clear_intents(ctx.txn_id)
+            except Exception:
+                pass
         # Fire outside the lock so a waiter's wake-up does not deadlock.
         for ev in events:
             ev.set()
@@ -347,21 +409,43 @@ class JournalRegistry:
         my_read_keys: list[tuple],
         timeout_seconds: float,
     ) -> None:
-        """Block until every other open txn whose planned writes intersect
-        ``my_read_keys`` has closed (committed or rolled back) — or the
-        timeout expires.
+        """Block until no other in-flight txn — in THIS process or any other
+        process sharing the on-disk SQLite file — has a write plan that
+        intersects ``my_read_keys``, or the timeout expires.
 
-        After return, the caller re-runs :func:`check_conflicts`. A wait
-        that wakes via timeout still falls through to the diff; the diff
-        either finds the world quiet (no conflict — proceed) or still
-        moving (Conflict raised under :class:`Serialize` degraded to
-        Abort).
+        Two composed layers (#8):
+
+        - **In-process:** other live :class:`TxnContext`\\ s in
+          :attr:`_open` whose journalled ``write_keys`` hit my reads — waited
+          on via per-blocker :class:`threading.Event`\\ s (the fast path).
+        - **Cross-process:** other processes' published write INTENTS in the
+          shared ``_pherix_intents`` side-table — polled with backoff. Only
+          consulted if my own adapters include a cross-process-capable
+          (on-disk) SQLite adapter; in-memory-only txns skip this layer.
+
+        After return, the caller re-runs :func:`check_conflicts`. A wait that
+        wakes via timeout still falls through to the diff; the diff either
+        finds the world quiet (no conflict — proceed) or still moving
+        (Conflict raised under :class:`Serialize` degraded to Abort).
         """
         my_reads = {(r, tuple(k)) for (r, k, _v) in my_read_keys}
         if not my_reads:
             return
 
+        # Cross-process intent adapters of the WAITING txn (looked up by id).
+        # We poll each for foreign live intents on our read keys. Adapters
+        # backed by an in-memory DB report no cross-process capability and
+        # are skipped — the in-process Event layer covers them.
+        with self._lock:
+            my_ctx = self._open.get(my_txn_id)
+        xproc_adapters = [
+            a
+            for a in _intent_adapters(my_ctx)
+            if getattr(a, "supports_cross_process_intents", lambda: False)()
+        ]
+
         deadline = time.monotonic() + timeout_seconds
+        poll = self._POLL_MIN
         while True:
             with self._lock:
                 blockers: list[tuple[str, threading.Event]] = []
@@ -381,17 +465,34 @@ class JournalRegistry:
                         self._close_events.setdefault(txn_id, []).append(ev)
                         blockers.append((txn_id, ev))
 
-            if not blockers:
+            # Cross-process layer: any foreign live intent on my read keys?
+            xproc_blocked = any(
+                a.conflicting_intents(my_txn_id, my_reads)
+                for a in xproc_adapters
+            )
+
+            if not blockers and not xproc_blocked:
                 return
 
+            # In-process blockers: wait on their close events (cheap, exact).
             for txn_id, ev in blockers:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return
                 ev.wait(timeout=remaining)
-                # Loop: re-check (a fresh open txn may have appeared while
-                # we waited, or the closed txn's writes may have been
-                # rolled back — re-evaluation is the safe thing).
+
+            # Cross-process blockers: no event to wait on across the process
+            # boundary, so poll the intent table with capped backoff until
+            # the intent clears or the deadline passes.
+            if xproc_blocked:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return
+                time.sleep(min(poll, remaining))
+                poll = min(poll * 2, self._POLL_MAX)
+            # Loop: re-check (a fresh txn may have appeared, an in-process
+            # blocker's writes may have rolled back, or a foreign intent may
+            # have cleared — re-evaluation is the safe thing).
 
 
 # Process-global singleton. Tests should call :meth:`unregister` for any
