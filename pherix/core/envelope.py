@@ -37,6 +37,17 @@ The period key turns "per day" / "per hour" / "for all time" into a pure
 function of the wall clock at evaluation time — :func:`day_period` is the
 default (UTC calendar date). Two effects in the same UTC day share a bucket;
 midnight UTC rolls the budget over with no code change.
+
+Known limitation — cross-process cap races (single-host)
+========================================================
+``evaluate`` reads the persisted baseline and decides; the increment is flushed
+*after* commit. That read -> decide -> flush window is NOT atomic across
+processes, so two processes that both observe "spent 90 / cap 100" can each pass
+a 90-unit charge and both flush, overshooting to 180. The #8 intent mechanism
+guards resource KEYS, not cap TOTALS, so it does not close this. Within one
+process the cap is exact; across processes it is best-effort. Hard cross-process
+budget enforcement belongs to the #12 control plane (the natural cross-process
+arbiter, the same tier as cross-host isolation) — revisit it there.
 """
 
 from __future__ import annotations
