@@ -205,16 +205,19 @@
   <p class="eyebrow">Pherix · dogfood</p>
   <h1>The dogfood suite — real agents, in the path.</h1>
   <p class="lede">
-    The 367-test deterministic suite proves the engine is <em>correct</em>.
-    The dogfoods test whether it is <em>useful</em> — a real LLM making real,
+    The deterministic suite — <em>mechanism tests</em>, mocked client, in CI —
+    proves the engine is <em>correct</em>. The dogfoods test whether it is
+    <em>useful</em>: a real LLM given a <em>goal</em> (not a script), making real,
     sometimes wrong decisions, with Pherix genuinely in the tool-call path
-    catching what would otherwise hurt. A scripted "dogfood" would just be a
-    redundant integration test; these aren't scripted.
+    catching what would otherwise hurt. The outcomes are <strong>not rigged</strong>
+    — the devops smoke test computes health from real state, the audit
+    reconciliation turns on real arithmetic — so a real run can succeed
+    <em>or</em> fail, and a <em>batch</em> measures how often.
   </p>
   <div class="meta-row">
-    <span><b>Merged:</b> <code>add6709</code></span>
-    <span><b>Tests:</b> 391 green</span>
+    <span><b>Tests:</b> 396 green (mechanism)</span>
     <span><b>Streams:</b> 4 (one harness + DevOps, audit, sandbox, MCP)</span>
+    <span><b>Genuine + capture:</b> <code>feat/proper-agents</code></span>
   </div>
 </header>
 
@@ -243,21 +246,24 @@
     <pre>ANTHROPIC_API_KEY=sk-ant-...</pre>
     <p><strong>2 · Install the agent dependency</strong> — kept out of the dependency-free library, so it's an opt-in extra:</p>
     <pre>pip install -e '.[dogfood]'</pre>
-    <p><strong>3 · Run one</strong> from the repo root. Start with DevOps — it's the most visceral (you watch a whole release unwind):</p>
-    <pre>python -m examples.dogfood.devops   # migrate + deploy; a failing smoke test unwinds the release
-python -m examples.dogfood.audit    # two concurrent agents reconcile a ledger, attributed + isolated
-python -m examples.dogfood.coding   # an out-of-box CLI governed inside the sandbox
+    <p><strong>3 · Run one</strong> from the repo root. These are the <strong>real-agent runs</strong> — a real model, a goal, a genuine outcome (the offline <code>tests/test_dogfood_*.py</code> are the <em>mechanism tests</em>). Start with DevOps — it's the most visceral (you watch a real agent ship a release, and sometimes watch it unwind):</p>
+    <pre>python -m examples.dogfood.devops   # ship v2: a healthy release commits, a careless one (no backfill) unwinds
+python -m examples.dogfood.audit    # two concurrent agents reconcile a real imbalance, attributed + isolated
+python -m examples.dogfood.coding   # an out-of-box CLI governed inside the sandbox (mechanism demo)
 
-# or drive devops with a LOCAL open model (no cloud, no key) — same governance:
+# run a BATCH and get a comparable report + containment rate (the variance a single run hides):
+python -m examples.dogfood.capture devops --runs 4 --out reports/
+
+# or drive devops with a LOCAL open model (no cloud, no key) — same governance, same genuine outcome:
 python -m examples.dogfood.devops --local \
     --base-url http://localhost:11434/v1 --model qwen2.5-coder:7b</pre>
-    <p class="start-note">Default cloud model is <code>claude-sonnet-4-6</code>; <code>--local</code> points at any OpenAI-compatible endpoint (Ollama/vLLM). Each script prints the agent's transcript, the Pherix journal it produced, and what got gated / unwound / audited — the thing to watch is the moment the agent does something that would hurt and Pherix contains it.</p>
+    <p class="start-note">Default cloud model is <code>claude-sonnet-4-6</code>; <code>--local</code> points at any OpenAI-compatible endpoint (Ollama/vLLM). Each script prints the agent's transcript, the Pherix journal it produced, and what got gated / unwound / audited — the thing to watch is the moment the agent does something that would hurt and Pherix contains it. The outcome is genuine: it depends on what the agent actually did, not on a forced flag.</p>
   </div>
 
   <h3>What each one shows you</h3>
   <ul>
-    <li><strong>DevOps</strong> — the agent runs a migration + writes config + fires a deploy; the smoke test fails, and the migration, the config, and the deploy all unwind <em>together</em>. Atomicity, made visible. <em>("agent ACID for your pipeline.")</em></li>
-    <li><strong>Audit</strong> — two agents hit the same ledger at once; every adjustment is attributed by <code>client_id</code> and isolation stops them corrupting each other; the journal is a per-client compliance view. <em>(This is the dogfood that found the Slice-4 bug below.)</em></li>
+    <li><strong>DevOps</strong> — the agent is told to ship v2 (the app reads a <code>feature_flag</code> for every account) and decides how. The smoke test computes health from the <em>real</em> post-deploy state: a thorough agent migrates, backfills, configures, deploys → it commits; a careless one adds the column but skips the backfill → the smoke check trips at commit and the migration, config and deploy all unwind <em>together</em>. Atomicity, made visible — and the failure is earned, not staged. <em>("agent ACID for your pipeline.")</em></li>
+    <li><strong>Audit</strong> — two agents reconcile a ledger seeded with a real imbalance, concurrently; each reads the live amounts, computes the correcting deltas, and books them against the wrong entries so the books reach zero. Every adjustment is attributed by <code>client_id</code>, isolation stops them corrupting each other; the journal is a per-client compliance view. <em>(This is the dogfood that found — and now exercises the fix for — the Slice-4 bug below.)</em></li>
     <li><strong>Coding</strong> — a coding CLI's file/shell actions route through the sandbox; a forbidden action (write <code>/etc</code>, push to main) is gated. Agent-agnostic — the environment governs, not the agent.</li>
   </ul>
 
@@ -283,19 +289,27 @@ python -m examples.dogfood.devops --local \
   <h2>The reframe</h2>
   <div class="reframe">
     <p>
-      <strong>Dogfoods are real LLM agents, not scripted demos.</strong> A
-      scripted walk-through can only ever assert what the author already knew
-      to assert — it is an integration test wearing a costume. The point of a
-      dogfood is the part the author <em>couldn't</em> predict: a real model
-      reaches a decision, sometimes the wrong one, and we watch whether Pherix
-      — actually wired into the tool-call path — contains the damage.
+      <strong>Two distinct artifacts — don't conflate them.</strong>
+      <em>Mechanism tests</em> (<code>tests/test_dogfood_*.py</code>) use a
+      <em>mocked</em> client and a canned tool sequence to assert that, given that
+      exact sequence, the engine unwinds / audits / gates / isolates correctly.
+      They are deterministic and in CI — but they are <em>not</em> agents.
+      <em>Real-agent runs</em> (<code>python -m examples.dogfood.*</code>) give a
+      real model a <em>goal</em> and let it decide; the outcome is genuine and can
+      go either way. The first proves <em>correct</em>; the second proves
+      <em>useful</em>.
     </p>
     <p>
-      So the suite splits cleanly. The deterministic tests answer
-      <em>"is the engine correct?"</em> (yes, 367 times). The dogfoods answer a
-      different question the unit suite structurally cannot: <em>"is the engine
-      useful when a real agent drives it against a real backend?"</em> One of
-      them, below, found a correctness bug the 367 tests all missed.
+      The point of a real-agent run is the part the author <em>couldn't</em>
+      predict: a real model reaches a decision, sometimes the wrong one, and we
+      watch whether Pherix — actually wired into the tool-call path — contains
+      the damage. Because the outcomes are no longer rigged, a <em>batch</em>
+      (<code>capture.py</code>) measures the variance: how often the agent slips,
+      and the <em>containment rate</em> when it does. The deterministic suite
+      answers <em>"is the engine correct?"</em> (yes, 396 times); the real-agent
+      runs answer the question the unit suite structurally cannot — and one of
+      them, below, found a correctness bug all the mechanism tests missed (now
+      fixed, and the audit dogfood exercises the genuine flow the fix unlocked).
     </p>
   </div>
 </section>
@@ -304,11 +318,15 @@ python -m examples.dogfood.devops --local \
 <section id="harness">
   <h2>The shared real-agent harness</h2>
   <p>
-    Merged at <code>add6709</code>, 367 tests green, fully offline-tested via a
-    mocked client; <em>real runs are online and operator-driven</em>. One harness
-    underpins the lot: an Anthropic tool-use loop running inside
+    396 mechanism tests green, fully offline-tested via a mocked client;
+    <em>real-agent runs are online and operator-driven</em>. One harness
+    underpins the lot: a tool-use loop running inside
     <code>agent_txn</code> / <code>dry_run</code>, dispatching each tool call the
-    model emits to the matching Pherix <code>@tool</code>.
+    model emits to the matching Pherix <code>@tool</code> — behind a backend seam
+    (cloud Anthropic or a local OpenAI-compatible endpoint), so the same run
+    governs a local open model identically. <code>capture.py</code> wraps it to
+    record a structured report per run (transcript, journal, "what would have
+    hurt / what Pherix did", a verdict) and a batch summary.
   </p>
   <div class="harness">
     <h3>How the loop closes</h3>
@@ -338,14 +356,17 @@ python -m examples.dogfood.devops --local \
       <span class="badge">✓ built</span>
     </div>
     <p>
-      A real agent migrates a database, writes config, and fires an
-      <em>irreversible</em> deploy. The post-deploy smoke test fails
-      <em>inside the commit fire-loop</em> — exactly the worst moment, after the
-      irreversible action has already gone out. <code>_partial_unwind</code>
-      compensates the deploy and restores the reversible writes around it,
-      leaving the world clean.
+      A real agent is given a <em>goal</em> — ship v2 safely; the app reads a
+      <code>feature_flag</code> for every account — and decides how. It migrates,
+      (hopefully) backfills, writes config, and fires an <em>irreversible</em>
+      deploy. The post-deploy smoke test computes health from the <em>real</em>
+      state and fires <em>inside the commit fire-loop</em>, after the irreversible
+      action has gone out: if the agent skipped the backfill (existing rows left
+      NULL) it raises, and <code>_partial_unwind</code> compensates the deploy and
+      restores the reversible writes around it, leaving the world clean. The
+      failure is <strong>earned</strong> — no forced flag.
     </p>
-    <div class="proves"><b>Proves</b>Atomic release unwind, driven by a real model — "agent ACID for your pipeline." The blast-radius case: highest stakes, most irreversible.</div>
+    <div class="proves"><b>Proves</b>Atomic release unwind, driven by a real model on a genuine fault — "agent ACID for your pipeline." The blast-radius case: highest stakes, most irreversible. A batch shows how often a real agent trips it.</div>
   </article>
 
   <article class="dog audit">
@@ -354,12 +375,15 @@ python -m examples.dogfood.devops --local \
       <span class="badge">✓ built</span>
     </div>
     <p>
-      Two agents reconcile a ledger <em>concurrently</em>, under two distinct
-      <code>client_id</code>s. Every adjustment is attributed to its agent and
+      Two agents reconcile a ledger seeded with a <em>real arithmetic imbalance</em>
+      <em>concurrently</em>, under two distinct <code>client_id</code>s. Each reads
+      the live amounts, works out the correcting deltas, and books a correction
+      against the wrong entry so the books reach zero — success depends on the
+      agent's own arithmetic. Every adjustment is attributed to its agent and
       isolated from the other, then queryable as a per-client compliance view —
       the journal handed straight to an auditor.
     </p>
-    <div class="proves"><b>Proves</b>"Hand it to your auditor." Per-client attribution + isolation as a compliance artifact. <strong>And it surfaced the headline finding below.</strong></div>
+    <div class="proves"><b>Proves</b>"Hand it to your auditor." Genuine reconciliation + per-client attribution + isolation as a compliance artifact. <strong>And it surfaced the headline finding below (since fixed — the dogfood now exercises the genuine read-then-correct flow).</strong></div>
   </article>
 
   <article class="dog sandbox">
@@ -408,7 +432,7 @@ python -m examples.dogfood.devops --local \
       <div class="lab">Domain tools → library shape</div>
       <h4>DevOps + audit</h4>
       <p>
-        These agents call <em>tools we define</em> — <code>run_migration</code>,
+        These agents call <em>tools we define</em> — <code>add_column</code>,
         <code>query_ledger</code>, and so on. The realistic shape is the library
         use case: a real LLM tool-use loop where every tool is
         <code>@tool</code>-wrapped. The shared harness handles this directly.
@@ -432,7 +456,7 @@ python -m examples.dogfood.devops --local \
   <h2>The bug the dogfood found</h2>
   <div class="finding">
     <span class="tag">★ headline finding — the proof the approach works</span>
-    <h3>A real-agent dogfood caught a Slice-4 isolation bug all 367 deterministic tests missed.</h3>
+    <h3>A real-agent dogfood caught a Slice-4 isolation bug all the mechanism tests missed.</h3>
     <p>
       The audit dogfood ran two agents against a ledger and tripped a false
       <code>IsolationConflict</code>: a transaction that <em>read</em> a key and
@@ -534,7 +558,7 @@ python -m examples.dogfood.devops --local \
 <!-- ===================================================================== -->
 <footer>
   <p>Pherix · <code>docs/dogfood.html</code> · served by the same local <code>python -m http.server</code> at the repo root.</p>
-  <p>Suite merged at <code>add6709</code> — 367 tests green, offline via a mocked client; real runs are online and operator-driven. See <a href="phases.html">phases.html</a> (the commercial arc) and <a href="roadmap.html">roadmap.html</a> (the slice-level engine).</p>
+  <p>Suite merged at <code>add6709</code>; made genuinely autonomous + capture harness on <code>feat/proper-agents</code> — 396 mechanism tests green, offline via a mocked client; real-agent runs are online and operator-driven. See <a href="phases.html">phases.html</a> (the commercial arc) and <a href="roadmap.html">roadmap.html</a> (the slice-level engine).</p>
 </footer>
 
 </main>

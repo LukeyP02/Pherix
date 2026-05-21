@@ -12,12 +12,14 @@ behaves correctly given those exact sequences. The genuinely autonomous version
 We assert what the dogfood claims:
 
 - both ``client_id``s appear attributed in the audit (``get_transaction``),
-- corrections are booked to the suspense account and the corrected trial balance
-  reaches zero (no ledger corruption; source entries intact),
+- each agent reads a wrong entry and books a correction against that same entry
+  (the natural read-then-correct flow, legal since the self-write fix), and the
+  corrected trial balance reaches zero (no ledger corruption; source entries
+  intact),
 - the per-client compliance view the dogfood builds is correct,
-- and — the isolation payoff — when a reviewer that *read* an entry races a
-  corrector that *writes* it, the ``Abort`` policy unwinds the stale reader
-  rather than corrupting the ledger.
+- and — the isolation payoff — when two reconcilers contend on the same entry,
+  the ``Abort`` policy unwinds the one whose read went stale rather than
+  corrupting the ledger.
 
 The Anthropic loop is mocked; nothing here imports ``anthropic`` or reads a key.
 """
@@ -41,7 +43,6 @@ from examples.dogfood.audit import (
     _ACTIVE_CLIENT,
     AUDIT_TOOLS,
     LEDGER_SCHEMA,
-    SUSPENSE_ID,
     ClientRun,
     compliance_view,
     ledger_balance,
@@ -106,18 +107,17 @@ CLIENT_B = "auditor-b"
 
 
 def test_two_agents_reconcile_to_zero_attributed_and_uncorrupted():
-    """Each agent reads its wrong entry, books a correction to suspense; both
-    attributed, the corrected trial balance reaches zero, the ledger is intact."""
+    """Each agent reads its wrong entry and books a correction against that same
+    entry; both attributed, the corrected trial balance reaches zero, intact."""
     audit_fd, audit_path = tempfile.mkstemp(suffix=".audit.db")
     os.close(audit_fd)
     try:
         with scratch_sqlite(schema=LEDGER_SCHEMA) as db:
-            # A reads entry 2 (actual 550, expected 500) and books -50 to the
-            # suspense account; it also reads entry 1 and flags it (a flag
-            # appends to the flags log, declaring no entry write-key). Its reads
-            # {1,2} are disjoint from its write {suspense}, so it commits clean.
-            # B reads entry 4 (actual 800, expected 750) and books -50 to
-            # suspense. Two -50 corrections balance the seeded +100 imbalance.
+            # A reads entry 2 (actual 550, expected 500) and books -50 against
+            # entry 2 (read-then-correct the same entry — legal since the
+            # self-write fix); it also reads entry 1 and flags it. B reads entry
+            # 4 (actual 800, expected 750) and books -50 against entry 4. Two -50
+            # corrections balance the seeded +100 imbalance.
             clients = {
                 CLIENT_A: _FakeClient(
                     [
@@ -130,7 +130,7 @@ def test_two_agents_reconcile_to_zero_attributed_and_uncorrupted():
                                 "a2",
                                 "post_adjustment",
                                 {
-                                    "entry_id": SUSPENSE_ID,
+                                    "entry_id": 2,
                                     "delta": -50,
                                     "reason": "entry 2 receivable overstated by 50",
                                 },
@@ -163,7 +163,7 @@ def test_two_agents_reconcile_to_zero_attributed_and_uncorrupted():
                                 "b2",
                                 "post_adjustment",
                                 {
-                                    "entry_id": SUSPENSE_ID,
+                                    "entry_id": 4,
                                     "delta": -50,
                                     "reason": "entry 4 inventory overstated by 50",
                                 },
@@ -188,8 +188,8 @@ def test_two_agents_reconcile_to_zero_attributed_and_uncorrupted():
                 sequential=True,
             )
 
-            # Both agents committed cleanly (reads disjoint from the suspense
-            # write → no self-conflict; disjoint subsets → no cross-conflict).
+            # Both agents committed cleanly (read-then-correct the same entry is
+            # legal post-fix; disjoint subsets → no cross-conflict).
             assert isinstance(runs[CLIENT_A], ClientRun)
             assert runs[CLIENT_A].run.final_state is TxnState.COMMITTED
             assert runs[CLIENT_B].run.final_state is TxnState.COMMITTED
@@ -211,9 +211,9 @@ def test_two_agents_reconcile_to_zero_attributed_and_uncorrupted():
                 audit.close()
 
             # No ledger corruption: source entries intact, both corrections
-            # landed against the suspense account, attributed by client_id.
+            # landed against the wrong entries, attributed by client_id.
             entries = ledger_snapshot(db)
-            assert {e["id"] for e in entries} == {1, 2, 3, 4, 5, SUSPENSE_ID}
+            assert {e["id"] for e in entries} == {1, 2, 3, 4, 5}
             probe = db.connect()
             try:
                 adj = probe.execute(
@@ -225,8 +225,8 @@ def test_two_agents_reconcile_to_zero_attributed_and_uncorrupted():
             finally:
                 probe.close()
             assert adj == [
-                (SUSPENSE_ID, -50, CLIENT_A),
-                (SUSPENSE_ID, -50, CLIENT_B),
+                (2, -50, CLIENT_A),
+                (4, -50, CLIENT_B),
             ]
             assert flg == [(1, "spot-checked cash, ok", CLIENT_A)]
 
@@ -246,7 +246,7 @@ def test_two_agents_reconcile_to_zero_attributed_and_uncorrupted():
             assert va.adjustments == [
                 {
                     "id": 1,
-                    "entry_id": SUSPENSE_ID,
+                    "entry_id": 2,
                     "delta": -50,
                     "reason": "entry 2 receivable overstated by 50",
                 }
@@ -258,7 +258,7 @@ def test_two_agents_reconcile_to_zero_attributed_and_uncorrupted():
             assert vb.adjustments == [
                 {
                     "id": 2,
-                    "entry_id": SUSPENSE_ID,
+                    "entry_id": 4,
                     "delta": -50,
                     "reason": "entry 4 inventory overstated by 50",
                 }

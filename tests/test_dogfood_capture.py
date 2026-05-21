@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace as NS
 
-from examples.dogfood.audit import CLIENT_A, CLIENT_B, SUSPENSE_ID
+from examples.dogfood.audit import CLIENT_A, CLIENT_B
 from examples.dogfood.capture import (
     BatchSummary,
     run_audit_batch,
@@ -105,7 +105,7 @@ def _audit_reconcile(entry_id, delta, reason):
                 _tu(
                     "a",
                     "post_adjustment",
-                    {"entry_id": SUSPENSE_ID, "delta": delta, "reason": reason},
+                    {"entry_id": entry_id, "delta": delta, "reason": reason},
                 ),
                 stop_reason="tool_use",
             ),

@@ -15,20 +15,22 @@ python -m examples.dogfood.audit       # the real-agent run (needs a key)
 deterministic, CI — that guards the same composition; it is *not* a real-agent
 run.)
 
-## The genuine task (no scripted read-then-write)
+## The genuine task (read the entry, then correct that same entry)
 
 The ledger is seeded with a **real arithmetic imbalance**: a trial balance whose
 signed entries should sum to zero (debits = credits) but do not, because two
 entries are overstated against their expected control values. Each agent is
 handed the expected amounts for its entries, *reads the live amounts* through
-Pherix, works out the correcting deltas, and **books the corrections to a
-suspense account** so the corrected balance reaches zero. Success is checkable —
-`ledger_balance(db) == 0` — and depends on what the agent actually computes, not
-on a scripted sequence. A real agent can flip a sign, miss an entry, or
-over-correct; that variance is the honest signal. (Booking corrections to a
-suspense account rather than mutating the historical entry is standard
-accounting — and, conveniently, it keeps the agent's read-set disjoint from its
-write-set, clear of the engine limitation in finding #1 below.)
+Pherix, works out the correcting deltas, and **books a correcting adjustment
+against each wrong entry** so the corrected balance reaches zero. Success is
+checkable — `ledger_balance(db) == 0` — and depends on what the agent actually
+computes, not on a scripted sequence. A real agent can flip a sign, miss an
+entry, or over-correct; that variance is the honest signal.
+
+This is the natural reconciliation flow — *read entry N, then correct entry N in
+the same transaction*. It used to trip a false self-conflict (finding #1 below);
+that is now **fixed on main**, so the dogfood does the genuine thing rather than
+routing corrections through a suspense account to dodge the bug.
 
 ## What it proves
 
@@ -72,38 +74,36 @@ common path is clean parallel work; the conflict path is exercised
 deterministically in the mechanism test
 (`test_reviewer_and_corrector_on_same_entry_isolated_no_corruption`), which uses
 the in-process nested-`agent_txn` arbitration shape (see below for why, not free
-threads). The conflict it constructs is the genuine one this engine can detect:
-a **reviewer** that *reads* entry N races a **corrector** that *writes* it, so
-the reviewer's read goes stale and `Abort` unwinds it. (Two pure writers never
-conflict in this optimistic model — a conflict always requires a stale read.)
+threads). The conflict it constructs is the genuine one this engine detects: one
+reconciler *reads* entry N and another *writes* it first, so the slow one's read
+goes stale and `Abort` unwinds it. (Two pure writers never conflict in this
+optimistic model — a conflict always requires a stale read.)
 
 ## Engine findings (surfaced building this dogfood)
 
-Two real `core/` behaviours this dogfood hit — flagged to the orchestrator, not
-worked around in `core/` (no `core/` change was made):
+Two real `core/` behaviours this dogfood hit. Finding #1 has since been **fixed
+on main**; finding #2 is an inherent property of free SQLite concurrency that
+the demo accommodates.
 
 1. **Read-then-write the same isolation key in one transaction falsely
-   conflicts.** A txn that records `reads=[("entries", N)]` (via `query_ledger`)
-   and then `writes=[("entries", N)]` (via `post_adjustment`) raises
-   `IsolationConflict("read v0, now v0")` at its own commit — a self-conflict.
-   Root cause: `SQLiteAdapter.read_version` reads through a separate *meta*
-   connection (added so cross-process bumps are visible at commit), but the
-   txn's own `write_version` bump is uncommitted on the *main* connection, so
-   the meta connection cannot see it. `check_conflicts` then compares
-   `v_expected = version_after_my_write (1)` against `v_now = meta_read (0)` and
-   fires. This breaks the *natural* reconciliation flow ("read an entry, then
-   correct it" in one txn). We stay clear of it at the dogfood layer by the
-   **suspense-account** design: a reconciler reads the entries it diagnoses
-   (keys `1..5`) and books its correction to the *suspense* key (`99`), so its
-   read-set and write-set are disjoint and it never self-conflicts;
-   `flag_discrepancy` declares no entry write-key (a flag is a pure append), so
-   "read then flag" in one txn is also legal. (`post_adjustment` still declares
-   `writes=[("entries", entry_id)]`, so a *correction booked directly against a
-   contended entry* — as the isolation test constructs — does conflict with a
-   concurrent reader; that path is fully real.) A fix belongs in `core/`:
-   `read_version` at commit-diff time should see the txn's own pending write
-   (e.g. read through the main connection, or fold pending writes from the
-   journal) — tracked on `feat/isolation-self-write`.
+   conflicted — now fixed.** A txn that recorded `reads=[("entries", N)]` (via
+   `query_ledger`) and then `writes=[("entries", N)]` (via `post_adjustment`)
+   used to raise `IsolationConflict("read v0, now v0")` at its own commit — a
+   self-conflict. Root cause: `SQLiteAdapter.read_version` read through a
+   separate *meta* connection (so cross-process bumps are visible at commit),
+   but the txn's own `write_version` bump was uncommitted on the *main*
+   connection, so the meta connection could not see it; `check_conflicts` then
+   compared `v_expected = 1` against `v_now = 0` and fired. The fix (merged,
+   `feat/isolation-self-write`): the commit-time diff distinguishes
+   own-write-visible adapters from committed-only ones via
+   `reads_committed_only()` — a committed-only adapter compares the committed
+   base captured *at read* against now, so a txn's own pending write no longer
+   looks like someone else's bump — with a 450-line on-disk test matrix
+   (`test_isolation_self_write.py`) closing the coverage gap. **Because of this
+   fix, the audit dogfood now reads an entry and books the correction against
+   that same entry** — the natural flow — rather than indirecting through a
+   suspense account. The cross-txn conflict path (one txn's read goes stale
+   because another wrote the key) is unchanged and still real.
 
 2. **Free-running concurrency on one SQLite file is racy.** Two genuinely
    concurrent agents on one WAL file (a) collide on the single write lock — and

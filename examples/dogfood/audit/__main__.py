@@ -6,8 +6,8 @@ This is the **real-agent run** (needs an Anthropic key in ``.env`` at the repo
 root — see ``examples/dogfood``'s README). Two real agents run in parallel
 threads against one on-disk ledger seeded with a genuine arithmetic imbalance,
 under two ``client_id``s. Each must read the live amounts, compare them to the
-expected values it is given, and book correcting adjustments to the suspense
-account so the books balance. Afterwards we read the audit on the main thread
+expected values it is given, and book a correcting adjustment against each wrong
+entry so the books balance. Afterwards we read the audit on the main thread
 and print a per-``client_id`` compliance view, the corrected trial balance, and
 the ledger state — proof that every adjustment is attributed, the books were
 genuinely reconciled, and the source rows survived two concurrent reconcilers
