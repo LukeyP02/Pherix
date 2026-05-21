@@ -12,8 +12,8 @@ beforeEach(() => {
 describe("the gate", () => {
   it("blocks commit when a staged irreversible has neither compensator nor approval", async () => {
     await expect(
-      agentTxn(f.adapters, () => {
-        f.tools.sendEmail({ to: "x@y.z", body: "hi" });
+      agentTxn(f.adapters, async () => {
+        await f.tools.sendEmail({ to: "x@y.z", body: "hi" });
       }),
     ).rejects.toThrow(GateBlocked);
     expect(f.log.sent).toHaveLength(0);
@@ -22,9 +22,9 @@ describe("the gate", () => {
   it("lists all unapproved effect ids in the GateBlocked error", async () => {
     let err: GateBlocked | undefined;
     try {
-      await agentTxn(f.adapters, () => {
-        f.tools.sendEmail({ to: "a@y.z", body: "1" });
-        f.tools.sendEmail({ to: "b@y.z", body: "2" });
+      await agentTxn(f.adapters, async () => {
+        await f.tools.sendEmail({ to: "a@y.z", body: "1" });
+        await f.tools.sendEmail({ to: "b@y.z", body: "2" });
       });
     } catch (e) {
       err = e as GateBlocked;
@@ -36,9 +36,9 @@ describe("the gate", () => {
   it("marks gated effects GATED and the txn ROLLED_BACK", async () => {
     let ctx: { txn: { state: TxnState; effects: { status: EffectStatus }[] } } | undefined;
     try {
-      ctx = await agentTxn(f.adapters, (txn) => {
+      ctx = await agentTxn(f.adapters, async (txn) => {
         ctx = txn;
-        f.tools.sendEmail({ to: "x@y.z", body: "hi" });
+        await f.tools.sendEmail({ to: "x@y.z", body: "hi" });
       });
     } catch {
       /* GateBlocked expected */
@@ -48,8 +48,8 @@ describe("the gate", () => {
   });
 
   it("approveIrreversible lets the commit pass and the effect fires", async () => {
-    const ctx = await agentTxn(f.adapters, (txn) => {
-      const staged = f.tools.sendEmail({ to: "x@y.z", body: "hi" }) as StagedResult;
+    const ctx = await agentTxn(f.adapters, async (txn) => {
+      const staged = (await f.tools.sendEmail({ to: "x@y.z", body: "hi" })) as StagedResult;
       txn.approveIrreversible(staged.effectId);
     });
     expect(ctx.txn.state).toBe(TxnState.COMMITTED);
@@ -57,8 +57,8 @@ describe("the gate", () => {
   });
 
   it("a compensator-backed effect needs no approval", async () => {
-    const ctx = await agentTxn(f.adapters, () => {
-      f.tools.charge({ card: "tok_1", amount: 50 }); // declares compensator "refund"
+    const ctx = await agentTxn(f.adapters, async () => {
+      await f.tools.charge({ card: "tok_1", amount: 50 }); // declares compensator "refund"
     });
     expect(ctx.txn.state).toBe(TxnState.COMMITTED);
     expect(f.log.sent.map((s) => s.tool)).toEqual(["charge"]);
@@ -66,8 +66,8 @@ describe("the gate", () => {
 
   it("approveIrreversible with an unknown effectId raises (typo detection)", async () => {
     await expect(
-      agentTxn(f.adapters, (txn) => {
-        f.tools.sendEmail({ to: "x@y.z", body: "hi" });
+      agentTxn(f.adapters, async (txn) => {
+        await f.tools.sendEmail({ to: "x@y.z", body: "hi" });
         txn.approveIrreversible("not-a-real-id");
       }),
     ).rejects.toThrow(/no staged effect/);
@@ -76,9 +76,9 @@ describe("the gate", () => {
   it("approval is per-effect, not blanket", async () => {
     let err: GateBlocked | undefined;
     try {
-      await agentTxn(f.adapters, (txn) => {
-        const a = f.tools.sendEmail({ to: "a@y.z", body: "1" }) as StagedResult;
-        f.tools.sendEmail({ to: "b@y.z", body: "2" });
+      await agentTxn(f.adapters, async (txn) => {
+        const a = (await f.tools.sendEmail({ to: "a@y.z", body: "1" })) as StagedResult;
+        await f.tools.sendEmail({ to: "b@y.z", body: "2" });
         txn.approveIrreversible(a.effectId); // approve only the first
       });
     } catch (e) {
@@ -102,8 +102,8 @@ describe("the gate", () => {
       return { allow: true };
     });
     await expect(
-      agentTxn(f.adapters, () => {
-        f.tools.sendEmail({ to: "x@y.z", body: "hi" });
+      agentTxn(f.adapters, async () => {
+        await f.tools.sendEmail({ to: "x@y.z", body: "hi" });
       }, { policy }),
     ).rejects.toThrow(/revoked before commit/);
     expect(f.log.sent).toHaveLength(0);

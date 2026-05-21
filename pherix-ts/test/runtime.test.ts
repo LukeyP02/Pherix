@@ -12,8 +12,8 @@ beforeEach(() => {
 
 describe("reversible lane", () => {
   it("auto-commits a reversible write on clean exit (snapshot before apply, applied live)", async () => {
-    const ctx = await agentTxn(f.adapters, () => {
-      f.tools.transfer({ from: "alice", to: "bob", amount: 30 });
+    const ctx = await agentTxn(f.adapters, async () => {
+      await f.tools.transfer({ from: "alice", to: "bob", amount: 30 });
     });
     expect(ctx.txn.state).toBe(TxnState.COMMITTED);
     expect(f.balanceOf("alice")).toBe(70);
@@ -21,8 +21,8 @@ describe("reversible lane", () => {
   });
 
   it("explicit rollback undoes writes via the snapshot restore", async () => {
-    const ctx = await agentTxn(f.adapters, (txn) => {
-      f.tools.transfer({ from: "alice", to: "bob", amount: 30 });
+    const ctx = await agentTxn(f.adapters, async (txn) => {
+      await f.tools.transfer({ from: "alice", to: "bob", amount: 30 });
       expect(f.balanceOf("bob")).toBe(30); // applied live, mid-txn
       txn.rollback();
     });
@@ -34,9 +34,9 @@ describe("reversible lane", () => {
   it("auto-rolls-back when the agent body throws", async () => {
     let ctx: { txn: { state: TxnState } } | undefined;
     await expect(
-      agentTxn(f.adapters, (txn) => {
+      agentTxn(f.adapters, async (txn) => {
         ctx = txn;
-        f.tools.transfer({ from: "alice", to: "bob", amount: 30 });
+        await f.tools.transfer({ from: "alice", to: "bob", amount: 30 });
         throw new Error("agent decided to abort");
       }),
     ).rejects.toThrow("agent decided to abort");
@@ -47,9 +47,9 @@ describe("reversible lane", () => {
 
   it("a tool that throws during apply rolls back cleanly (snapshot protects state)", async () => {
     await expect(
-      agentTxn(f.adapters, () => {
-        f.tools.transfer({ from: "alice", to: "bob", amount: 30 });
-        f.tools.boom({});
+      agentTxn(f.adapters, async () => {
+        await f.tools.transfer({ from: "alice", to: "bob", amount: 30 });
+        await f.tools.boom({});
       }),
     ).rejects.toThrow("boom");
     // The first transfer is rolled back too — the whole txn unwinds.

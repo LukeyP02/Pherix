@@ -139,7 +139,7 @@ export class TxnContext implements RecordingContext {
 
   // --- interception ---
 
-  recordToolCall(toolName: string, args: Record<string, unknown>): unknown {
+  async recordToolCall(toolName: string, args: Record<string, unknown>): Promise<unknown> {
     this.guardOpen();
     const spec = REGISTRY.get(toolName);
 
@@ -176,10 +176,15 @@ export class TxnContext implements RecordingContext {
       return staged;
     }
 
-    // Reversible lane: snapshot -> apply.
+    // Reversible lane: snapshot -> apply. The apply is awaited so an async tool
+    // (the normal case for TS DB/HTTP clients) is fully resolved before the
+    // effect is marked APPLIED, and a rejection lands in the catch — driving
+    // FAILED status + the unwind, exactly like a synchronous throw. The await
+    // sits inside activeEffect.run so the async-local store survives the tool's
+    // internal await boundaries.
     effect.snapshot = adapter.snapshot(effect);
     try {
-      effect.result = activeEffect.run(effect, () => adapter.apply(effect, spec.fn));
+      effect.result = await activeEffect.run(effect, async () => adapter.apply(effect, spec.fn));
     } catch (e) {
       effect.status = EffectStatus.FAILED;
       this.audit.updateEffect(effect);
@@ -205,7 +210,7 @@ export class TxnContext implements RecordingContext {
 
   // --- commit (forward fold) ---
 
-  commit(): void {
+  async commit(): Promise<void> {
     this.guardOpen();
 
     const staged = this.txn.effects.filter(
@@ -230,7 +235,7 @@ export class TxnContext implements RecordingContext {
           }
         }
         if (this.txn.state === TxnState.STAGED) {
-          this.partialUnwind();
+          await this.partialUnwind();
         } else {
           this.rollback();
         }
@@ -250,11 +255,14 @@ export class TxnContext implements RecordingContext {
             this.audit.updateEffect(e);
           }
         }
-        this.partialUnwind();
+        await this.partialUnwind();
         throw new GateBlocked(needsApproval);
       }
 
-      // Forward fold over staged irreversibles in journal order.
+      // Forward fold over staged irreversibles in journal order. Each fire is
+      // awaited: an async irreversible (e.g. a real HTTP POST) fully resolves
+      // before the next fires, and a mid-fold rejection drives the mixed-fold
+      // unwind rather than escaping as an unhandled rejection.
       for (const e of staged) {
         if (e.status === EffectStatus.APPLIED) {
           // Idempotency: re-fire of an already-applied effect is a no-op.
@@ -263,11 +271,11 @@ export class TxnContext implements RecordingContext {
         const adapter = this.resolveAdapter(e.resource);
         const spec = REGISTRY.get(e.tool);
         try {
-          e.result = activeEffect.run(e, () => adapter.apply(e, spec.fn));
+          e.result = await activeEffect.run(e, async () => adapter.apply(e, spec.fn));
         } catch (err) {
           e.status = EffectStatus.FAILED;
           this.audit.updateEffect(e);
-          this.partialUnwind();
+          await this.partialUnwind();
           throw err;
         }
         e.status = EffectStatus.APPLIED;
@@ -311,7 +319,7 @@ export class TxnContext implements RecordingContext {
 
   // --- mixed-fold unwind after a commit-time failure ---
 
-  private partialUnwind(): void {
+  private async partialUnwind(): Promise<void> {
     this.txn.transition(TxnState.PARTIAL);
     this.audit.updateTransactionState(this.txn.txnId, this.txn.state);
 
@@ -346,7 +354,7 @@ export class TxnContext implements RecordingContext {
         effectId: `comp-${effect.effectId}`,
       });
       try {
-        compAdapter.apply(compEffect, compSpec.fn);
+        await compAdapter.apply(compEffect, compSpec.fn);
       } catch {
         stuck = true;
         continue;
@@ -397,7 +405,7 @@ export async function agentTxn(
   return activeTxn.run(ctx, async () => {
     try {
       await fn(ctx);
-      if (!ctx.finished) ctx.commit();
+      if (!ctx.finished) await ctx.commit();
     } catch (e) {
       if (!ctx.finished) ctx.rollback();
       throw e;

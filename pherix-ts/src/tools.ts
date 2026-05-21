@@ -20,7 +20,7 @@ import type { ToolFn } from "./adapters/base.js";
 /** What the tool wrapper needs from the active transaction — kept minimal so
  *  tools.ts never imports runtime.ts (that would be an import cycle). */
 export interface RecordingContext {
-  recordToolCall(toolName: string, args: Record<string, unknown>): unknown;
+  recordToolCall(toolName: string, args: Record<string, unknown>): Promise<unknown>;
 }
 
 /** Set by runtime.agentTxn(). Holds the active transaction context or null. */
@@ -89,9 +89,13 @@ export interface ToolOptions {
   compensator?: string | null;
 }
 
-/** The wrapper an agent calls. Returns the tool result (reversible lane) or a
- *  StagedResult sentinel (irreversible lane), determined by the runtime. */
-export type ToolWrapper<A extends Record<string, unknown>, R> = ((args: A) => R | StagedResultLike) & {
+/** The wrapper an agent calls. Resolves to the tool result (reversible lane) or
+ *  a StagedResult sentinel (irreversible lane), determined by the runtime. The
+ *  call is async so async tools (the normal TS case) are fully resolved before
+ *  the effect is marked APPLIED — the agent `await`s every tool call. */
+export type ToolWrapper<A extends Record<string, unknown>, R> = ((
+  args: A,
+) => Promise<R | StagedResultLike>) & {
   toolSpec: ToolSpec;
 };
 
@@ -131,13 +135,15 @@ export function tool<A extends Record<string, unknown> = Record<string, unknown>
   };
   REGISTRY.register(spec);
 
-  const wrapper = ((args: A): R | StagedResultLike => {
+  const wrapper = (async (args: A): Promise<R | StagedResultLike> => {
     const ctx = activeTxn.getStore();
     if (ctx === undefined) {
-      // Outside agentTxn(): transparent passthrough, un-journalled.
-      return fn(args) as R;
+      // Outside agentTxn(): transparent passthrough, un-journalled. Awaited for
+      // a uniform Promise return so callers treat the wrapper the same in or
+      // out of a transaction.
+      return (await fn(args)) as R;
     }
-    return ctx.recordToolCall(spec.name, args ?? {}) as R | StagedResultLike;
+    return (await ctx.recordToolCall(spec.name, args ?? {})) as R | StagedResultLike;
   }) as ToolWrapper<A, R>;
   wrapper.toolSpec = spec;
   return wrapper;

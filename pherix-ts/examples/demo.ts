@@ -61,8 +61,8 @@ const sendEmail = tool<{ to: string; body: string }>(
 async function reversibleRollback(): Promise<void> {
   console.log("1) reversible DB write that rolls back");
   console.log(`   before:  alice=${balance("alice")} bob=${balance("bob")}`);
-  const ctx = await agentTxn(adapters, (txn) => {
-    transfer({ from: "alice", to: "bob", amount: 30 });
+  const ctx = await agentTxn(adapters, async (txn) => {
+    await transfer({ from: "alice", to: "bob", amount: 30 });
     console.log(`   mid-txn: alice=${balance("alice")} bob=${balance("bob")} (applied live)`);
     txn.rollback(); // the agent changes its mind
   });
@@ -75,8 +75,8 @@ async function reversibleRollback(): Promise<void> {
 async function irreversibleGate(): Promise<void> {
   console.log("2) irreversible call that gates");
   try {
-    await agentTxn(adapters, () => {
-      const staged = sendEmail({ to: "user@example.com", body: "hello" });
+    await agentTxn(adapters, async () => {
+      const staged = await sendEmail({ to: "user@example.com", body: "hello" });
       console.log(`   staged: ${(staged as StagedResult).toString()} (not sent yet)`);
       // No approveIrreversible(...) call → commit must block at the gate.
     });

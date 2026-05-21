@@ -53,9 +53,9 @@ describe("Policy at runtime", () => {
     await expect(
       agentTxn(
         f.adapters,
-        (txn) => {
+        async (txn) => {
           captured = txn;
-          f.tools.transfer({ from: "alice", to: "bob", amount: 60 });
+          await f.tools.transfer({ from: "alice", to: "bob", amount: 60 });
         },
         { policy, audit },
       ),
@@ -74,9 +74,9 @@ describe("Policy at runtime", () => {
     await expect(
       agentTxn(
         f.adapters,
-        () => {
-          f.tools.sendEmail({ to: "a@y.z", body: "1" });
-          f.tools.sendEmail({ to: "b@y.z", body: "2" }); // trips the cap at stage-time
+        async () => {
+          await f.tools.sendEmail({ to: "a@y.z", body: "1" });
+          await f.tools.sendEmail({ to: "b@y.z", body: "2" }); // trips the cap at stage-time
         },
         { policy },
       ),
@@ -91,9 +91,9 @@ describe("Policy at runtime", () => {
     await expect(
       agentTxn(
         f.adapters,
-        () => {
-          f.tools.charge({ card: "A", amount: 60 });
-          f.tools.charge({ card: "B", amount: 60 }); // 120 > 100 -> Deny
+        async () => {
+          await f.tools.charge({ card: "A", amount: 60 });
+          await f.tools.charge({ card: "B", amount: 60 }); // 120 > 100 -> Deny
         },
         { policy },
       ),

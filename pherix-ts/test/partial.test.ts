@@ -21,11 +21,11 @@ describe("partial-commit (mixed-fold) unwind", () => {
     const fail = failingSend();
     let ctx: { txn: { state: TxnState } } | undefined;
     try {
-      ctx = await agentTxn(f.adapters, (txn) => {
+      ctx = await agentTxn(f.adapters, async (txn) => {
         ctx = txn;
-        f.tools.charge({ card: "A", amount: 10 }); // compensator refund
-        f.tools.charge({ card: "B", amount: 20 }); // compensator refund
-        const s = fail({}) as StagedResult;
+        await f.tools.charge({ card: "A", amount: 10 }); // compensator refund
+        await f.tools.charge({ card: "B", amount: 20 }); // compensator refund
+        const s = (await fail({})) as StagedResult;
         txn.approveIrreversible(s.effectId); // let it through the gate so it can fire + fail
       });
     } catch {
@@ -45,11 +45,11 @@ describe("partial-commit (mixed-fold) unwind", () => {
     const fail = failingSend();
     let ctx: { txn: { state: TxnState; effects: { status: EffectStatus; tool: string }[] } } | undefined;
     try {
-      ctx = await agentTxn(f.adapters, (txn) => {
+      ctx = await agentTxn(f.adapters, async (txn) => {
         ctx = txn;
-        const a = f.tools.sendEmail({ to: "x@y.z", body: "hi" }) as StagedResult; // no compensator
+        const a = (await f.tools.sendEmail({ to: "x@y.z", body: "hi" })) as StagedResult; // no compensator
         txn.approveIrreversible(a.effectId);
-        const s = fail({}) as StagedResult;
+        const s = (await fail({})) as StagedResult;
         txn.approveIrreversible(s.effectId);
       });
     } catch {
@@ -73,10 +73,10 @@ describe("partial-commit (mixed-fold) unwind", () => {
     const fail = failingSend();
     let ctx: { txn: { state: TxnState } } | undefined;
     try {
-      ctx = await agentTxn(f.adapters, (txn) => {
+      ctx = await agentTxn(f.adapters, async (txn) => {
         ctx = txn;
-        chargeBad({ card: "Z" });
-        const s = fail({}) as StagedResult;
+        await chargeBad({ card: "Z" });
+        const s = (await fail({})) as StagedResult;
         txn.approveIrreversible(s.effectId);
       });
     } catch {
@@ -88,9 +88,9 @@ describe("partial-commit (mixed-fold) unwind", () => {
   it("restores already-applied reversibles during the same unwind", async () => {
     const fail = failingSend();
     try {
-      await agentTxn(f.adapters, (txn) => {
-        f.tools.transfer({ from: "alice", to: "bob", amount: 40 }); // reversible, applied live
-        const s = fail({}) as StagedResult;
+      await agentTxn(f.adapters, async (txn) => {
+        await f.tools.transfer({ from: "alice", to: "bob", amount: 40 }); // reversible, applied live
+        const s = (await fail({})) as StagedResult;
         txn.approveIrreversible(s.effectId);
       });
     } catch {

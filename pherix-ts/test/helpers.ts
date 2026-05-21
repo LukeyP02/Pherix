@@ -27,12 +27,12 @@ export interface Fixture {
   log: SideEffectLog;
   balanceOf(name: string): number;
   tools: {
-    transfer: (args: { from: string; to: string; amount: number }) => unknown;
-    setBalance: (args: { name: string; balance: number }) => unknown;
-    boom: (args: Record<string, unknown>) => unknown;
-    sendEmail: (args: { to: string; body: string }) => unknown;
-    charge: (args: { card: string; amount: number }) => unknown;
-    refund: (args: { card: string; amount: number }) => unknown;
+    transfer: (args: { from: string; to: string; amount: number }) => Promise<unknown>;
+    setBalance: (args: { name: string; balance: number }) => Promise<unknown>;
+    boom: (args: Record<string, unknown>) => Promise<unknown>;
+    sendEmail: (args: { to: string; body: string }) => Promise<unknown>;
+    charge: (args: { card: string; amount: number }) => Promise<unknown>;
+    refund: (args: { card: string; amount: number }) => Promise<unknown>;
   };
 }
 
