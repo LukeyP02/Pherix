@@ -204,6 +204,16 @@
   </ul>
   <p>Adapters use <em>real backend semantics</em>: database savepoints, filesystem copy-on-write. The backend does the undo — we don't guess at it. And the adapter is honest when it <em>cannot</em> undo (an external API), forcing that effect down the staged / gated path rather than pretending.</p>
 
+  <h2>How you're used</h2>
+  <p>Pherix is consumed three ways, easiest first — not a remote API you call per action, but a layer that sits <em>in</em> your agent or <em>in front</em> of it.</p>
+  <table>
+    <tr><th>Mode</th><th>For</th><th>Integration cost</th></tr>
+    <tr><td><strong>MCP gateway</strong> — config, no code</td><td>Agents you don't own — Claude Code, Cursor, Aider. Point their MCP / tool config at the Pherix gateway.</td><td>A config file. Zero agent-code change.</td></tr>
+    <tr><td><strong>pip install</strong> — library</td><td>Agents you own. Decorate each tool with <code>@tool</code>, wrap the loop in <code>agent_txn(...)</code>. Runs in-process.</td><td>A two-line diff; the agent's reasoning code is untouched.</td></tr>
+    <tr><td><strong>Hosted control plane</strong> — future, commercial</td><td>The team that manages policy and reads the audit trail — a sign-in dashboard over the same core.</td><td>An account, not code. The monetised layer.</td></tr>
+  </table>
+  <div class="callout"><strong>It is a library, not a SaaS API — yet.</strong> The OSS engine runs where your agent runs (in-process, or as a gateway in front of it). The hosted control plane is the commercial layer on top, not a prerequisite to use Pherix.</div>
+
   <h2>The moat — honestly</h2>
   <p>For a library, <strong>the code is not the moat and never will be.</strong> The engine is clever, not exotic; it is copyable, and AI now makes copying cheap. Any defensibility thesis that rests on "they can't rebuild it" is dead. We concede that on purpose, and put the moat where it actually lives for infrastructure software — the same place Redis, Terraform, Sentry and Temporal keep theirs:</p>
   <ul>
@@ -230,6 +240,30 @@
     <tr><td><strong>Commercial layer</strong></td><td>Add the hosted control plane + cross-customer policy data as the business — the part the library was never meant to be.</td></tr>
     <tr><td><strong>Backlog</strong></td><td>The longitudinal envelope (cross-session caps over the durable journal).</td></tr>
   </table>
+
+  <h2>What's left to build</h2>
+  <p>Almost none of it is more engine — it is the gap between "works" and "a buyer says yes." Three tiers, in order.</p>
+
+  <h3>Tier 1 — unblock the first yes</h3>
+  <ul>
+    <li><strong>Longitudinal envelope</strong> — cross-session caps folded over the <em>durable</em> journal ("£X / Y rows / Z irreversible calls per day, across every run"). The one feature that makes continuous lifecycle governance real instead of a slogan.</li>
+    <li><strong>Audit query surface (the receipt)</strong> — "every denial / gate / rollback by this agent in this window." Today the journal is only fetchable by transaction id; compliance can't buy a log it can't query.</li>
+    <li><strong>Privacy / redaction seam</strong> — secrets must not land in a plaintext, delete-never journal. The procurement blocker for any security buyer. <em>Needs a decision first</em> — redact at write, encrypt at rest, or set retention — and it trades against replay.</li>
+  </ul>
+
+  <h3>Tier 2 — the conversion proof (the sales asset)</h3>
+  <ul>
+    <li><strong>Finish the coding-CLI spearhead</strong> end-to-end, plus the air-gapped adversarial capstone — the demo <em>is</em> the pitch.</li>
+    <li><strong>Journal the compensator fire</strong> — closes the "when did the refund actually fire?" audit hole; strengthens the receipt above.</li>
+  </ul>
+
+  <h3>Tier 3 — the business (after a design partner, not before)</h3>
+  <ul>
+    <li><strong>Hosted control plane</strong> — policy UI, audit search &amp; retention, gate approvals in Slack / web, cross-agent coordination. The monetised layer over the OSS library.</li>
+    <li><strong>Cross-customer policy data loop</strong> — the moat. Needs customers first, so it is last by definition.</li>
+  </ul>
+
+  <div class="callout"><strong>Two of these need you, not code:</strong> the privacy decision (Tier&nbsp;1) and which vertical is the spearhead (locks the Tier&nbsp;2 proof). Critical path: Tier&nbsp;1 → Tier&nbsp;2 → sign a partner → Tier&nbsp;3. Don't touch Tier&nbsp;3 until someone has signed.</div>
 
   <footer>
     <p>Served by one <code>python -m http.server</code> at the repo root. A direction statement, not marketing copy — argue with it.</p>
