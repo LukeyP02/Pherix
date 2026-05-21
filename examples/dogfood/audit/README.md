@@ -3,15 +3,32 @@
 Two real reconciliation agents run **concurrently** against one seeded SQLite
 ledger, under two `client_id`s. The payoff is the audit read *afterwards*: every
 adjustment is attributed to the agent that posted it, the source entries are
-uncorrupted (isolation held), and the whole thing is queryable as a per-client
-compliance view.
+uncorrupted (isolation held), the books were genuinely reconciled, and the whole
+thing is queryable as a per-client compliance view.
 
 ```
-python -m examples.dogfood.audit
+python -m examples.dogfood.audit       # the real-agent run (needs a key)
 ```
 
-(Needs an Anthropic key — see `examples/dogfood/README.md`. The offline test
-`tests/test_dogfood_audit.py` drives the same composition with mocked clients.)
+(Needs an Anthropic key — see `examples/dogfood/README.md`.
+`tests/test_dogfood_audit.py` is the **mechanism test** — mocked clients,
+deterministic, CI — that guards the same composition; it is *not* a real-agent
+run.)
+
+## The genuine task (no scripted read-then-write)
+
+The ledger is seeded with a **real arithmetic imbalance**: a trial balance whose
+signed entries should sum to zero (debits = credits) but do not, because two
+entries are overstated against their expected control values. Each agent is
+handed the expected amounts for its entries, *reads the live amounts* through
+Pherix, works out the correcting deltas, and **books the corrections to a
+suspense account** so the corrected balance reaches zero. Success is checkable —
+`ledger_balance(db) == 0` — and depends on what the agent actually computes, not
+on a scripted sequence. A real agent can flip a sign, miss an entry, or
+over-correct; that variance is the honest signal. (Booking corrections to a
+suspense account rather than mutating the historical entry is standard
+accounting — and, conveniently, it keeps the agent's read-set disjoint from its
+write-set, clear of the engine limitation in finding #1 below.)
 
 ## What it proves
 
@@ -52,10 +69,13 @@ would make the second agent block on the first; `Abort` is the honest,
 inspectable contract for a demo whose point is *that the conflict is caught*.
 The default `__main__` tasks point the two agents at disjoint entries, so the
 common path is clean parallel work; the conflict path is exercised
-deterministically in the offline test
-(`test_two_reconcilers_on_same_entry_isolated_no_corruption`), which uses the
-in-process nested-`agent_txn` arbitration shape (see below for why, not free
-threads).
+deterministically in the mechanism test
+(`test_reviewer_and_corrector_on_same_entry_isolated_no_corruption`), which uses
+the in-process nested-`agent_txn` arbitration shape (see below for why, not free
+threads). The conflict it constructs is the genuine one this engine can detect:
+a **reviewer** that *reads* entry N races a **corrector** that *writes* it, so
+the reviewer's read goes stale and `Abort` unwinds it. (Two pure writers never
+conflict in this optimistic model — a conflict always requires a stale read.)
 
 ## Engine findings (surfaced building this dogfood)
 
@@ -72,13 +92,18 @@ worked around in `core/` (no `core/` change was made):
    the meta connection cannot see it. `check_conflicts` then compares
    `v_expected = version_after_my_write (1)` against `v_now = meta_read (0)` and
    fires. This breaks the *natural* reconciliation flow ("read an entry, then
-   correct it" in one txn). We work around it at the dogfood layer:
-   `post_adjustment` is the only entry-mutating tool and is used *write-only*
-   (no preceding query of the same entry in the same txn); `flag_discrepancy`
-   declares no entry write-key (a flag is a pure append), so "read then flag" in
-   one txn is legal. A fix belongs in `core/`: `read_version` at commit-diff time
-   should see the txn's own pending write (e.g. read through the main connection,
-   or fold pending writes from the journal).
+   correct it" in one txn). We stay clear of it at the dogfood layer by the
+   **suspense-account** design: a reconciler reads the entries it diagnoses
+   (keys `1..5`) and books its correction to the *suspense* key (`99`), so its
+   read-set and write-set are disjoint and it never self-conflicts;
+   `flag_discrepancy` declares no entry write-key (a flag is a pure append), so
+   "read then flag" in one txn is also legal. (`post_adjustment` still declares
+   `writes=[("entries", entry_id)]`, so a *correction booked directly against a
+   contended entry* — as the isolation test constructs — does conflict with a
+   concurrent reader; that path is fully real.) A fix belongs in `core/`:
+   `read_version` at commit-diff time should see the txn's own pending write
+   (e.g. read through the main connection, or fold pending writes from the
+   journal) — tracked on `feat/isolation-self-write`.
 
 2. **Free-running concurrency on one SQLite file is racy.** Two genuinely
    concurrent agents on one WAL file (a) collide on the single write lock — and

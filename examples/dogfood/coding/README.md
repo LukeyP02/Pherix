@@ -1,5 +1,14 @@
 # Coding dogfood — the agent-agnostic sandbox
 
+> **What's real here, and where the real-agent form lives.** This stream ships a
+> *mechanism* — the sandbox routing layer (`sandbox.py`) and its mechanism test
+> (`tests/test_dogfood_coding.py`), which simulate a CLI's built-in action stream
+> and prove Pherix governs it. The **genuinely autonomous, fully-real form** — a
+> real out-of-box CLI on a real repo, attempting real destructive actions inside
+> the sandbox — is the **OpenClaw capstone** on `feat/local-openclaw`, not here.
+> The other two dogfoods (devops, audit) got their genuinely-autonomous + capture
+> treatment in `feat/proper-agents`; coding's autonomy lands with OpenClaw.
+
 A coding CLI (Claude Code, Cursor, Gemini CLI, or an open-source agent like
 Goose / Cline / OpenCode) does its real work through **built-in** Edit/Write/Bash
 tools. MCP can *add* tools to such a CLI but cannot *intercept* its built-ins,
