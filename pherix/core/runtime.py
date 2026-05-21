@@ -35,11 +35,17 @@ from pherix.core.isolation import (
     _RetrySignal,
     check_conflicts,
 )
+from pherix.core.envelope import (
+    flush_increments,
+    is_durable_cap,
+    pending_increments,
+)
 from pherix.core.policy import (
     Policy,
     PolicyContext,
     PolicyVerdict,
     PolicyViolation,
+    sql_reader,
 )
 from pherix.core.tools import REGISTRY, active_effect, active_txn
 from pherix.core.transaction import Transaction, TransactionStateError, TxnState
@@ -127,8 +133,18 @@ class TxnContext:
         # reference + per-cap running totals across every stage-time
         # evaluate() call. The same ctx is reused for the commit-time
         # evaluate_journal walk (which resets caps and re-folds).
+        # #7 (engine-hardening): thread a read mediator over the adapter map
+        # into the context so world-state-aware rules can call
+        # ``ctx.read(resource, key)``. The mediator is a closure over
+        # ``adapters`` — cheap to build, issues no query until a rule actually
+        # reads. The same ``_policy_ctx`` is reused across the stage-time and
+        # commit-time walks, so a rule that reads live state at both moments
+        # sees the world as it stood at each — that divergence is the TOCTOU
+        # protection the twice-evaluated bracket exists for.
         self._policy_ctx = PolicyContext(
-            journal=self.txn.effects, where="stage"
+            journal=self.txn.effects,
+            where="stage",
+            reader=sql_reader(adapters),
         )
         # Slice 7: dry-run mode flips policy evaluation from raise-mode
         # (``evaluate``) to capture-mode (``try_evaluate``) at stage-time,
@@ -387,6 +403,16 @@ class TxnContext:
                 adapter.commit()
         self.txn.transition(TxnState.COMMITTED)
         self.audit.update_transaction_state(self.txn.txn_id, TxnState.COMMITTED.name)
+        # #10 (engine-hardening): consume the longitudinal budget. Durable
+        # caps fold their per-txn contribution into the cross-run total ONLY
+        # here, on the successful-commit path — never in rollback,
+        # _partial_unwind, _dry_run_finalise, or the gate/policy unwind
+        # branches. A rolled-back, gated, or denied txn must consume no
+        # budget. Each EnvelopeIncrement carries its own store, so a policy
+        # mixing caps bound to different stores flushes correctly.
+        durable = [c for c in self._policy.caps if is_durable_cap(c)]
+        if durable:
+            flush_increments(pending_increments(durable, self.txn.effects))
         self._finished = True
 
     # --- Slice 7: dry-run finalise ----------------------------------------

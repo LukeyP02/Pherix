@@ -233,7 +233,7 @@ class _DurableCountCap:
         return Allow()
 
     def _in_txn_contribution(self, effect: Effect, ctx: Any) -> float:
-        return _in_txn_count(self, ctx)
+        return _in_txn_count(self, ctx, effect)
 
 
 @dataclass
@@ -267,7 +267,7 @@ class _DurableSumCap:
         if not self.applies_to(effect):
             return Allow()
         baseline = self.store.total(self.name, self.period())
-        in_txn = _in_txn_sum(self, ctx)
+        in_txn = _in_txn_sum(self, ctx, effect)
         candidate = baseline + in_txn + self.contribution(effect)
         if candidate > self.max:
             return Deny(
@@ -279,22 +279,33 @@ class _DurableSumCap:
         return Allow()
 
 
-def _in_txn_count(cap: _DurableCountCap, ctx: Any) -> float:
-    """Matching effects already in this txn's journal (the journal-so-far fold).
+def _in_txn_count(cap: _DurableCountCap, ctx: Any, current: Effect) -> float:
+    """Matching effects already in this txn's journal (the journal-so-far fold),
+    EXCLUDING the effect currently being evaluated.
 
     ``ctx.journal`` is the runtime's live journal snapshot; at stage-time the
-    candidate effect is not yet in it, at commit-time the whole journal is. We
-    count prior matching effects so multiple fires within ONE run accumulate on
-    top of the persisted baseline — without this, a run could fire ``max``
-    times because each individual fire saw the same stale persisted total.
+    candidate effect is not yet in it, at commit-time the whole journal is —
+    INCLUDING ``current``. The caller adds ``contribution(current)`` exactly
+    once on top of this fold, so the fold must not also count ``current`` or
+    the commit-time re-walk would double-count it (90 + 90 > 100 for a single
+    90 charge). Excluding by object identity is correct on both walks:
+    stage-time the candidate isn't in the journal (nothing excluded);
+    commit-time it is (excluded once). We count prior matching effects so
+    multiple fires within ONE run accumulate on top of the persisted baseline.
     """
     journal = getattr(ctx, "journal", ()) or ()
-    return float(sum(1 for e in journal if cap.applies_to(e)))
+    return float(sum(1 for e in journal if cap.applies_to(e) and e is not current))
 
 
-def _in_txn_sum(cap: _DurableSumCap, ctx: Any) -> float:
+def _in_txn_sum(cap: _DurableSumCap, ctx: Any, current: Effect) -> float:
     journal = getattr(ctx, "journal", ()) or ()
-    return float(sum(cap.contribution(e) for e in journal if cap.applies_to(e)))
+    return float(
+        sum(
+            cap.contribution(e)
+            for e in journal
+            if cap.applies_to(e) and e is not current
+        )
+    )
 
 
 class DurableCap:

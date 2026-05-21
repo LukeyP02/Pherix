@@ -43,6 +43,7 @@ from pherix.core.isolation import (
     _RetrySignal,
     _in_run_txn,
 )
+from pherix.core.envelope import DurableCap, EnvelopeStore, day_period
 from pherix.core.policy import (
     Allow,
     Cap,
@@ -52,6 +53,14 @@ from pherix.core.policy import (
     PolicyRule,
     PolicyVerdict,
     PolicyViolation,
+    refund_if_paid,
+    sql_reader,
+)
+from pherix.core.recovery import (
+    EffectRecovery,
+    RecoveryReport,
+    TxnRecovery,
+    recover,
 )
 from pherix.core.replay import (
     EffectOutcome,
@@ -163,4 +172,16 @@ __all__ = [
     "IsolationConflict",
     "Conflict",
     "JournalRegistry",
+    # #7 world-state-aware policy
+    "sql_reader",
+    "refund_if_paid",
+    # #10 longitudinal envelope
+    "DurableCap",
+    "EnvelopeStore",
+    "day_period",
+    # #9 crash-consistent recovery
+    "recover",
+    "RecoveryReport",
+    "TxnRecovery",
+    "EffectRecovery",
 ]

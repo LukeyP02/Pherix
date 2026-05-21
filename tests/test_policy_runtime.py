@@ -341,15 +341,18 @@ def test_rule_fires_at_both_stage_and_commit_time(conn):
 # --- #7: world-state read seam (pre-runtime-wiring state) ------------------
 
 
-def test_ctx_read_raises_until_runtime_binds_a_reader(conn):
-    """``ctx.read`` is implemented (#7), but the runtime does not yet thread a
-    read mediator into the PolicyContext it constructs — that hook is the
-    orchestrator's integration step. Until then a rule that calls ctx.read
-    inside an agent_txn hits the clear "no reader bound" RuntimeError rather
-    than a silent wrong answer. Once the runtime binds ``sql_reader(adapters)``
-    this test flips to the bound-reader path (proven at the policy layer in
-    tests/test_world_state_policy.py)."""
+def test_runtime_binds_a_reader_so_rules_read_live_state(conn):
+    """#7 end-to-end: the runtime threads ``sql_reader(adapters)`` into the
+    PolicyContext it constructs, so a rule calling ``ctx.read`` inside an
+    agent_txn reads live adapter state rather than hitting "no reader bound".
+
+    (Pre-wiring this test asserted the RuntimeError placeholder; the
+    orchestrator's runtime integration flipped it to the bound-reader path.
+    The TOCTOU divergence itself is pinned at the policy layer in
+    tests/test_world_state_policy.py.)"""
+    conn.execute("INSERT INTO users (id, name, tier) VALUES (1, 'alice', 'gold')")
     policy = Policy.allow_all()
+    seen: list[object] = []
 
     @tool(resource="sql")
     def add_user(conn, name):
@@ -359,13 +362,17 @@ def test_ctx_read_raises_until_runtime_binds_a_reader(conn):
         )
 
     @policy.rule
-    def needs_world_state(effect, ctx):
-        ctx.read("sql", "users:1")
+    def reads_live_tier(effect, ctx):
+        # 4-tuple key form: (table, pk_column, pk_value, value_column).
+        seen.append(ctx.read("sql", ("users", "id", 1, "tier")))
         return Allow()
 
-    with pytest.raises(RuntimeError, match="no read mediator is bound"):
-        with agent_txn({"sql": SQLiteAdapter(conn)}, policy=policy):
-            add_user(name="alice")
+    with agent_txn({"sql": SQLiteAdapter(conn)}, policy=policy):
+        add_user(name="bob")
+
+    # The rule fired (stage-time + commit-time walks) and the bound reader
+    # returned the live value both times — proof the mediator is wired.
+    assert seen and all(v == "gold" for v in seen)
 
 
 # --- backwards compat ------------------------------------------------------
