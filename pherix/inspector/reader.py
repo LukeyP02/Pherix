@@ -285,7 +285,7 @@ class JournalReader:
         out: dict[int, list[dict]] = {}
         rows = self._conn.execute(
             "SELECT * FROM verdicts WHERE txn_id = ? "
-            "ORDER BY effect_index, phase, seq",
+            "ORDER BY effect_index, seq",  # seq encodes stage-before-commit
             (txn_id,),
         ).fetchall()
         for r in rows:
@@ -327,11 +327,19 @@ class JournalReader:
                 "SELECT DISTINCT tool FROM effects ORDER BY tool"
             ).fetchall()
         ]
+        # "has_verdicts" drives the console's per-rule indicator, so it means
+        # "there is at least one verdict to show" — table present AND populated
+        # — not merely that a (possibly empty) table exists.
+        verdict_rows = 0
+        if self._has_verdicts:
+            verdict_rows = self._conn.execute(
+                "SELECT COUNT(*) FROM verdicts"
+            ).fetchone()[0]
         return {
             "txn_total": txn_total,
             "txns_by_state": by_state,
             "effect_total": effect_total,
             "clients": clients,
             "tools": tools,
-            "has_verdicts": self._has_verdicts,
+            "has_verdicts": verdict_rows > 0,
         }
