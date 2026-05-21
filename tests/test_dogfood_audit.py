@@ -1,20 +1,25 @@
-"""Offline proof of the audit dogfood's composition — no key, no network.
+"""Mechanism test (mocked client, deterministic, CI) for the audit dogfood.
 
-Two mocked agents drive canned ``tool_use`` sequences under two ``client_id``s
-against ONE on-disk SQLite ledger and ONE on-disk audit DB (each agent in its
-own thread with its own connection and its own ``AuditJournal`` handle, exactly
-as the real run does). We assert what the dogfood claims:
+This is NOT a real-agent dogfood. It is a *mechanism test*: two mocked agents
+drive canned ``tool_use`` sequences under two ``client_id``s against ONE on-disk
+SQLite ledger and ONE on-disk audit DB (each agent in its own thread with its own
+connection and its own ``AuditJournal`` handle, exactly as the real run does). We
+assert the dogfood's *composition* — tools + threading + view + isolation —
+behaves correctly given those exact sequences. The genuinely autonomous version
+(two real models reconciling a real imbalance) is the real-agent run,
+``python -m examples.dogfood.audit``; this is the regression guard underneath it.
+
+We assert what the dogfood claims:
 
 - both ``client_id``s appear attributed in the audit (``get_transaction``),
-- no ledger corruption (the expected adjustment/flag rows are present, source
-  entries intact),
+- corrections are booked to the suspense account and the corrected trial balance
+  reaches zero (no ledger corruption; source entries intact),
 - the per-client compliance view the dogfood builds is correct,
-- and — the isolation payoff — when both agents race on the SAME entry row, the
-  ``Abort`` policy unwinds the second committer rather than corrupting the ledger.
+- and — the isolation payoff — when a reviewer that *read* an entry races a
+  corrector that *writes* it, the ``Abort`` policy unwinds the stale reader
+  rather than corrupting the ledger.
 
-This tests the dogfood's COMPOSITION (tools + threading + view), not the engine
-— the engine's isolation diff is already covered by the Slice 4 suite. The
-Anthropic loop is mocked; nothing here imports ``anthropic`` or reads a key.
+The Anthropic loop is mocked; nothing here imports ``anthropic`` or reads a key.
 """
 
 from __future__ import annotations
@@ -36,8 +41,10 @@ from examples.dogfood.audit import (
     _ACTIVE_CLIENT,
     AUDIT_TOOLS,
     LEDGER_SCHEMA,
+    SUSPENSE_ID,
     ClientRun,
     compliance_view,
+    ledger_balance,
     ledger_snapshot,
     post_adjustment,
     query_ledger,
@@ -98,29 +105,47 @@ CLIENT_B = "auditor-b"
 # --- tests -----------------------------------------------------------------
 
 
-def test_two_agents_attributed_and_ledger_uncorrupted():
-    """Disjoint work: each agent adjusts a different entry; both attributed."""
+def test_two_agents_reconcile_to_zero_attributed_and_uncorrupted():
+    """Each agent reads its wrong entry, books a correction to suspense; both
+    attributed, the corrected trial balance reaches zero, the ledger is intact."""
     audit_fd, audit_path = tempfile.mkstemp(suffix=".audit.db")
     os.close(audit_fd)
     try:
         with scratch_sqlite(schema=LEDGER_SCHEMA) as db:
-            # A reads entry 1, then FLAGS it (a flag appends to the flags log;
-            # it declares no write-key on the entry, so read-then-flag in one
-            # txn commits clean). B posts an adjustment to entry 4 (write-only —
-            # no preceding query of entry 4 in the same txn, which would
-            # self-conflict; see the README's read-then-write-same-key note).
+            # A reads entry 2 (actual 550, expected 500) and books -50 to the
+            # suspense account; it also reads entry 1 and flags it (a flag
+            # appends to the flags log, declaring no entry write-key). Its reads
+            # {1,2} are disjoint from its write {suspense}, so it commits clean.
+            # B reads entry 4 (actual 800, expected 750) and books -50 to
+            # suspense. Two -50 corrections balance the seeded +100 imbalance.
             clients = {
                 CLIENT_A: _FakeClient(
                     [
                         _resp(
-                            _tool_use("a1", "query_ledger", {"entry_id": 1}),
+                            _tool_use("a1", "query_ledger", {"entry_id": 2}),
                             stop_reason="tool_use",
                         ),
                         _resp(
                             _tool_use(
                                 "a2",
+                                "post_adjustment",
+                                {
+                                    "entry_id": SUSPENSE_ID,
+                                    "delta": -50,
+                                    "reason": "entry 2 receivable overstated by 50",
+                                },
+                            ),
+                            stop_reason="tool_use",
+                        ),
+                        _resp(
+                            _tool_use("a3", "query_ledger", {"entry_id": 1}),
+                            stop_reason="tool_use",
+                        ),
+                        _resp(
+                            _tool_use(
+                                "a4",
                                 "flag_discrepancy",
-                                {"entry_id": 1, "note": "needs review"},
+                                {"entry_id": 1, "note": "spot-checked cash, ok"},
                             ),
                             stop_reason="tool_use",
                         ),
@@ -130,10 +155,18 @@ def test_two_agents_attributed_and_ledger_uncorrupted():
                 CLIENT_B: _FakeClient(
                     [
                         _resp(
+                            _tool_use("b1", "query_ledger", {"entry_id": 4}),
+                            stop_reason="tool_use",
+                        ),
+                        _resp(
                             _tool_use(
-                                "b1",
+                                "b2",
                                 "post_adjustment",
-                                {"entry_id": 4, "delta": -50, "reason": "fx"},
+                                {
+                                    "entry_id": SUSPENSE_ID,
+                                    "delta": -50,
+                                    "reason": "entry 4 inventory overstated by 50",
+                                },
                             ),
                             stop_reason="tool_use",
                         ),
@@ -141,9 +174,9 @@ def test_two_agents_attributed_and_ledger_uncorrupted():
                     ]
                 ),
             }
-            tasks = {CLIENT_A: "reconcile entry 1", CLIENT_B: "reconcile entry 4"}
+            tasks = {CLIENT_A: "reconcile 1,2", CLIENT_B: "reconcile 3,4"}
 
-            # Sequential: deterministic ordering so the attribution / no-corruption
+            # Sequential: deterministic ordering so the attribution / balance
             # assertions don't ride on SQLite's concurrent write-lock timing. Each
             # agent still runs in its own thread with its own TxnContext, own
             # connection, and own AuditJournal to the shared audit file.
@@ -155,45 +188,47 @@ def test_two_agents_attributed_and_ledger_uncorrupted():
                 sequential=True,
             )
 
-            # Both agents committed cleanly (disjoint entries → no conflict).
+            # Both agents committed cleanly (reads disjoint from the suspense
+            # write → no self-conflict; disjoint subsets → no cross-conflict).
             assert isinstance(runs[CLIENT_A], ClientRun)
             assert runs[CLIENT_A].run.final_state is TxnState.COMMITTED
             assert runs[CLIENT_B].run.final_state is TxnState.COMMITTED
             assert runs[CLIENT_A].run.error is None
             assert runs[CLIENT_B].run.error is None
 
-            # Attribution: read the shared audit DB from a MAIN-THREAD handle
-            # (each agent's own AuditJournal is thread-affine and already
-            # closed). Each agent's txn row is present under its client_id.
+            # The genuine outcome: the corrected trial balance reaches zero.
+            assert ledger_balance(db) == 0
+
+            # Attribution: read the shared audit DB from a MAIN-THREAD handle.
             audit = AuditJournal(audit_path)
             try:
                 for cid in (CLIENT_A, CLIENT_B):
-                    txn_id = runs[cid].run.txn_id
-                    txn = audit.get_transaction(txn_id)
+                    txn = audit.get_transaction(runs[cid].run.txn_id)
                     assert txn is not None
                     assert txn["client_id"] == cid
                     assert txn["state"] == "COMMITTED"
             finally:
                 audit.close()
 
-            # No ledger corruption: source entries intact, both writes landed,
-            # each attributed by the row's client_id column. Read through a
-            # FRESH connection — the primary db.conn can hold a stale WAL read
-            # snapshot from before the worker threads committed.
+            # No ledger corruption: source entries intact, both corrections
+            # landed against the suspense account, attributed by client_id.
             entries = ledger_snapshot(db)
-            assert {e["id"] for e in entries} == {1, 2, 3, 4}
+            assert {e["id"] for e in entries} == {1, 2, 3, 4, 5, SUSPENSE_ID}
             probe = db.connect()
             try:
                 adj = probe.execute(
-                    "SELECT entry_id, delta, client_id FROM adjustments"
+                    "SELECT entry_id, delta, client_id FROM adjustments ORDER BY id"
                 ).fetchall()
                 flg = probe.execute(
                     "SELECT entry_id, note, client_id FROM flags"
                 ).fetchall()
             finally:
                 probe.close()
-            assert adj == [(4, -50, CLIENT_B)]
-            assert flg == [(1, "needs review", CLIENT_A)]
+            assert adj == [
+                (SUSPENSE_ID, -50, CLIENT_A),
+                (SUSPENSE_ID, -50, CLIENT_B),
+            ]
+            assert flg == [(1, "spot-checked cash, ok", CLIENT_A)]
 
             # The per-client compliance view the dogfood builds is correct.
             views = compliance_view(
@@ -205,32 +240,47 @@ def test_two_agents_attributed_and_ledger_uncorrupted():
             assert len(va.txns) == 1 and va.txns[0]["client_id"] == CLIENT_A
             assert {e["tool"] for e in va.effects} == {
                 "query_ledger",
+                "post_adjustment",
                 "flag_discrepancy",
             }
-            assert va.adjustments == []
+            assert va.adjustments == [
+                {
+                    "id": 1,
+                    "entry_id": SUSPENSE_ID,
+                    "delta": -50,
+                    "reason": "entry 2 receivable overstated by 50",
+                }
+            ]
             assert va.flags == [
-                {"id": 1, "entry_id": 1, "note": "needs review"}
+                {"id": 1, "entry_id": 1, "note": "spot-checked cash, ok"}
             ]
             assert len(vb.txns) == 1 and vb.txns[0]["client_id"] == CLIENT_B
             assert vb.adjustments == [
-                {"id": 1, "entry_id": 4, "delta": -50, "reason": "fx"}
+                {
+                    "id": 2,
+                    "entry_id": SUSPENSE_ID,
+                    "delta": -50,
+                    "reason": "entry 4 inventory overstated by 50",
+                }
             ]
             assert vb.flags == []
     finally:
         os.unlink(audit_path)
 
 
-def test_two_reconcilers_on_same_entry_isolated_no_corruption():
-    """Two reconcilers contend on entry 2 → isolation fires, ledger uncorrupted.
+def test_reviewer_and_corrector_on_same_entry_isolated_no_corruption():
+    """A reviewer that *read* entry 2 races a corrector that *writes* it →
+    isolation fires, ledger uncorrupted.
 
     Deterministic, in-process conflict (the reliable Slice-4 nested-``agent_txn``
     arbitration shape, driven through the DOGFOOD's own registered tools): A's
-    txn reads entry 2; while A is open, B's nested txn adjusts entry 2 and
-    commits, bumping the version side-table; A's commit-time diff then folds A's
-    journal, sees A's read version moved, and ``Abort`` raises
-    ``IsolationConflict`` — A unwinds. The ledger keeps exactly B's one
-    adjustment; A's rolled-back read-only txn left nothing behind. Both txns are
-    attributed by ``client_id`` in the shared on-disk audit.
+    txn reads entry 2 (the reviewer); while A is open, B's nested txn books an
+    adjustment directly against entry 2 and commits (the corrector), bumping the
+    version side-table; A's commit-time diff then folds A's journal, sees A's
+    read version moved, and ``Abort`` raises ``IsolationConflict`` — A unwinds.
+    The ledger keeps exactly B's one adjustment; A's rolled-back read-only txn
+    left nothing behind. Both txns are attributed by ``client_id`` in the shared
+    on-disk audit.
 
     Why in-process and not two free-running threads: free concurrency on one
     SQLite file is genuinely racy (cross-connection WAL visibility lag can let a
@@ -261,8 +311,9 @@ def test_two_reconcilers_on_same_entry_isolated_no_corruption():
                     a_txn_id = ctx_a.txn_id
                     # A reads entry 2 (records read version into A's journal).
                     query_ledger(entry_id=2)
-                    # While A is open, B adjusts entry 2 and commits — under its
-                    # own client_id, bumping the ("entries", 2) version.
+                    # While A is open, B books a correction directly against
+                    # entry 2 and commits — under its own client_id, bumping the
+                    # ("entries", 2) version.
                     b_token = _ACTIVE_CLIENT.set(CLIENT_B)
                     try:
                         with agent_txn(
@@ -270,7 +321,7 @@ def test_two_reconcilers_on_same_entry_isolated_no_corruption():
                         ) as ctx_b:
                             b_txn_id = ctx_b.txn_id
                             post_adjustment(
-                                entry_id=2, delta=-20, reason="race"
+                                entry_id=2, delta=-50, reason="race"
                             )
                     finally:
                         _ACTIVE_CLIENT.reset(b_token)
@@ -296,7 +347,7 @@ def test_two_reconcilers_on_same_entry_isolated_no_corruption():
                 ).fetchall()
             finally:
                 probe.close()
-            assert adj == [(2, -20, CLIENT_B)]
+            assert adj == [(2, -50, CLIENT_B)]
 
             # Both txns attributed in the shared audit, B committed, A unwound.
             assert audit.get_transaction(b_txn_id)["client_id"] == CLIENT_B

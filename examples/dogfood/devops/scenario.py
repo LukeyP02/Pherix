@@ -1,38 +1,51 @@
 """The DevOps dogfood's tools, deploy target, and run logic.
 
-Separated from ``__main__`` so the offline test can import ``build_tools`` /
-``run_release`` and drive them with a mocked Anthropic client — proving the
-*composition* (four tools wired across three adapters, unwound atomically by a
-failing smoke test) without a key or a network.
+Separated from ``__main__`` so the offline *mechanism test* can import
+``build_tools`` / ``run_release`` and drive them with a mocked Anthropic client
+— proving the *composition* (five tools across three adapters, unwound
+atomically by a genuinely-failing smoke test) without a key or a network. The
+mechanism test scripts an exact tool sequence; the **real-agent run**
+(``python -m examples.dogfood.devops``) gives a real model a *goal* and lets it
+decide — that run is the demo, and its outcome is genuine, not forced.
 
-The four tools and their wiring:
-
-  - ``run_migration`` — resource ``"sql"``, reversible. Alters the scratch
-    schema; rolls back via the SAVEPOINT the SQLiteAdapter takes.
-  - ``write_config`` — resource ``"fs"``, reversible. Writes a release config
-    file; restores from the per-effect copy-on-write backup.
-  - ``deploy`` — resource ``"http"``, **irreversible**, declares the
+The agent's tool surface and wiring
+-----------------------------------
+  - ``add_column``    — resource ``"sql"``, reversible. ``ALTER TABLE`` adds a
+    column; existing rows get ``NULL``. Rolls back via the SAVEPOINT.
+  - ``backfill_column`` — resource ``"sql"``, reversible. ``UPDATE`` sets the
+    column for *existing* rows. Rolls back via the SAVEPOINT.
+  - ``write_config``  — resource ``"fs"``, reversible. Writes the release
+    config file; restores from the per-effect copy-on-write backup.
+  - ``deploy``        — resource ``"http"``, **irreversible**, declares the
     ``rollback_deploy`` compensator. Staged at stage-time, fired at commit.
-  - ``smoke_test`` — resource ``"http"``, **irreversible**, no compensator.
-    Staged after ``deploy``; engineered to FAIL, and a failing smoke test
-    *raises* at fire-time.
+  - ``smoke_test``    — resource ``"http"``, **irreversible**. Staged after
+    ``deploy``; computes health from the *real* post-deploy state and RAISES
+    if the release is unhealthy.
 
-Why a raising smoke test is the unwind trigger
-----------------------------------------------
-Both ``deploy`` and ``smoke_test`` are irreversible, so the engine *stages*
-them and fires them at ``commit()`` in journal index order (``runtime.py``,
-the ``for e in staged`` fold). ``deploy`` fires first and succeeds — the
-release is now live. ``smoke_test`` fires next and *raises* because the
-deployment is bad. A mid-fire raise in the staged-fire loop drops straight
-into ``TxnContext._partial_unwind``: it walks the journal backward, invoking
-``rollback_deploy`` for the already-fired (APPLIED, irreversible) deploy and
-restoring the reversible SQL + FS effects from their snapshots. The terminal
-state is ``ROLLED_BACK`` (clean unwind — the compensator exists and succeeds).
+The genuine fault mode (no forced flag)
+---------------------------------------
+``DeployTarget`` no longer carries a ``healthy`` constant. ``smoke_test``
+computes health by *reading the real state the agent actually produced*:
 
-This makes the smoke test the *gate on the irreversible effect*: the deploy
-only "counts" if the post-deploy check passes. The agent never has to *decide*
-to roll back — the engine does it the instant the check fails, which is the
-guarantee a human operator actually wants from a release pipeline.
+  1. the version the agent deployed matches the version it was asked to ship,
+  2. the on-disk release config declares that version,
+  3. the ``feature_flag`` column exists on ``accounts`` (the migration ran),
+  4. **every existing account row has a non-NULL ``feature_flag``** — i.e. the
+     agent did not just add the column but also *backfilled* it.
+
+(4) is the trap, and it is a real migration anti-pattern: adding a column the
+application reads for every row, without backfilling existing rows, leaves
+``NULL``\\s the v2 app chokes on. A thorough agent backfills and the release
+commits; a careless one skips it and the smoke test trips — and because
+``smoke_test`` is irreversible and fires at commit-time *after* ``deploy``, that
+trip lands in the engine's staged-fire loop and triggers the mixed-fold unwind:
+the already-fired ``deploy`` is compensated by ``rollback_deploy`` and the
+reversible migration/backfill/config restore from their snapshots. The terminal
+state is ``ROLLED_BACK``. The agent never has to *decide* to roll back — the
+engine does it the instant the genuine health check fails, which is the
+guarantee a release pipeline actually wants. Whether a given real run commits or
+unwinds depends on what the agent did, not on a constant — that variance is the
+honest signal.
 """
 
 from __future__ import annotations
@@ -50,28 +63,66 @@ from pherix.core.tools import tool
 
 from examples.dogfood.harness import AgentRun, run_agent
 
-SYSTEM = """You are a release engineer. You ship a release in this exact order:
-1. run_migration — apply the schema change.
-2. write_config — write the release config file.
-3. deploy — deploy the new version.
-4. smoke_test — verify the deployment is healthy.
-Call the tools one at a time, in that order. Do not skip the smoke test.
-After smoke_test, stop and report the outcome."""
+# The scratch schema the release runs against: an accounts table with two
+# existing rows. Existing rows are exactly what makes the backfill trap genuine
+# — a column added without backfilling leaves them NULL.
+ACCOUNTS_SCHEMA = """
+CREATE TABLE accounts (id INTEGER PRIMARY KEY, name TEXT);
+INSERT INTO accounts (name) VALUES ('alice'), ('bob');
+"""
+
+# The version this dogfood ships. The smoke test checks the agent deployed and
+# configured *this* version.
+RELEASE_VERSION = "v2"
+
+# The column v2 reads for every account. Named in the goal so a competent agent
+# knows the target; the smoke test checks this exact name exists and is filled.
+FLAG_COLUMN = "feature_flag"
+
+# A *goal*, not a step list. The agent is told what a healthy v2 release means
+# (including that the flag must exist for *every* account, existing rows
+# included) and is left to decide the tools and order. A capable agent will
+# migrate, backfill, configure, deploy and verify; a careless one will skip the
+# backfill and the genuine smoke check will catch it.
+SYSTEM = f"""You are a release engineer. Your job is to ship version \
+{RELEASE_VERSION!r} of the accounts service safely, and to verify it is healthy \
+before you declare success.
+
+What {RELEASE_VERSION} needs to be healthy:
+- The `accounts` table must have a `{FLAG_COLUMN}` column. The {RELEASE_VERSION} \
+application reads this flag for EVERY account on startup and misbehaves if any \
+existing account is missing a value for it.
+- A release config for version {RELEASE_VERSION!r} must be written.
+- Version {RELEASE_VERSION!r} must be deployed.
+
+You have tools to alter the schema, backfill column values, write the release \
+config, deploy a version, and run a post-deploy smoke test. Decide for yourself \
+which tools to call and in what order — there is no fixed script. When you \
+believe the release is healthy, run the smoke test to confirm it, then stop and \
+report the outcome. If the smoke test reports a problem, you may try to fix it."""
 
 TASK = (
-    "Ship release v2: add a `feature_flag` column to the `accounts` table, "
-    "write the config for version 'v2', deploy version 'v2', then run the "
-    "smoke test against it."
+    f"Ship release {RELEASE_VERSION} of the accounts service and confirm it is "
+    "healthy."
 )
 
 
 class SmokeTestFailed(RuntimeError):
-    """Raised by ``smoke_test`` when the deployed release is unhealthy.
+    """Raised by ``smoke_test`` when the deployed release is genuinely unhealthy.
 
+    Carries the concrete list of problems the health check found (so the
+    transcript and the journal record *why* it failed, not just *that* it did).
     Raised at fire-time (the staged-fire loop in ``commit()``), so the engine
-    treats it as a mid-commit failure and runs the mixed-fold unwind — the
-    whole release reverts. This is the dogfood's whole point.
+    treats it as a mid-commit failure and runs the mixed-fold unwind — the whole
+    release reverts.
     """
+
+    def __init__(self, version: str, problems: list[str]):
+        self.version = version
+        self.problems = problems
+        super().__init__(
+            f"smoke test failed for {version!r}: " + "; ".join(problems)
+        )
 
 
 @dataclass
@@ -80,12 +131,12 @@ class DeployTarget:
 
     A real DevOps agent would point ``deploy`` at k3d / a cloud API here. The
     dogfood keeps it in-process so the run is offline and the journal tells the
-    whole story. ``healthy`` is forced ``False`` so the smoke test always fails
-    — the engineered failure that drives the atomic unwind.
+    whole story. There is **no** ``healthy`` flag: post-deploy health is
+    *computed* from the real state the agent produced (schema, config, deployed
+    version) by :func:`health_problems` — not stored as a constant.
     """
 
     deployed_version: str | None = None
-    healthy: bool = False
     history: list[dict] = field(default_factory=list)
 
     def deploy(self, version: str) -> dict:
@@ -97,30 +148,93 @@ class DeployTarget:
         self.history.append({"action": "rollback", "version": version})
         self.deployed_version = None
 
-    def smoke(self, version: str) -> bool:
+    def record_smoke(self, version: str) -> None:
         self.history.append({"action": "smoke", "version": version})
-        return self.healthy
 
 
-def build_tools(target: DeployTarget) -> list[Callable[..., Any]]:
-    """Register and return the four release tools (+ the compensator).
+def health_problems(
+    target: DeployTarget, conn: Any, fs_root: Path, version: str
+) -> list[str]:
+    """Compute, from the *real* post-deploy state, why the release is unhealthy.
 
-    Tools must be registered *inside* a function (never at module top level):
-    the ``REGISTRY`` is process-global and re-registering a name raises, so the
-    test fixture clears it around each test and the caller registers fresh.
-    The returned list is the agent's tool surface — ``rollback_deploy`` is not
-    in it (the agent never calls a compensator directly; the engine fires it).
+    Returns an empty list iff the release is genuinely healthy. Each check reads
+    actual state the agent produced — the deployed version, the on-disk config,
+    and the live schema/rows on the transaction's own connection (the migration
+    and backfill applied live inside the SAVEPOINT, so they are visible here at
+    commit-time before the txn finalises).
+    """
+    problems: list[str] = []
+
+    if target.deployed_version != version:
+        problems.append(
+            f"deployed version is {target.deployed_version!r}, expected {version!r}"
+        )
+
+    conf = fs_root / "release.conf"
+    if not conf.exists():
+        problems.append("release.conf is missing (config was not written)")
+    elif f"version={version}" not in conf.read_text():
+        problems.append(f"release.conf does not declare version={version}")
+
+    columns = [r[1] for r in conn.execute("PRAGMA table_info(accounts)")]
+    if FLAG_COLUMN not in columns:
+        problems.append(
+            f"accounts.{FLAG_COLUMN} column is missing (migration not applied)"
+        )
+    else:
+        nulls = conn.execute(
+            f"SELECT COUNT(*) FROM accounts WHERE {FLAG_COLUMN} IS NULL"
+        ).fetchone()[0]
+        if nulls:
+            problems.append(
+                f"{nulls} existing account row(s) have {FLAG_COLUMN} IS NULL "
+                "(column added but not backfilled)"
+            )
+
+    return problems
+
+
+def build_tools(
+    target: DeployTarget, *, db_conn: Any, fs_root: Path
+) -> list[Callable[..., Any]]:
+    """Register and return the agent's release tools (+ the compensator).
+
+    ``db_conn`` / ``fs_root`` are the same connection and root the adapters are
+    bound to; ``smoke_test`` closes over them to read the live post-deploy state
+    when it fires at commit-time. Tools must be registered *inside* a function
+    (never at module top level): the ``REGISTRY`` is process-global and
+    re-registering a name raises, so the test fixture clears it around each test
+    and the caller registers fresh. The returned list is the agent's tool
+    surface — ``rollback_deploy`` is not in it (the agent never calls a
+    compensator directly; the engine fires it).
     """
 
     @tool(resource="sql")
-    def run_migration(conn, column: str) -> str:
-        """Add a column to the accounts table (reversible schema migration)."""
+    def add_column(conn, column: str) -> str:
+        """Add a column to the accounts table (reversible schema migration).
+
+        Existing rows get NULL for the new column — backfill separately if the
+        application needs a value for every row.
+        """
         execute_isolated(
             conn,
             f"ALTER TABLE accounts ADD COLUMN {_safe_ident(column)} TEXT",
             writes=[("accounts", "schema")],
         )
-        return f"migrated: added column {column!r}"
+        return (
+            f"added column {column!r} to accounts; existing rows are NULL for it"
+        )
+
+    @tool(resource="sql")
+    def backfill_column(conn, column: str, value: str) -> str:
+        """Set `column` to `value` for ALL existing accounts rows (reversible)."""
+        cur = execute_isolated(
+            conn,
+            f"UPDATE accounts SET {_safe_ident(column)} = ?",
+            (value,),
+            writes=[("accounts", "rows")],
+        )
+        return f"backfilled {column!r} = {value!r} on {cur.rowcount} existing rows"
 
     @tool(resource="fs")
     def write_config(fs: FsHandle, version: str) -> str:
@@ -156,13 +270,13 @@ def build_tools(target: DeployTarget) -> list[Callable[..., Any]]:
         """No-op compensator for ``smoke_test``.
 
         ``smoke_test`` needs *a* compensator only so it clears the commit-time
-        gate and actually fires (the gate blocks any staged irreversible that
-        is neither compensator-backed nor pre-approved — see ``runtime.py``).
-        It is never actually invoked: a *failing* smoke test raises, so its
-        effect ends ``FAILED`` (not ``APPLIED``), and ``_partial_unwind`` only
-        compensates ``APPLIED`` effects. A *passing* smoke test commits, so
-        again nothing to undo. The compensator exists purely to make the check
-        fire rather than gate-block.
+        gate and actually fires (the gate blocks any staged irreversible that is
+        neither compensator-backed nor pre-approved — see ``runtime.py``). It is
+        never actually invoked: a *failing* smoke test raises, so its effect ends
+        ``FAILED`` (not ``APPLIED``), and ``_partial_unwind`` only compensates
+        ``APPLIED`` effects. A *passing* smoke test commits, so again nothing to
+        undo. The compensator exists purely to make the check fire rather than
+        gate-block.
         """
         return f"smoke test for {version!r} was a no-op (nothing to undo)"
 
@@ -173,23 +287,23 @@ def build_tools(target: DeployTarget) -> list[Callable[..., Any]]:
         compensator="smoke_noop",
     )
     def smoke_test(version: str) -> str:
-        """Verify the deployment; RAISES if the release is unhealthy.
+        """Verify the deployment against REAL post-deploy state; RAISES if unhealthy.
 
-        Irreversible, so it is staged and fires at commit-time *after*
-        ``deploy`` (journal index order). The ``smoke_noop`` compensator lets
-        it clear the gate and fire. A failing check raises ``SmokeTestFailed``
-        mid-fire — that raise lands in the engine's staged-fire loop and
-        triggers the mixed-fold unwind: the already-fired ``deploy`` is
-        compensated by ``rollback_deploy``, and the reversible migration +
-        config restore from their snapshots.
+        Irreversible, so it is staged and fires at commit-time *after* ``deploy``
+        (journal index order). Health is computed by :func:`health_problems` from
+        the actual deployed version, the on-disk config, and the live schema/rows
+        — not from any stored flag. If anything is wrong (most commonly: the
+        ``feature_flag`` column was added but existing rows were never
+        backfilled) it raises ``SmokeTestFailed`` mid-fire, and that raise lands
+        in the engine's staged-fire loop and triggers the mixed-fold unwind.
         """
-        if not target.smoke(version):
-            raise SmokeTestFailed(
-                f"smoke test failed for {version!r}: deployment is unhealthy"
-            )
-        return f"smoke test passed for {version!r}"
+        target.record_smoke(version)
+        problems = health_problems(target, db_conn, fs_root, version)
+        if problems:
+            raise SmokeTestFailed(version, problems)
+        return f"smoke test passed for {version!r}: release is healthy"
 
-    return [run_migration, write_config, deploy, smoke_test]
+    return [add_column, backfill_column, write_config, deploy, smoke_test]
 
 
 def _safe_ident(name: str) -> str:
@@ -216,38 +330,44 @@ def run_release(
     client: Any = None,
     audit: AuditJournal | None = None,
     model: str | None = None,
+    system: str | None = None,
+    task: str | None = None,
     api: str = "anthropic",
     base_url: str | None = None,
 ) -> AgentRun:
-    """Run the failing-smoke release through a real (or mocked) agent.
+    """Run the v2 release through a real (or mocked) agent.
 
-    Builds the four tools, wires the three adapters, and drives the agent on
-    the release task. The smoke test fails and raises at commit-time, which
-    triggers the engine's mixed-fold unwind: deploy is compensated, the
-    reversible migration + config restore, and the txn lands ``ROLLED_BACK``.
+    Builds the five tools, wires the three adapters, and drives the agent on the
+    release *goal* (``system`` / ``task`` default to the goal-based prompt, but
+    the mechanism test can override them). The outcome is genuine: if the agent
+    produces a healthy release the txn commits; if it skips the backfill (or
+    otherwise leaves the release inconsistent) the commit-time smoke check raises
+    and the engine's mixed-fold unwind reverts everything — deploy compensated,
+    reversibles restored, txn ``ROLLED_BACK``.
 
     ``smoke_test`` raising at fire-time is a *domain* commit-time refusal, so it
     is declared in ``commit_refusals``: the harness captures it onto
     ``AgentRun.error`` (just like the engine's own gate/isolation refusals) and
-    returns the unwound run — its ``journal`` is the real ``ctx.txn.effects``,
-    so the caller inspects the result rather than catching the exception.
-    ``client`` is injectable: the offline test passes a mock; a keyed run
-    passes ``None`` and the harness builds the real client. ``api`` /
+    returns the unwound run — its ``journal`` is the real ``ctx.txn.effects``, so
+    the caller inspects the result rather than catching the exception. ``client``
+    is injectable: the offline mechanism test passes a mock; a keyed real-agent
+    run passes ``None`` and the harness builds the real client. ``api`` /
     ``base_url`` select the chat backend — leave them at the default for cloud
     Anthropic, or pass ``api="openai", base_url="http://localhost:11434/v1"``
-    (and a local ``model``) to run the *same* release, with the *same* unwind,
-    against a local open-source model: the model-blindness proof.
+    (and a local ``model``) to run the *same* release, with the *same* genuine
+    outcome and unwind, against a local open-source model: the model-blindness
+    proof.
     """
     audit = audit or AuditJournal.in_memory()
-    tools = build_tools(target)
+    tools = build_tools(target, db_conn=conn, fs_root=fs_root)
     adapters = {
         "sql": SQLiteAdapter(conn),
         "fs": FilesystemAdapter(fs_root),
         "http": HTTPAdapter(),
     }
     kwargs: dict[str, Any] = dict(
-        task=TASK,
-        system=SYSTEM,
+        task=task or TASK,
+        system=system or SYSTEM,
         tools=tools,
         adapters=adapters,
         policy=policy or Policy.allow_all(),

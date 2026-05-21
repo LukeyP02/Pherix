@@ -8,10 +8,14 @@
     python -m examples.dogfood.devops --local \
         --base-url http://localhost:11434/v1 --model qwen2.5-coder:7b
 
-``--local`` points the *same* release at a local open-source model: same four
-tools, same engineered smoke failure, same atomic unwind. Pherix never sees the
-difference — it is model-blind and deployment-blind by construction — so a
-clean ``--local`` run *is* the proof that local governance == cloud governance.
+This is the **real-agent run** (the offline ``tests/test_dogfood_devops.py`` is
+the *mechanism test* — mocked client, deterministic, CI). Here a real model is
+given a *goal* and decides for itself; the outcome is genuine, not forced.
+
+``--local`` points the *same* release at a local open-source model: same goal,
+same genuine smoke check, same atomic unwind when the agent slips. Pherix never
+sees the difference — it is model-blind and deployment-blind by construction — so
+a clean ``--local`` run *is* the proof that local governance == cloud governance.
 The local endpoint is taken from ``--base-url`` (or ``OPENAI_BASE_URL``,
 defaulting to Ollama's ``http://localhost:11434/v1``) and the model from
 ``--model`` (or ``PHERIX_LOCAL_MODEL``).
@@ -20,20 +24,23 @@ Needs ``pip install -e '.[dogfood]'``. The cloud path needs an Anthropic key in
 ``.env`` at the repo root (see ``.env.example``); the local path needs a running
 local server and no key. Two phases:
 
-  1. **Dry-run preview.** Fold the release forward against a snapshot, then
-     discard it — printing the migration's structured ``state_diff`` (the rows
-     the schema change *would* touch) and the irreversibles that *would* fire,
-     with nothing committed. The "what will this release do?" view, free.
+  1. **Dry-run preview.** A real agent plans the release against a snapshot;
+     Pherix folds it forward, prints the structured ``state_diff`` (the rows the
+     migration would touch) and the irreversibles that *would* fire, then
+     discards it. The "what will this release do?" view, free, nothing committed.
 
-  2. **The real release.** A real agent runs migration → config → deploy →
-     smoke_test. The smoke test is engineered to fail; the failure fires at
-     commit and the engine's mixed-fold unwind reverts everything — migration
-     savepoint rolled back, config restored, deploy compensated. We print the
-     journal and prove the world is back to its pre-release state.
+  2. **A batch of real releases.** The smoke test is no longer rigged: it computes
+     health from the *real* post-deploy state (deployed version, on-disk config,
+     and whether the agent backfilled the ``feature_flag`` for existing rows). A
+     thorough agent ships a healthy release and it COMMITS; a careless one skips
+     the backfill and the smoke check trips at commit-time, so the engine unwinds
+     the whole release (deploy compensated, migration/backfill/config restored).
+     Running a batch surfaces the genuine variance and the containment rate — the
+     honest signal. See ``examples/dogfood/capture.py`` for the report shape.
 
-The deploy target and HTTP layer are an in-memory fake, so no real network
-call escapes — but every adapter does real work (real SQLite SAVEPOINT, real
-on-disk file backup) so the unwind is genuine, not simulated.
+The deploy target and HTTP layer are an in-memory fake, so no real network call
+escapes — but every adapter does real work (real SQLite SAVEPOINT, real on-disk
+file backup) so the unwind is genuine, not simulated.
 """
 
 from __future__ import annotations
@@ -42,10 +49,11 @@ import os
 import sys
 from dataclasses import dataclass
 
+from examples.dogfood.capture import render_batch, run_devops_batch
 from examples.dogfood.devops.scenario import (
+    ACCOUNTS_SCHEMA,
     DeployTarget,
     build_tools,
-    run_release,
 )
 from examples.dogfood.harness import run_agent
 from examples.dogfood.infra import scratch_sqlite, temp_tree
@@ -56,28 +64,12 @@ from pherix.core.audit import AuditJournal
 from pherix.core.policy import Policy
 from pherix.core.tools import REGISTRY
 
-SCHEMA = """
-CREATE TABLE accounts (id INTEGER PRIMARY KEY, name TEXT);
-INSERT INTO accounts (name) VALUES ('alice'), ('bob');
-"""
-
 
 def _banner(title: str) -> None:
     print()
     print("=" * 72)
     print(title)
     print("=" * 72)
-
-
-def _print_journal(audit: AuditJournal, txn_id: str) -> None:
-    record = audit.get_transaction(txn_id)
-    print(f"  txn {txn_id}  state={record['state']}  "
-          f"client_id={record.get('client_id')}")
-    for e in audit.get_effects(txn_id):
-        print(
-            f"    [{e['idx']}] {e['resource']:>4}  "
-            f"{e['tool']}({e['args']}) -> {e['status']}"
-        )
 
 
 @dataclass
@@ -107,12 +99,12 @@ class Backend:
 
 
 def preview_release(audit: AuditJournal, backend: Backend) -> None:
-    """Phase 1 — a dry-run that prints the migration's state_diff, then discards."""
+    """Phase 1 — a real agent plans the release as a dry-run; we print the diff."""
     _banner("1. DRY-RUN PREVIEW — what the release would do (nothing committed)")
     REGISTRY.clear()
-    with scratch_sqlite(SCHEMA) as db, temp_tree() as tree:
+    with scratch_sqlite(ACCOUNTS_SCHEMA) as db, temp_tree() as tree:
         target = DeployTarget()
-        tools = build_tools(target)
+        tools = build_tools(target, db_conn=db.conn, fs_root=tree)
         adapters = {
             "sql": SQLiteAdapter(db.conn),
             "fs": FilesystemAdapter(tree),
@@ -120,13 +112,15 @@ def preview_release(audit: AuditJournal, backend: Backend) -> None:
         }
         run = run_agent(
             task=(
-                "Preview release v2: add a `feature_flag` column to `accounts`, "
-                "write the config for 'v2', deploy 'v2', then smoke-test it."
+                "Plan (do not commit) a healthy v2 release of the accounts "
+                "service: the v2 app reads a feature_flag for every account, so "
+                "existing accounts need it set too; v2 also needs its config "
+                "written and the version deployed."
             ),
             system=(
-                "You are a release engineer previewing a release. Call, in "
-                "order: run_migration, write_config, deploy, smoke_test. One "
-                "tool at a time, then stop."
+                "You are a release engineer previewing a release. Use the tools "
+                "to stage the work you would do for a healthy v2 release, then "
+                "stop — this is a dry-run preview, nothing will be committed."
             ),
             tools=tools,
             adapters=adapters,
@@ -151,49 +145,13 @@ def preview_release(audit: AuditJournal, backend: Backend) -> None:
               f"history={target.history}")
 
 
-def real_release(audit: AuditJournal, backend: Backend) -> None:
-    """Phase 2 — the real release; the failing smoke test unwinds everything."""
-    _banner("2. REAL RELEASE — engineered smoke failure unwinds atomically")
-    REGISTRY.clear()
-    with scratch_sqlite(SCHEMA) as db, temp_tree() as tree:
-        target = DeployTarget()  # healthy=False → smoke test will fail
-
-        def accounts_columns():
-            return [r[1] for r in db.conn.execute("PRAGMA table_info(accounts)")]
-
-        def config_exists():
-            return (tree / "release.conf").exists()
-
-        print(f"  before: accounts columns = {accounts_columns()}")
-        print(f"  before: release.conf exists = {config_exists()}")
-        print(f"  before: deploy history = {target.history}")
-
-        run = run_release(
-            conn=db.conn,
-            fs_root=tree,
-            target=target,
-            client=None,  # real client built by the harness (cloud key / local endpoint)
-            audit=audit,
-            api=backend.api,
-            base_url=backend.base_url,
-            model=backend.model,
-        )
-
-        print()
-        print(f"  agent ran {run.turns} turns; stop_reason={run.stop_reason}")
-        print(f"  commit-time error: {type(run.error).__name__ if run.error else None}"
-              f" — {run.error}")
-        print(f"  final txn state = {run.final_state.name}")
-        print()
-        print(f"  after:  accounts columns = {accounts_columns()}  "
-              f"(feature_flag gone — migration rolled back)")
-        print(f"  after:  release.conf exists = {config_exists()}  "
-              f"(config restored)")
-        print(f"  after:  deploy history = {target.history}  "
-              f"(deploy fired, then compensated)")
-        print()
-        _banner("THE JOURNAL — the whole release, then its unwind")
-        _print_journal(audit, run.txn_id)
+def real_releases(backend: Backend, runs: int = 4) -> None:
+    """Phase 2 — a batch of real releases; the genuine smoke check decides each."""
+    _banner(f"2. REAL RELEASES — {runs} runs, genuine smoke check decides each")
+    summary = run_devops_batch(
+        runs=runs, model=backend.model, api=backend.api, base_url=backend.base_url
+    )
+    print(render_batch(summary))
 
 
 _USAGE = """usage: python -m examples.dogfood.devops [--local] [--base-url URL] [--model ID]
@@ -241,7 +199,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"DevOps dogfood — backend: {backend.label}")
     audit = AuditJournal.in_memory()
     preview_release(audit, backend)
-    real_release(audit, backend)
+    real_releases(backend)
     print()
     print("DevOps dogfood done.")
 

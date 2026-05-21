@@ -1,6 +1,8 @@
-"""Offline proof of the coding sandbox MECHANISM — environment-level interception.
+"""Mechanism test (mocked/simulated, deterministic, CI) for the coding sandbox.
 
-A coding CLI uses built-in Edit/Write/Bash that MCP cannot intercept. The
+This is NOT a real-agent run — it is a mechanism test of the environment-level
+interception. A coding CLI uses built-in Edit/Write/Bash that MCP cannot
+intercept. The
 sandbox governs at the *environment* level instead: a Pherix CoW filesystem
 overlay + routed git/shell. These tests SIMULATE a CLI's built-in tool calls
 (the exact stream a real Claude Code / Cursor / Goose run would emit) hitting

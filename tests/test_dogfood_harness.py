@@ -1,10 +1,12 @@
-"""Offline proof that the dogfood harness wires real tool calls through Pherix.
+"""Mechanism test (mocked client, deterministic, CI) for the dogfood harness.
 
-No network, no key, no ``anthropic`` import: a mock client emits a canned
-``tool_use`` sequence and we assert the harness journalled the effects, wrote
-the audit rows, honoured the policy, and fed a denied call back to the model as
-a ``tool_result`` error. This is the foundation the four dogfood streams build
-on — if the harness mis-wires the loop, every dogfood is suspect.
+This is NOT a real-agent run. No network, no key, no ``anthropic`` import: a mock
+client emits a canned ``tool_use`` sequence and we assert the harness journalled
+the effects, wrote the audit rows, honoured the policy, and fed a denied call
+back to the model as a ``tool_result`` error. This is the foundation the four
+dogfood streams build on — if the harness mis-wires the loop, every dogfood is
+suspect. The genuinely autonomous runs are the operator-invoked ``python -m
+examples.dogfood.*`` scripts; these tests guard the wiring underneath them.
 """
 
 import sqlite3
