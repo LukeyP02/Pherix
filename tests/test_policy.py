@@ -268,13 +268,24 @@ def test_evaluate_journal_denies_at_commit_time_with_effect_index():
     assert exc.value.effect_index == 2
 
 
-# --- Slice 6.5 seam: ctx.read placeholder ----------------------------------
+# --- #7: ctx.read mediates a live world-state read -------------------------
 
 
-def test_ctx_read_raises_not_implemented_in_slice_6():
+def test_ctx_read_without_reader_raises_clear_error():
+    # The Slice 6.5 NotImplementedError placeholder is gone; #7 implements the
+    # read. With no reader bound, a rule that calls ctx.read gets a clear
+    # RuntimeError (not a silent None) — see tests/test_world_state_policy.py
+    # for the bound-reader divergence proof.
     ctx = _ctx()
-    with pytest.raises(NotImplementedError, match="Slice 6.5"):
+    with pytest.raises(RuntimeError, match="no read mediator is bound"):
         ctx.read("sql", "users:42")
+
+
+def test_ctx_read_dispatches_through_bound_reader():
+    ctx = PolicyContext(
+        journal=[], where="stage", reader=lambda resource, key: (resource, key)
+    )
+    assert ctx.read("sql", "users:42") == ("sql", "users:42")
 
 
 # --- Slice 6 rule + cap registered together --------------------------------

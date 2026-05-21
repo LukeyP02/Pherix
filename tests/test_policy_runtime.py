@@ -338,12 +338,17 @@ def test_rule_fires_at_both_stage_and_commit_time(conn):
     assert evaluations.count("commit") == 2
 
 
-# --- Slice 6.5 placeholder seam --------------------------------------------
+# --- #7: world-state read seam (pre-runtime-wiring state) ------------------
 
 
-def test_ctx_read_placeholder_raises_when_rule_uses_it(conn):
-    """A rule that reaches for world-state-aware reads must hit the
-    Slice 6.5 seam — Slice 6 ships the hook only."""
+def test_ctx_read_raises_until_runtime_binds_a_reader(conn):
+    """``ctx.read`` is implemented (#7), but the runtime does not yet thread a
+    read mediator into the PolicyContext it constructs — that hook is the
+    orchestrator's integration step. Until then a rule that calls ctx.read
+    inside an agent_txn hits the clear "no reader bound" RuntimeError rather
+    than a silent wrong answer. Once the runtime binds ``sql_reader(adapters)``
+    this test flips to the bound-reader path (proven at the policy layer in
+    tests/test_world_state_policy.py)."""
     policy = Policy.allow_all()
 
     @tool(resource="sql")
@@ -355,11 +360,10 @@ def test_ctx_read_placeholder_raises_when_rule_uses_it(conn):
 
     @policy.rule
     def needs_world_state(effect, ctx):
-        # Rule body asks for a live read; Slice 6 doesn't ship that yet.
         ctx.read("sql", "users:1")
         return Allow()
 
-    with pytest.raises(NotImplementedError, match="Slice 6.5"):
+    with pytest.raises(RuntimeError, match="no read mediator is bound"):
         with agent_txn({"sql": SQLiteAdapter(conn)}, policy=policy):
             add_user(name="alice")
 
