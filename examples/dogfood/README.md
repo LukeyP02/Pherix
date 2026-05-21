@@ -32,12 +32,15 @@ scripted "dogfood" would just be a redundant integration test.
 
 ## The foundation
 
-- **`harness.py`** — `run_agent(...)`, a thin Anthropic tool-use loop that opens
-  a transaction, runs the model inside it, and dispatches each `tool_use` to the
-  matching Pherix `@tool`. A policy denial is fed back to the model as a
-  `tool_result` error so the agent *adapts* instead of crashing. Returns an
-  `AgentRun` (transcript, journal, audit handle, final `TxnState`, and the
-  `DryRunResult` in dry-run mode).
+- **`harness.py`** — `run_agent(...)`, a thin tool-use loop that opens a
+  transaction, runs the model inside it, and dispatches each tool call to the
+  matching Pherix `@tool`. The chat protocol sits behind a backend seam:
+  `api="anthropic"` (the Messages API) or `api="openai"` (any OpenAI-compatible
+  local endpoint — Ollama / vLLM — via `base_url`). The Pherix dispatch is
+  identical across both, which is the model-blindness proof. A policy denial is
+  fed back to the model as a tool-result error so the agent *adapts* instead of
+  crashing. Returns an `AgentRun` (transcript, journal, audit handle, final
+  `TxnState`, and the `DryRunResult` in dry-run mode).
 - **`infra.py`** — `scratch_sqlite` / `temp_tree` / `scratch_repo`: real but
   throwaway infrastructure, cleaned up on exit.
 
@@ -46,12 +49,25 @@ they don't fork it.
 
 ## Running a dogfood
 
-Real runs need an Anthropic key. Put it in `.env` at the repo root (gitignored;
-`.env.example` is the tracked template):
+A cloud run needs an Anthropic key. Put it in `.env` at the repo root
+(gitignored; `.env.example` is the tracked template):
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+A **local** run needs no key — point the harness at an OpenAI-compatible local
+endpoint (Ollama / vLLM). The devops dogfood exposes this as `--local`:
+
+```
+python -m examples.dogfood.devops --local \
+    --base-url http://localhost:11434/v1 --model qwen2.5-coder:7b
+```
+
+The same release, the same atomic unwind, driven by a local open-source model —
+Pherix is model-blind, so the governance is identical. The OpenClaw integration
+(`examples/dogfood/coding/openclaw/`) and the air-gapped capstone
+(`docs/operator/airgapped-capstone.md`) build on this.
 
 Install the agent dependency (kept out of the dependency-free library):
 

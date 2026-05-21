@@ -1,27 +1,37 @@
-"""The real-agent harness — a thin Anthropic tool-use loop with Pherix in the path.
+"""The real-agent harness — a thin tool-use loop with Pherix in the path.
 
 ``run_agent`` opens an ``agent_txn`` (or ``dry_run``), runs a real model in a
-tool-use loop *inside* it, and dispatches every ``tool_use`` the model emits to
+tool-use loop *inside* it, and dispatches every tool call the model emits to
 the matching Pherix ``@tool``. Because the tools are ``@tool``-wrapped and the
 loop runs inside the transaction, each call is journalled, snapshotted, policy-
 checked and audited — the library's intended shape, driven by a real LLM rather
 than a script.
 
-Two design choices make this both honest and offline-testable:
+Three design choices make this honest, offline-testable, and model-blind:
 
 - **The model adapts to refusals.** A ``PolicyViolation`` (stage-time deny) is
-  fed back to the model as a ``tool_result`` *error*, not raised — so the agent
+  fed back to the model as a tool-result *error*, not raised — so the agent
   sees "DENIED: ..." and tries something else, exactly as it would in
   production. The transaction is never corrupted by a denied call (nothing was
   journalled).
-- **The Anthropic client is injectable.** ``run_agent(..., client=...)`` lets
-  the offline test pass a mock with a canned ``tool_use`` sequence; the real
-  ``anthropic`` SDK is imported *lazily* only when no client is supplied, so the
-  pytest suite never imports it, needs no key, and stays fully offline. The
-  ``pherix`` library itself imports none of this.
+- **The client is injectable.** ``run_agent(..., client=...)`` lets the offline
+  test pass a mock with a canned tool-call sequence; the real SDK is imported
+  *lazily* only when no client is supplied, so the pytest suite never imports
+  it, needs no key, and stays fully offline. The ``pherix`` library itself
+  imports none of this.
+- **The chat protocol sits behind a backend seam.** ``api="anthropic"`` drives
+  the Anthropic Messages API; ``api="openai"`` drives any OpenAI-compatible
+  chat-completions endpoint (Ollama, vLLM, LM Studio, …) via ``base_url``. The
+  *only* thing that differs between the two is how a model request/response is
+  shaped on the wire — the Pherix dispatch (``tool_map[name](**args)`` into the
+  same ``@tool`` wrappers, the same journal, the same policy) is byte-identical.
+  That identity *is* Pherix's model-blindness: a local open-source model on a
+  local endpoint is governed exactly as cloud Claude is. ``tests/
+  test_dogfood_harness_openai.py`` proves the two paths dispatch identically.
 
-Default model is ``claude-sonnet-4-6`` — capable enough to make real decisions,
-cheap enough to run agent loops repeatedly.
+Default model is ``claude-sonnet-4-6`` (the Anthropic path) — capable enough to
+make real decisions, cheap enough to run agent loops repeatedly. For the OpenAI
+path the operator passes their local model id (e.g. ``"qwen2.5-coder:7b"``).
 """
 
 from __future__ import annotations
@@ -51,14 +61,16 @@ _COMMIT_REFUSALS = (GateBlocked, IsolationConflict, PolicyViolation)
 class AgentRun:
     """The product of one real-agent run — everything needed to judge the outcome.
 
-    ``transcript`` is the full message list (system prompt excluded), including
-    the model's tool calls and the ``tool_result`` blocks fed back to it.
-    ``journal`` is ``ctx.txn.effects`` — the Pherix effect journal the run
-    produced. ``audit`` is the journal's persistent handle (query it by
-    ``txn_id`` / ``client_id``). ``final_state`` is the terminal
-    :class:`TxnState`. ``dry_run_result`` carries the
-    :class:`pherix.DryRunResult` when ``mode="dry_run"``. ``error`` holds a
-    commit-time refusal — an engine one (gate / isolation / policy) or a
+    ``transcript`` is the full message list (including the model's tool calls
+    and the tool-result blocks fed back to it). Its exact shape is the active
+    backend's wire shape — the Anthropic path keeps system separate and uses
+    ``tool_result`` content blocks; the OpenAI path carries a leading
+    ``system`` message and ``role="tool"`` result messages. ``journal`` is
+    ``ctx.txn.effects`` — the Pherix effect journal the run produced. ``audit``
+    is the journal's persistent handle (query it by ``txn_id`` / ``client_id``).
+    ``final_state`` is the terminal :class:`TxnState`. ``dry_run_result``
+    carries the :class:`pherix.DryRunResult` when ``mode="dry_run"``. ``error``
+    holds a commit-time refusal — an engine one (gate / isolation / policy) or a
     caller-declared domain one (see ``run_agent``'s ``commit_refusals``) — if
     the transaction could not commit. The run still returns rather than raising,
     so the caller can inspect what happened.
@@ -91,6 +103,8 @@ def run_agent(
     max_tokens: int = 1024,
     client: Any = None,
     audit: AuditJournal | None = None,
+    api: str = "anthropic",
+    base_url: str | None = None,
 ) -> AgentRun:
     """Run a real agent on ``task`` with Pherix wrapping its tool calls.
 
@@ -98,8 +112,17 @@ def run_agent(
     ``.tool_spec``). ``adapters`` / ``policy`` / ``client_id`` are passed
     straight to ``agent_txn`` / ``dry_run``. ``mode`` is ``"commit"`` (the
     transaction commits on a clean loop exit) or ``"dry_run"`` (it rolls back
-    and ``dry_run_result`` is populated). ``client`` is an Anthropic-compatible
-    client; when ``None`` the real SDK is constructed lazily (needs a key).
+    and ``dry_run_result`` is populated).
+
+    ``api`` selects the chat backend: ``"anthropic"`` (the Messages API) or
+    ``"openai"`` (any OpenAI-compatible chat-completions endpoint). For the
+    OpenAI path, ``base_url`` points at the local server (e.g.
+    ``"http://localhost:11434/v1"`` for Ollama, ``"http://localhost:8000/v1"``
+    for vLLM); it is read from ``OPENAI_BASE_URL`` when omitted. The two paths
+    dispatch through Pherix identically — that is the model-blindness proof.
+    ``client`` is a client matching the chosen backend; when ``None`` the real
+    SDK is constructed lazily (needs a key / a reachable endpoint). Tests always
+    inject a mock, so no SDK import and no network happen offline.
 
     ``isolation`` (commit mode only) is the resolution policy passed to
     ``agent_txn`` — ``Abort`` / ``Retry`` / ``Serialize`` — for the concurrent
@@ -120,36 +143,38 @@ def run_agent(
             "so it never competes for a conflict)"
         )
 
+    backend = _backend_for(api)
     policy = policy or Policy.allow_all()
     audit = audit or AuditJournal.in_memory()
-    client = client or _default_client()
+    client = client or backend.default_client(base_url)
 
     tool_map = {w.tool_spec.name: w for w in tools}
-    tool_defs = [_anthropic_tool_def(w.tool_spec) for w in tools]
-    messages: list[dict] = [{"role": "user", "content": task}]
+    tool_defs = backend.tool_defs(tools)
+    messages: list[dict] = backend.initial_messages(system=system, task=task)
 
     state: dict[str, Any] = {"stop": None, "turns": 0}
 
     def _loop() -> None:
         for _ in range(max_turns):
             state["turns"] += 1
-            resp = client.messages.create(
+            resp = backend.create(
+                client,
                 model=model,
                 max_tokens=max_tokens,
                 system=system,
-                tools=tool_defs,
+                tool_defs=tool_defs,
                 messages=messages,
             )
-            state["stop"] = getattr(resp, "stop_reason", None)
-            blocks = list(resp.content)
-            messages.append(
-                {"role": "assistant", "content": [_block_to_dict(b) for b in blocks]}
-            )
-            tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
-            if not tool_uses:
+            state["stop"] = backend.stop_reason(resp)
+            messages.extend(backend.assistant_messages(resp))
+            calls = backend.tool_calls(resp)
+            if not calls:
                 return
-            results = [_dispatch(tu, tool_map) for tu in tool_uses]
-            messages.append({"role": "user", "content": results})
+            results = [
+                _Outcome(call, *_invoke_tool(call.name, call.args, tool_map))
+                for call in calls
+            ]
+            messages.extend(backend.result_messages(results))
 
     dry_result = None
     error: Exception | None = None
@@ -189,32 +214,50 @@ def run_agent(
     )
 
 
-# --- tool dispatch ---------------------------------------------------------
+# --- tool dispatch (backend-agnostic — the model-blind core) ---------------
 
 
-def _dispatch(tool_use: Any, tool_map: dict[str, Callable[..., Any]]) -> dict:
-    """Call one tool through Pherix; render the outcome as a ``tool_result``.
+@dataclass
+class _ToolCall:
+    """One tool invocation a model emitted, normalised across backends."""
 
-    A ``PolicyViolation`` (stage-time deny) becomes an ``is_error`` result the
-    model reads and adapts to — the denied call left nothing in the journal. Any
-    other tool exception is likewise reported back rather than crashing the
-    loop, so a single bad call doesn't abort the whole run.
+    id: Any
+    name: str | None
+    args: dict
+
+
+@dataclass
+class _Outcome:
+    """A dispatched tool call paired with its (content, is_error) result."""
+
+    call: _ToolCall
+    content: str
+    is_error: bool
+
+
+def _invoke_tool(
+    name: str | None, args: dict, tool_map: dict[str, Callable[..., Any]]
+) -> tuple[str, bool]:
+    """Call one tool through Pherix; return ``(content, is_error)``.
+
+    This is the single dispatch point both backends funnel through — identical
+    regardless of which model API produced the call, which is exactly why a
+    local model is governed the same as cloud Claude. A ``PolicyViolation``
+    (stage-time deny) becomes an error result the model reads and adapts to —
+    the denied call left nothing in the journal. Any other tool exception is
+    likewise reported back rather than crashing the loop, so a single bad call
+    doesn't abort the whole run.
     """
-    name = getattr(tool_use, "name", None)
-    tool_use_id = getattr(tool_use, "id", None)
-    args = getattr(tool_use, "input", None) or {}
     wrapper = tool_map.get(name)
     if wrapper is None:
-        return _tool_result(tool_use_id, f"unknown tool {name!r}", is_error=True)
+        return (f"unknown tool {name!r}", True)
     try:
         out = wrapper(**args)
     except PolicyViolation as exc:
-        return _tool_result(tool_use_id, f"DENIED by policy: {exc}", is_error=True)
+        return (f"DENIED by policy: {exc}", True)
     except Exception as exc:  # noqa: BLE001 - report tool faults to the model
-        return _tool_result(
-            tool_use_id, f"tool error: {type(exc).__name__}: {exc}", is_error=True
-        )
-    return _tool_result(tool_use_id, _render_output(out))
+        return (f"tool error: {type(exc).__name__}: {exc}", True)
+    return (_render_output(out), False)
 
 
 def _render_output(out: Any) -> str:
@@ -231,18 +274,219 @@ def _render_output(out: Any) -> str:
         return str(out)
 
 
-def _tool_result(tool_use_id: Any, content: str, *, is_error: bool = False) -> dict:
-    block: dict[str, Any] = {
-        "type": "tool_result",
-        "tool_use_id": tool_use_id,
-        "content": content,
-    }
-    if is_error:
-        block["is_error"] = True
-    return block
+# --- the chat backends -----------------------------------------------------
+#
+# A backend is the *only* place a model API's wire shape leaks in. Each one
+# knows how to: seed the message list, build tool definitions in its schema,
+# call the model, and read a response back into the normalised (_ToolCall /
+# stop_reason / assistant messages / result messages) vocabulary the loop and
+# the Pherix dispatch share. Nothing below this line touches an adapter, the
+# journal, or a policy — that is the seam that keeps Pherix model-blind.
 
 
-# --- Anthropic schema plumbing ---------------------------------------------
+class _ChatBackend:
+    name: str
+
+    def default_client(self, base_url: str | None) -> Any:  # pragma: no cover
+        raise NotImplementedError
+
+    def initial_messages(self, *, system: str, task: str) -> list[dict]:  # pragma: no cover
+        raise NotImplementedError
+
+    def tool_defs(self, tools: list[Callable[..., Any]]) -> list[dict]:  # pragma: no cover
+        raise NotImplementedError
+
+    def create(self, client, *, model, max_tokens, system, tool_defs, messages):  # pragma: no cover
+        raise NotImplementedError
+
+    def stop_reason(self, resp: Any) -> str | None:  # pragma: no cover
+        raise NotImplementedError
+
+    def assistant_messages(self, resp: Any) -> list[dict]:  # pragma: no cover
+        raise NotImplementedError
+
+    def tool_calls(self, resp: Any) -> list[_ToolCall]:  # pragma: no cover
+        raise NotImplementedError
+
+    def result_messages(self, results: list[_Outcome]) -> list[dict]:  # pragma: no cover
+        raise NotImplementedError
+
+
+def _backend_for(api: str) -> _ChatBackend:
+    if api == "anthropic":
+        return _AnthropicBackend()
+    if api == "openai":
+        return _OpenAIBackend()
+    raise ValueError(f"api must be 'anthropic' or 'openai', got {api!r}")
+
+
+# --- Anthropic backend (Messages API) --------------------------------------
+
+
+class _AnthropicBackend(_ChatBackend):
+    """The Anthropic Messages API shape: system kwarg, ``tool_use`` content
+    blocks, ``tool_result`` blocks fed back inside a user message."""
+
+    name = "anthropic"
+
+    def default_client(self, base_url: str | None) -> Any:
+        return _default_anthropic_client()
+
+    def initial_messages(self, *, system: str, task: str) -> list[dict]:
+        # System is a separate kwarg on this API, so it is not in the message
+        # list — preserves the historical transcript shape the tests assert on.
+        return [{"role": "user", "content": task}]
+
+    def tool_defs(self, tools: list[Callable[..., Any]]) -> list[dict]:
+        return [_anthropic_tool_def(w.tool_spec) for w in tools]
+
+    def create(self, client, *, model, max_tokens, system, tool_defs, messages):
+        return client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=system,
+            tools=tool_defs,
+            messages=messages,
+        )
+
+    def stop_reason(self, resp: Any) -> str | None:
+        return getattr(resp, "stop_reason", None)
+
+    def assistant_messages(self, resp: Any) -> list[dict]:
+        blocks = list(resp.content)
+        return [{"role": "assistant", "content": [_block_to_dict(b) for b in blocks]}]
+
+    def tool_calls(self, resp: Any) -> list[_ToolCall]:
+        calls = []
+        for b in resp.content:
+            if getattr(b, "type", None) == "tool_use":
+                calls.append(
+                    _ToolCall(
+                        id=getattr(b, "id", None),
+                        name=getattr(b, "name", None),
+                        args=getattr(b, "input", None) or {},
+                    )
+                )
+        return calls
+
+    def result_messages(self, results: list[_Outcome]) -> list[dict]:
+        blocks = [
+            _tool_result(o.call.id, o.content, is_error=o.is_error) for o in results
+        ]
+        return [{"role": "user", "content": blocks}]
+
+
+# --- OpenAI-compatible backend (chat-completions) --------------------------
+
+
+class _OpenAIBackend(_ChatBackend):
+    """Any OpenAI-compatible chat-completions endpoint (Ollama / vLLM / …).
+
+    The wire shape differs from Anthropic — system is a leading message,
+    tools are ``{"type":"function", ...}``, tool calls carry a JSON *string*
+    of arguments, and results go back as ``role="tool"`` messages — but every
+    one of those differences is confined to this class. The (name, args) the
+    loop dispatches and the Pherix machinery behind it are identical.
+    """
+
+    name = "openai"
+
+    def default_client(self, base_url: str | None) -> Any:
+        return _default_openai_client(base_url)
+
+    def initial_messages(self, *, system: str, task: str) -> list[dict]:
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": task},
+        ]
+
+    def tool_defs(self, tools: list[Callable[..., Any]]) -> list[dict]:
+        return [_openai_tool_def(w.tool_spec) for w in tools]
+
+    def create(self, client, *, model, max_tokens, system, tool_defs, messages):
+        # System already lives in ``messages`` for this API, so it is not
+        # passed separately. ``tools`` is omitted when empty — some servers
+        # reject an empty tools array.
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": messages,
+        }
+        if tool_defs:
+            kwargs["tools"] = tool_defs
+        return client.chat.completions.create(**kwargs)
+
+    def stop_reason(self, resp: Any) -> str | None:
+        choice = resp.choices[0]
+        return getattr(choice, "finish_reason", None)
+
+    def assistant_messages(self, resp: Any) -> list[dict]:
+        msg = resp.choices[0].message
+        out: dict[str, Any] = {
+            "role": "assistant",
+            "content": getattr(msg, "content", None),
+        }
+        tool_calls = getattr(msg, "tool_calls", None) or []
+        if tool_calls:
+            out["tool_calls"] = [
+                {
+                    "id": getattr(tc, "id", None),
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                }
+                for tc in tool_calls
+            ]
+        return [out]
+
+    def tool_calls(self, resp: Any) -> list[_ToolCall]:
+        msg = resp.choices[0].message
+        calls = []
+        for tc in getattr(msg, "tool_calls", None) or []:
+            calls.append(
+                _ToolCall(
+                    id=getattr(tc, "id", None),
+                    name=tc.function.name,
+                    args=_parse_json_args(tc.function.arguments),
+                )
+            )
+        return calls
+
+    def result_messages(self, results: list[_Outcome]) -> list[dict]:
+        # No is_error flag in this API — the refusal text ("DENIED ...",
+        # "tool error: ...") is the model-readable signal, exactly as on the
+        # Anthropic path's error block.
+        return [
+            {
+                "role": "tool",
+                "tool_call_id": o.call.id,
+                "content": o.content,
+            }
+            for o in results
+        ]
+
+
+def _parse_json_args(raw: Any) -> dict:
+    """Decode a tool call's JSON-string arguments to a dict.
+
+    OpenAI-compatible servers send tool-call arguments as a JSON *string*.
+    A malformed / empty payload degrades to ``{}`` so a single bad call is
+    reported to the model (unknown args -> tool error) rather than crashing.
+    """
+    if isinstance(raw, dict):
+        return raw
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+# --- tool-schema plumbing --------------------------------------------------
 
 
 _TYPE_MAP = {
@@ -254,12 +498,12 @@ _TYPE_MAP = {
 }
 
 
-def _anthropic_tool_def(spec: Any) -> dict:
-    """Build an Anthropic tool definition from a Pherix ``ToolSpec``.
+def _tool_schema(spec: Any) -> tuple[dict, str]:
+    """Build the JSON-schema ``input`` object + a description for a ``ToolSpec``.
 
-    The agent sees the *public* signature (the injected adapter handle removed).
-    Param types are mapped from annotations where present, defaulting to string;
-    params without a default are ``required``.
+    Shared by both backends: the agent sees the *public* signature (the injected
+    adapter handle removed), param types mapped from annotations (defaulting to
+    string), params without a default marked ``required``.
     """
     import inspect
 
@@ -279,10 +523,33 @@ def _anthropic_tool_def(spec: Any) -> dict:
     schema: dict[str, Any] = {"type": "object", "properties": properties}
     if required:
         schema["required"] = required
+    return schema, _description(spec)
+
+
+def _anthropic_tool_def(spec: Any) -> dict:
+    """Anthropic tool definition (``input_schema``) from a Pherix ``ToolSpec``."""
+    schema, description = _tool_schema(spec)
     return {
         "name": spec.name,
-        "description": _description(spec),
+        "description": description,
         "input_schema": schema,
+    }
+
+
+def _openai_tool_def(spec: Any) -> dict:
+    """OpenAI-compatible function-tool definition from a Pherix ``ToolSpec``.
+
+    Same JSON-schema for the parameters as the Anthropic def — only the
+    envelope differs (``{"type":"function","function":{...,"parameters":...}}``).
+    """
+    schema, description = _tool_schema(spec)
+    return {
+        "type": "function",
+        "function": {
+            "name": spec.name,
+            "description": description,
+            "parameters": schema,
+        },
     }
 
 
@@ -296,7 +563,7 @@ def _description(spec: Any) -> str:
 
 
 def _block_to_dict(block: Any) -> dict:
-    """Normalise a response content block to a plain dict for the transcript."""
+    """Normalise an Anthropic response content block to a plain dict."""
     btype = getattr(block, "type", None)
     if btype == "text":
         return {"type": "text", "text": getattr(block, "text", "")}
@@ -312,10 +579,21 @@ def _block_to_dict(block: Any) -> dict:
     return {"type": btype, "raw": str(block)}
 
 
+def _tool_result(tool_use_id: Any, content: str, *, is_error: bool = False) -> dict:
+    block: dict[str, Any] = {
+        "type": "tool_result",
+        "tool_use_id": tool_use_id,
+        "content": content,
+    }
+    if is_error:
+        block["is_error"] = True
+    return block
+
+
 # --- real-run plumbing (never reached on the offline test path) ------------
 
 
-def _default_client() -> Any:
+def _default_anthropic_client() -> Any:
     """Construct the real Anthropic client — lazy import, key from env / .env.
 
     Only called when ``run_agent`` got no ``client``. Tests always inject one,
@@ -332,6 +610,31 @@ def _default_client() -> Any:
     import anthropic  # examples-only dependency; pip install -e '.[dogfood]'
 
     return anthropic.Anthropic(api_key=key)
+
+
+def _default_openai_client(base_url: str | None) -> Any:
+    """Construct an OpenAI-compatible client pointed at a local endpoint.
+
+    ``base_url`` (or ``OPENAI_BASE_URL``) names the local server — e.g.
+    ``http://localhost:11434/v1`` (Ollama) or ``http://localhost:8000/v1``
+    (vLLM). A local server typically ignores the key, so ``OPENAI_API_KEY``
+    falls back to a placeholder; a remote OpenAI-compatible endpoint that *does*
+    require a key should have it set. Lazy import keeps the ``openai`` SDK out
+    of the offline suite — tests inject a mock instead.
+    """
+    _load_env()
+    base_url = base_url or os.environ.get("OPENAI_BASE_URL")
+    if not base_url:
+        raise RuntimeError(
+            "No base_url for the OpenAI-compatible endpoint. Pass "
+            "base_url='http://localhost:11434/v1' (Ollama) / "
+            "'http://localhost:8000/v1' (vLLM), or set OPENAI_BASE_URL. Offline "
+            "tests must pass a mock `client=` instead."
+        )
+    key = os.environ.get("OPENAI_API_KEY", "not-needed-for-local")
+    import openai  # examples-only dependency; pip install -e '.[dogfood]'
+
+    return openai.OpenAI(base_url=base_url, api_key=key)
 
 
 def _load_env(path: Path | None = None) -> None:

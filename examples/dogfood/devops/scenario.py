@@ -216,6 +216,8 @@ def run_release(
     client: Any = None,
     audit: AuditJournal | None = None,
     model: str | None = None,
+    api: str = "anthropic",
+    base_url: str | None = None,
 ) -> AgentRun:
     """Run the failing-smoke release through a real (or mocked) agent.
 
@@ -230,7 +232,11 @@ def run_release(
     returns the unwound run — its ``journal`` is the real ``ctx.txn.effects``,
     so the caller inspects the result rather than catching the exception.
     ``client`` is injectable: the offline test passes a mock; a keyed run
-    passes ``None`` and the harness builds the real Anthropic client.
+    passes ``None`` and the harness builds the real client. ``api`` /
+    ``base_url`` select the chat backend — leave them at the default for cloud
+    Anthropic, or pass ``api="openai", base_url="http://localhost:11434/v1"``
+    (and a local ``model``) to run the *same* release, with the *same* unwind,
+    against a local open-source model: the model-blindness proof.
     """
     audit = audit or AuditJournal.in_memory()
     tools = build_tools(target)
@@ -249,6 +255,8 @@ def run_release(
         client=client,
         audit=audit,
         commit_refusals=(SmokeTestFailed,),
+        api=api,
+        base_url=base_url,
     )
     if model is not None:
         kwargs["model"] = model
