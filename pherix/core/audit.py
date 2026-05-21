@@ -42,6 +42,17 @@ CREATE TABLE IF NOT EXISTS effects (
     ts         TEXT NOT NULL,
     PRIMARY KEY (txn_id, idx)
 );
+CREATE TABLE IF NOT EXISTS verdicts (
+    txn_id       TEXT NOT NULL,
+    effect_index INTEGER NOT NULL,
+    seq          INTEGER NOT NULL,
+    phase        TEXT NOT NULL,   -- 'stage' | 'commit'
+    allow        INTEGER NOT NULL,
+    kind         TEXT NOT NULL,   -- 'rule' | 'cap' | 'allowlist'
+    rule_name    TEXT,
+    reason       TEXT,
+    PRIMARY KEY (txn_id, seq)
+);
 """
 
 
@@ -203,5 +214,54 @@ class AuditJournal:
     def get_effects(self, txn_id: str) -> list[dict]:
         rows = self._conn.execute(
             "SELECT * FROM effects WHERE txn_id = ? ORDER BY idx", (txn_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # --- policy verdicts (D3 — the recorded, not generated, decision) ---
+
+    def record_verdicts(self, txn_id: str, rows: list[dict]) -> None:
+        """Persist per-rule policy verdicts for a transaction.
+
+        Each row is a plain dict — ``effect_index``, ``phase``
+        (``'stage'`` / ``'commit'``), ``allow`` (bool), ``kind``
+        (``'rule'`` / ``'cap'`` / ``'allowlist'``), ``rule_name`` and
+        ``reason`` — so this method stays decoupled from the policy module's
+        :class:`~pherix.core.policy.PolicyVerdict` type. ``seq`` preserves
+        order within the transaction (the list order as evaluated). Best-
+        effort and append-only like the rest of the journal: the verdict
+        record annotates the transaction, it is never the source of truth
+        for whether an effect took place — that is the effect ``status``.
+
+        The verdict surface is currently populated on the dry-run path
+        (where the runtime captures every rule's decision without raising);
+        normal-commit verdict capture is a clean additive follow-up that
+        writes here too.
+        """
+        for seq, r in enumerate(rows):
+            self._conn.execute(
+                "INSERT INTO verdicts (txn_id, effect_index, seq, phase, "
+                "allow, kind, rule_name, reason) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    txn_id,
+                    int(r["effect_index"]),
+                    seq,
+                    r["phase"],
+                    int(bool(r["allow"])),
+                    r.get("kind", "rule"),
+                    r.get("rule_name"),
+                    r.get("reason"),
+                ),
+            )
+        self._conn.commit()
+
+    def get_verdicts(self, txn_id: str) -> list[dict]:
+        # seq is global insertion order (stage verdicts recorded before commit
+        # verdicts), so ordering by (effect_index, seq) yields, per effect, its
+        # stage decisions then its commit decisions — temporal order.
+        rows = self._conn.execute(
+            "SELECT * FROM verdicts WHERE txn_id = ? "
+            "ORDER BY effect_index, seq",
+            (txn_id,),
         ).fetchall()
         return [dict(r) for r in rows]

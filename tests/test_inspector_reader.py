@@ -83,7 +83,7 @@ def test_stats_counts_the_seeded_journal(reader: JournalReader):
     assert s["txns_by_state"]["STAGED"] == 1
     assert s["clients"] == ["claude-code", "cursor-agent"]
     assert "charge_card" in s["tools"]
-    assert s["has_verdicts"] is False  # no verdicts table in a seeded journal
+    assert s["has_verdicts"] is True  # the seeder writes per-rule verdicts
 
 
 def test_stats_empty_journal(tmp_path: Path):
@@ -189,8 +189,45 @@ def test_timeline_gated_irreversible_reads_at_a_glance(reader: JournalReader):
     assert charge["status"] == "GATED"
     assert charge["tone"] == "blocked"
     assert charge["reversible"] is False
-    # no verdicts table → empty per-rule list, derived verdict still present
-    assert charge["policy_verdicts"] == []
+
+
+def test_timeline_surfaces_world_state_divergence(reader: JournalReader):
+    """The keystone policy story: a cap that ALLOWS at stage but DENIES at
+    commit because the running total moved. The inspector must show both
+    phases on the same effect so the divergence reads at a glance."""
+    tl = reader.get_timeline("txn-gated-charge03")
+    charge = next(e for e in tl["effects"] if e["tool"] == "charge_card")
+    phases = {(v["phase"], v["allow"]) for v in charge["policy_verdicts"]}
+    assert ("stage", True) in phases   # allowed when planned
+    assert ("commit", False) in phases  # denied when it would fire
+    deny = next(v for v in charge["policy_verdicts"] if not v["allow"])
+    assert deny["kind"] == "cap"
+    assert "5000" in deny["reason"]
+
+
+def test_timeline_no_verdicts_when_table_empty(tmp_path: Path):
+    """A journal whose verdicts table has no rows for a txn → empty per-rule
+    list; the status-derived verdict still carries the timeline."""
+    path = str(tmp_path / "noverdicts.db")
+    AuditJournal(path).close()
+    con = sqlite3.connect(path)
+    con.execute(
+        "INSERT INTO transactions (txn_id, state, created_at, updated_at, dry_run) "
+        "VALUES ('t1', 'COMMITTED', ?, ?, 0)",
+        (datetime.now(timezone.utc).isoformat(),) * 2,
+    )
+    con.execute(
+        "INSERT INTO effects (txn_id, idx, effect_id, tool, resource, reversible, "
+        "status, args, read_keys, write_keys, ts) "
+        "VALUES ('t1', 0, 'e', 'w', 'sql', 1, 'APPLIED', '{}', '[]', '[]', ?)",
+        (datetime.now(timezone.utc).isoformat(),),
+    )
+    con.commit()
+    con.close()
+    with JournalReader(path) as r:
+        tl = r.get_timeline("t1")
+        assert tl["effects"][0]["policy_verdicts"] == []
+        assert tl["effects"][0]["verdict"] == "applied"  # derived still present
 
 
 def test_timeline_dry_run_flag_on_summary(reader: JournalReader):

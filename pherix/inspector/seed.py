@@ -167,6 +167,14 @@ def _attributed() -> list[Transaction]:
     return [a, b]
 
 
+def _verdict(effect_index: int, phase: str, allow: bool, kind: str,
+             rule_name: str | None, reason: str | None = None) -> dict:
+    return {
+        "effect_index": effect_index, "phase": phase, "allow": allow,
+        "kind": kind, "rule_name": rule_name, "reason": reason,
+    }
+
+
 def seed_demo_journal(path: str) -> dict:
     """Write the full demo journal to ``path`` (created if absent). Idempotent
     only if ``path`` is fresh — re-seeding an existing journal will raise on
@@ -177,8 +185,28 @@ def seed_demo_journal(path: str) -> dict:
         _write(journal, _clean_commit())
         _write(journal, _rollback())
         _write(journal, _gated())
+        # The gated charge: a spend cap allows it at stage but the running
+        # total trips it at commit — the world-state divergence the inspector
+        # surfaces (allowed when planned, denied when it fired).
+        journal.record_verdicts("txn-gated-charge03", [
+            _verdict(0, "stage", True, "rule", "read_only_ok"),
+            _verdict(1, "stage", True, "cap", "Cap.sum(charge_card, max=5000)"),
+            _verdict(0, "commit", True, "rule", "read_only_ok"),
+            _verdict(1, "commit", False, "cap", "Cap.sum(charge_card, max=5000)",
+                     "would exceed sum cap (max=5000): running=4200, "
+                     "contribution=4200"),
+        ])
         _write(journal, _stuck())
         _write(journal, _dry_run(), dry_run=True)
+        # The dry-run captured both phases without firing — the speculative view.
+        journal.record_verdicts("txn-dryrun-plan05", [
+            _verdict(0, "stage", True, "rule", "budget_guard"),
+            _verdict(1, "stage", False, "rule", "budget_guard",
+                     "charge 2000 exceeds remaining budget 1500"),
+            _verdict(0, "commit", True, "rule", "budget_guard"),
+            _verdict(1, "commit", False, "rule", "budget_guard",
+                     "charge 2000 exceeds remaining budget 1500"),
+        ])
         attributed = _attributed()
         _write(journal, attributed[0], client_id="claude-code")
         _write(journal, attributed[1], client_id="cursor-agent")

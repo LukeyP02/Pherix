@@ -26,7 +26,10 @@ the right. Things to look for:
 - **`txn-rollback-rel02`** — every effect struck through and marked *compensated*:
   the backward fold. Banner: "rolled back — nothing took effect."
 - **`txn-gated-charge03`** — the irreversible `charge_card` held at the gate
-  (amber/orange), the reversible read above it already applied.
+  (amber/orange), the reversible read above it already applied. Its per-rule
+  verdicts show the **world-state divergence**: the spend cap *allowed* it at
+  stage but *denied* it at commit (the running total moved) — both phases on
+  the same effect.
 - **`txn-stuck-payout04`** — the red **STUCK** banner: a compensator went missing
   mid-unwind; an operator must intervene.
 - **`txn-dryrun-plan05`** — flagged `dry-run`; tick **hide dry-run** in the

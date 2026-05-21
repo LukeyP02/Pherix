@@ -98,6 +98,37 @@ def _unique(adapters: dict[str, Any]) -> list[Any]:
     return out
 
 
+def _verdict_rows(verdicts: list[Any]) -> list[dict]:
+    """Normalise :class:`~pherix.core.policy.PolicyVerdict` objects into the
+    plain dicts :meth:`AuditJournal.record_verdicts` persists.
+
+    ``kind`` is derived from the rule object: ``None`` is the allow/deny
+    tool-name list, a cap (its class name carries ``Cap``) is ``'cap'``,
+    everything else is a ``'rule'``. Keeps the audit layer free of any
+    policy-type import — the runtime owns the translation.
+    """
+    rows: list[dict] = []
+    for v in verdicts:
+        rule = getattr(v, "rule", None)
+        if rule is None:
+            kind = "allowlist"
+        elif "Cap" in type(rule).__name__:
+            kind = "cap"
+        else:
+            kind = "rule"
+        rows.append(
+            {
+                "effect_index": v.effect_index,
+                "phase": v.where,
+                "allow": v.allow,
+                "kind": kind,
+                "rule_name": v.rule_name,
+                "reason": v.reason,
+            }
+        )
+    return rows
+
+
 class TxnContext:
     """The active-transaction object stored in the ``active_txn`` ContextVar.
 
@@ -456,6 +487,18 @@ class TxnContext:
             is_clean=all(v.allow for v in all_verdicts),
             state_diff=self._compute_state_diff(),
         )
+
+        # Persist the captured verdicts so the inspector can render the
+        # per-rule stage/commit decisions (incl. any world-state divergence).
+        # Best-effort: the verdict record annotates the journal; a failure to
+        # write it must never change the dry-run's outcome (the effect
+        # statuses are the source of truth). Append-only, like everything else.
+        try:
+            self.audit.record_verdicts(
+                self.txn.txn_id, _verdict_rows(all_verdicts)
+            )
+        except Exception:
+            pass
 
         # Unwind: identical mechanics to a normal rollback. Reversibles
         # restore from snapshots (APPLIED → COMPENSATED); irreversibles

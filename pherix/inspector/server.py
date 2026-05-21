@@ -31,6 +31,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
+from typing import cast
 from urllib.parse import parse_qs, urlparse
 
 from pherix.inspector.reader import JournalReader
@@ -48,12 +49,25 @@ def _static_bytes(name: str) -> bytes:
     return (resources.files("pherix.inspector.static") / name).read_bytes()
 
 
+class InspectorServer(ThreadingHTTPServer):
+    """Server subclass that declares the read-only journal handles the
+    handler reaches for. Declaring them here (rather than ad-hoc attribute
+    assignment) keeps the handler's ``self.srv`` access type-clean."""
+
+    reader: JournalReader
+    lock: threading.Lock
+    verbose: bool = False
+
+
 class InspectorHandler(BaseHTTPRequestHandler):
     server_version = "PherixInspector/1.0"
 
-    # set on the server instance by :func:`make_server`
-    reader: JournalReader
-    lock: threading.Lock
+    @property
+    def srv(self) -> InspectorServer:
+        # self.server is typed as the base BaseServer; it is always an
+        # InspectorServer here (make_server builds one). cast is a no-op at
+        # runtime and avoids per-access type-ignores.
+        return cast(InspectorServer, self.server)
 
     # --- helpers ------------------------------------------------------------
 
@@ -77,7 +91,7 @@ class InspectorHandler(BaseHTTPRequestHandler):
 
     def _read(self, fn, *args, **kwargs):
         """Run a reader call under the shared lock (SQLite read serialisation)."""
-        with self.server.lock:  # type: ignore[attr-defined]
+        with self.srv.lock:
             return fn(*args, **kwargs)
 
     # --- routing ------------------------------------------------------------
@@ -100,14 +114,14 @@ class InspectorHandler(BaseHTTPRequestHandler):
                     self._json(404, {"error": "not found"})
                 return
             if path == "/api/stats":
-                self._json(200, self._read(self.server.reader.stats))  # type: ignore[attr-defined]
+                self._json(200, self._read(self.srv.reader.stats))
                 return
             if path == "/api/transactions":
                 self._json(200, self._list(parse_qs(parsed.query)))
                 return
             if path.startswith("/api/transactions/"):
                 txn_id = path[len("/api/transactions/"):]
-                timeline = self._read(self.server.reader.get_timeline, txn_id)  # type: ignore[attr-defined]
+                timeline = self._read(self.srv.reader.get_timeline, txn_id)
                 if timeline is None:
                     self._json(404, {"error": f"no transaction {txn_id!r}"})
                 else:
@@ -128,7 +142,7 @@ class InspectorHandler(BaseHTTPRequestHandler):
         include_dry_run = one("include_dry_run")
         limit = one("limit")
         return self._read(
-            self.server.reader.list_transactions,  # type: ignore[attr-defined]
+            self.srv.reader.list_transactions,
             state=one("state"),
             client_id=one("client_id"),
             tool=one("tool"),
@@ -139,17 +153,17 @@ class InspectorHandler(BaseHTTPRequestHandler):
         )
 
     def log_message(self, *args) -> None:  # quieter: one line, opt-in
-        if getattr(self.server, "verbose", False):  # type: ignore[attr-defined]
+        if self.srv.verbose:
             super().log_message(*args)
 
 
 def make_server(db_path: str, host: str = "127.0.0.1", port: int = 8765,
-                verbose: bool = False) -> ThreadingHTTPServer:
+                verbose: bool = False) -> InspectorServer:
     """Build (but don't start) the inspector server over ``db_path``."""
-    httpd = ThreadingHTTPServer((host, port), InspectorHandler)
-    httpd.reader = JournalReader(db_path)  # type: ignore[attr-defined]
-    httpd.lock = threading.Lock()  # type: ignore[attr-defined]
-    httpd.verbose = verbose  # type: ignore[attr-defined]
+    httpd = InspectorServer((host, port), InspectorHandler)
+    httpd.reader = JournalReader(db_path)
+    httpd.lock = threading.Lock()
+    httpd.verbose = verbose
     return httpd
 
 
@@ -165,7 +179,7 @@ def serve(db_path: str, host: str = "127.0.0.1", port: int = 8765,
     except KeyboardInterrupt:
         print("\nstopped.")
     finally:
-        httpd.reader.close()  # type: ignore[attr-defined]
+        httpd.reader.close()
         httpd.server_close()
 
 
