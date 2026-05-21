@@ -213,7 +213,7 @@
   </p>
   <div class="meta-row">
     <span><b>Merged:</b> <code>add6709</code></span>
-    <span><b>Tests:</b> 367 green</span>
+    <span><b>Tests:</b> 391 green</span>
     <span><b>Streams:</b> 4 (one harness + DevOps, audit, sandbox, MCP)</span>
   </div>
 </header>
@@ -246,8 +246,12 @@
     <p><strong>3 · Run one</strong> from the repo root. Start with DevOps — it's the most visceral (you watch a whole release unwind):</p>
     <pre>python -m examples.dogfood.devops   # migrate + deploy; a failing smoke test unwinds the release
 python -m examples.dogfood.audit    # two concurrent agents reconcile a ledger, attributed + isolated
-python -m examples.dogfood.coding   # an out-of-box CLI governed inside the sandbox</pre>
-    <p class="start-note">Default model is <code>claude-sonnet-4-6</code>. Each script prints the agent's transcript, the Pherix journal it produced, and what got gated / unwound / audited — the thing to watch is the moment the agent does something that would hurt and Pherix contains it.</p>
+python -m examples.dogfood.coding   # an out-of-box CLI governed inside the sandbox
+
+# or drive devops with a LOCAL open model (no cloud, no key) — same governance:
+python -m examples.dogfood.devops --local \
+    --base-url http://localhost:11434/v1 --model qwen2.5-coder:7b</pre>
+    <p class="start-note">Default cloud model is <code>claude-sonnet-4-6</code>; <code>--local</code> points at any OpenAI-compatible endpoint (Ollama/vLLM). Each script prints the agent's transcript, the Pherix journal it produced, and what got gated / unwound / audited — the thing to watch is the moment the agent does something that would hurt and Pherix contains it.</p>
   </div>
 
   <h3>What each one shows you</h3>
@@ -257,15 +261,20 @@ python -m examples.dogfood.coding   # an out-of-box CLI governed inside the sand
     <li><strong>Coding</strong> — a coding CLI's file/shell actions route through the sandbox; a forbidden action (write <code>/etc</code>, push to main) is gated. Agent-agnostic — the environment governs, not the agent.</li>
   </ul>
 
-  <h3>The fourth — the air-gapped capstone <span style="color:var(--accent-warn); font-family:ui-monospace,monospace; font-size:0.7rem; letter-spacing:0.1em;">IN PROGRESS</span></h3>
+  <h3>The fourth — the air-gapped capstone <span style="color:var(--accent-2); font-family:ui-monospace,monospace; font-size:0.7rem; letter-spacing:0.1em;">WIRED</span></h3>
   <p class="start-note">
     The headline demo: an open-source local agent (<strong>OpenClaw</strong>) on a
     <em>local</em> model, inside the sandbox, on a disposable machine with the
     wifi off — let it genuinely try to wreck the box (<code>rm -rf</code>, drop
     a table, push to main) and watch Pherix hold the line. That's the
     cross-agent + cross-model + cross-deployment proof no cloud vendor can
-    serve. The wiring is the <code>local-openclaw</code> task; the three above
-    run now.
+    serve. The wiring landed (<code>local-openclaw</code>, merged): MCP gateway
+    config + a sandbox launcher + the run protocol in
+    <code>docs/operator/airgapped-capstone.md</code> and
+    <code>examples/dogfood/coding/openclaw/capstone.sh</code>. The harness also
+    gained a <code>--local</code> path, so the devops/audit dogfoods run against
+    a local OpenAI-compatible model (Ollama/vLLM) too — Pherix's dispatch is
+    byte-identical, which <em>is</em> the model-blindness proof.
   </p>
 </section>
 
@@ -446,7 +455,13 @@ python -m examples.dogfood.coding   # an out-of-box CLI governed inside the sand
     <p>
       That is <em>precisely</em> what dogfooding is for: not re-confirming what
       the unit suite already knows, but reaching the conditions the unit suite
-      structurally can't. Fix in flight.
+      structurally can't. <strong>And it's now fixed</strong> (merged): the
+      commit-time diff reconciles the two checkers via
+      <code>reads_committed_only()</code> — committed-only adapters compare the
+      committed base at read against now, own-write-visible adapters keep the
+      prior logic — and a 450-line on-disk test matrix closes the coverage gap
+      that hid it. A real agent found it; the fix shipped with the test the
+      suite was missing.
     </p>
     <p class="lesson">
       The lesson: test against the real backend shape, not the convenient

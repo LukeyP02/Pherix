@@ -632,22 +632,21 @@
   <div class="state-grid">
     <div class="state-col now">
       <p class="ftag">On main</p>
-      <h4>Phase 1 complete + the real-agent dogfood suite landed — 367 tests.</h4>
+      <h4>Phase 1 + the dogfood suite + the bug fix + local agents — 391 tests.</h4>
       <ul>
-        <li><strong>All eight slices merged</strong> (the determinism engine): journal, SQL + FS adapters, irreversible lane, MVCC isolation, replay, two-bracket policy, dry-run, and the MCP gateway — with <code>core/</code> essentially untouched by the gateway, proving the front-end-agnostic discipline held across all eight.</li>
-        <li><strong>The dogfood suite merged</strong> (<code>add6709</code>): a shared real-agent harness + four streams (DevOps, audit, coding sandbox, live MCP). <strong>367 tests green</strong>, fully offline.</li>
-        <li><strong>And on day one it earned its keep:</strong> the audit dogfood surfaced a genuine Slice-4 isolation bug that all 367 deterministic tests missed (a read-then-write of the same key, only manifesting on a real on-disk DB). A real agent found a correctness bug the unit suite structurally couldn't — exactly what dogfooding is for.</li>
-        <li><strong>The journal is the asset that compounds.</strong> Every slice and every dogfood reads or writes the same shape; none has needed to alter it.</li>
+        <li><strong>All eight slices merged</strong> (the determinism engine): journal, SQL + FS adapters, irreversible lane, MVCC isolation, replay, two-bracket policy, dry-run, and the MCP gateway — <code>core/</code> essentially untouched by the gateway, proving the front-end-agnostic discipline held across all eight.</li>
+        <li><strong>The dogfood suite merged</strong>: a shared real-agent harness + four streams (DevOps, audit, coding sandbox, live MCP).</li>
+        <li><strong>It earned its keep on day one</strong> — the audit dogfood surfaced a genuine Slice-4 isolation bug all the deterministic tests missed (read-then-write same key, only on a real on-disk DB) — and <strong>the fix is now merged</strong> (<code>dc9d6ec</code>): the diff reconciles both version-checkers via <code>reads_committed_only()</code>, with a 450-line on-disk matrix closing the gap. A real agent found it; the fix shipped with the missing test.</li>
+        <li><strong>Local agents merged</strong> (<code>48d92ac</code>): the harness drives any OpenAI-compatible local endpoint (<code>--local</code>), and OpenClaw is wired through both interception surfaces (MCP gateway + sandbox) with an air-gapped adversarial capstone guide. Model-blind <em>and</em> deployment-blind, proven. <strong>391 tests green.</strong></li>
       </ul>
     </div>
     <div class="state-col next">
       <p class="ftag">In flight &middot; near horizon</p>
-      <h4>Fix the bug, run the dogfoods for real, then sell.</h4>
+      <h4>Make the runs accurate, then run them for real, then sell.</h4>
       <ul>
-        <li><strong><code>fix/isolation-self-write</code></strong> — the Slice-4 read-then-write false-conflict fix the audit dogfood surfaced. High priority: it's a correctness bug in the exact isolation guarantee "agent ACID" is sold on.</li>
-        <li><strong><code>feat/local-openclaw</code></strong> — local-model support for the harness + OpenClaw wired through both interception models (MCP + sandbox) + the air-gapped adversarial capstone. The cross-deployment moat, made runnable.</li>
-        <li><strong>Run the dogfoods for real</strong> (key + spare machine) — "test the fucker." This is the first-user signal: whichever facet (atomic-unwind / audit-trail / gated-coding) lands hardest with the regulated-enterprise buyer is the Phase 2 wedge. See <code>dogfood.html</code> &rarr; <em>Start here</em>.</li>
-        <li><strong>Phase 2 &middot; guardrails MVP</strong> — exit is commercial (<em>someone pays</em>): take the demo to a design partner, build the audit pillar <em>for</em> them, on the way to a YC application. See <code>phases.html</code>.</li>
+        <li><strong><code>proper-agents</code></strong> (in flight) — the accuracy pass: de-rail the dogfood prompts (goal, not a step list) and un-rig the outcomes (genuine fault modes, not forced flags), so a real-agent run genuinely succeeds or fails and the demo is honest. Plus a capture harness for recordable evidence. <em>The current runs drive a real model but on rails — this makes them proper.</em></li>
+        <li><strong>Run the dogfoods for real</strong> (key in <code>.env</code> + a spare machine) — "test the fucker," including the OpenClaw air-gapped red-team. This is the first-user signal: whichever facet lands hardest with the regulated-enterprise buyer is the Phase 2 wedge. See <code>dogfood.html</code> &rarr; <em>Start here</em>.</li>
+        <li><strong>Phase 2 &middot; guardrails MVP</strong> — exit is commercial (<em>someone pays</em>): take the demo to a design partner, build the audit pillar <em>for</em> them, toward a YC application. See <code>phases.html</code>.</li>
         <li><strong>Backlog:</strong> Slice 6.5 (world-state-aware policy), Slice 7.5 (per-adapter state diff), and the trilogy beyond Slice 8 (determinism · memory · audit).</li>
       </ul>
     </div>
@@ -680,7 +679,7 @@
 
 <footer>
   <p>Pherix &middot; <code>docs/where-we-are.html</code> &middot; orientation artifact. Update on each slice merge per the HTML-hygiene rule in <code>CLAUDE.md</code>.</p>
-  <p>Phase 1 complete + dogfood suite merged (<code>add6709</code>). 367 tests on <code>main</code>. Next: fix the Slice-4 bug the dogfood found, run the dogfoods for real, then Phase 2 (guardrails MVP).</p>
+  <p>Phase 1 + dogfood suite + the isolation fix + local agents/OpenClaw, all merged. 391 tests on <code>main</code>. Next: <code>proper-agents</code> (make the runs genuinely autonomous), run them for real, then Phase 2 (guardrails MVP).</p>
 </footer>
 
 </main>
