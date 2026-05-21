@@ -3,24 +3,37 @@
 Real LLM agents, with Pherix genuinely in the tool-call path — catching what
 would hurt.
 
-## Why this exists (real agents, not scripts)
+## Two distinct things — do not conflate them
 
-The 331-test suite already proves the *mechanism*: savepoints restore, policy
-denies, the journal folds, the MCP wire matches the spec. That is deterministic
-proof that the engine is **correct**. It says nothing about whether Pherix is
-**useful**.
+Accuracy matters here: there are **two** kinds of artifact in this suite, and
+they make different claims.
 
-A dogfood is the opposite of a scripted demo. It is a real model making real
-(sometimes wrong) decisions in a tool-use loop, with Pherix wrapping every tool
-call. When the agent does something that would hurt — a deploy whose smoke test
-fails, a coding CLI reaching for `/etc`, two agents racing on one ledger —
-Pherix unwinds, gates, or isolates it, and we get to *watch* that happen. A
-scripted "dogfood" would just be a redundant integration test.
+- **Mechanism tests** — `tests/test_dogfood_*.py`. A *mocked* Anthropic client
+  emits a canned `tool_use` sequence; we assert that *given that exact sequence*
+  the engine unwinds / audits / gates / isolates correctly. They are offline,
+  deterministic, and run in CI. **They are not agents** and must not be
+  described as "real-agent dogfoods" — they prove the wiring is correct, not
+  that Pherix is useful against an unpredictable agent.
+- **Real-agent runs** — `python -m examples.dogfood.*`. A *real* model is given
+  a **goal** (not a step list) and decides for itself; the outcome is
+  **genuine** — it depends on what the agent actually does, and a real run can
+  succeed *or* fail. This is the demo and the first-user signal. It is
+  operator-invoked (needs a key, hits the network) and is **not** a pytest test.
+
+The mechanism tests already prove the engine is **correct** (savepoints restore,
+the journal folds, the MCP wire matches the spec). The real-agent runs are the
+only thing that shows Pherix is **useful**: a real model making real (sometimes
+wrong) decisions, with Pherix wrapping every tool call, so that when the agent
+does something that would hurt — ships an unbackfilled migration, races another
+agent on one ledger, reaches for `/etc` — Pherix unwinds, gates, or isolates it.
+Because the outcomes are **not rigged** (the devops smoke test computes health
+from real state; the audit reconciliation depends on real arithmetic), running a
+*batch* surfaces the genuine variance — see `capture.py` below.
 
 ## Two interception models (split by tool type)
 
 - **Domain tools (DevOps, Audit).** The agent calls tools *we* define
-  (`run_migration`, `deploy`, `query_ledger`, …). They are `@tool`-wrapped and
+  (`add_column`, `deploy`, `query_ledger`, …). They are `@tool`-wrapped and
   dispatched inside `agent_txn` / `dry_run` — the library's intended shape. The
   harness below provides this.
 - **Built-in tools (Coding).** A coding CLI uses Edit/Write/Bash — built-ins
@@ -43,6 +56,14 @@ scripted "dogfood" would just be a redundant integration test.
   `TxnState`, and the `DryRunResult` in dry-run mode).
 - **`infra.py`** — `scratch_sqlite` / `temp_tree` / `scratch_repo`: real but
   throwaway infrastructure, cleaned up on exit.
+- **`capture.py`** — wraps `run_agent` to turn an ephemeral run into recordable
+  evidence. It runs a dogfood (or a **batch** of N) and writes a structured
+  report per run — the transcript, the Pherix journal, an explicit "here is what
+  would have hurt and here is what Pherix did about it", and a verdict
+  (`committed` / `contained` / `gated`) — plus a batch summary with the verdict
+  distribution and **containment rate**. Batch mode is where the genuine
+  variance shows up: how often a real agent slips, and how often Pherix catches
+  it. Operator-run (`python -m examples.dogfood.capture devops --runs 4`).
 
 The foundation is read-only to the dogfood streams: they import the harness,
 they don't fork it.
@@ -75,12 +96,20 @@ Install the agent dependency (kept out of the dependency-free library):
 pip install -e '.[dogfood]'
 ```
 
-Then run a dogfood as a module from the repo root:
+Then run a dogfood as a module from the repo root (these are the **real-agent
+runs** — a real model, a goal, a genuine outcome):
 
 ```
-python -m examples.dogfood.devops      # migration + deploy, unwound atomically
-python -m examples.dogfood.audit       # two concurrent agents, attributed + isolated
-python -m examples.dogfood.coding      # out-of-box CLI governed inside the sandbox
+python -m examples.dogfood.devops      # ship v2: a healthy release commits, a careless one unwinds
+python -m examples.dogfood.audit       # two concurrent agents reconcile a real imbalance, attributed + isolated
+python -m examples.dogfood.coding      # out-of-box CLI governed inside the sandbox (mechanism demo; real form is the OpenClaw capstone)
+```
+
+Or run a **batch** and get a comparable report + containment rate:
+
+```
+python -m examples.dogfood.capture devops --runs 4 --out reports/
+python -m examples.dogfood.capture audit  --runs 4
 ```
 
 Default model is `claude-sonnet-4-6` — capable enough to make real decisions,
@@ -89,16 +118,16 @@ cheap enough to loop.
 ## Offline-test discipline
 
 The pytest suite stays **fully offline**: no key, no network, no `anthropic`
-import. Tests inject a mock client (`run_agent(..., client=...)`) with a canned
-`tool_use` sequence. The real SDK is constructed lazily only when no client is
-supplied. Real keyed agent runs are scripts the operator invokes by hand — they
-are **not** pytest tests.
+import. The mechanism tests inject a mock client (`run_agent(..., client=...)`)
+with a canned `tool_use` sequence. The real SDK is constructed lazily only when
+no client is supplied. Real-agent runs are scripts the operator invokes by hand
+— they are **not** pytest tests.
 
 ## The streams
 
-| Stream | Dogfood | What it proves |
-|---|---|---|
-| 1 | Integration + live MCP | the gateway works over a real subprocess boundary, not just by inspection |
-| 2 | DevOps (migrate + deploy) | a failing smoke test unwinds the whole release atomically |
-| 3 | Audit (reconciliation) | two concurrent agents reconcile without corruption, each attributed by `client_id` |
-| 4 | Coding (sandbox) | an out-of-box CLI is governed at the environment level, agent-agnostic |
+| Stream | Dogfood | Real-agent run proves | Mechanism test guards |
+|---|---|---|---|
+| 1 | Integration + live MCP | the gateway works over a real subprocess boundary, not just by inspection | the wire protocol matches the spec |
+| 2 | DevOps (migrate + deploy) | a real agent ships v2; a genuinely-unhealthy release (e.g. unbackfilled flag) unwinds atomically, a healthy one commits | both branches of the smoke check given a scripted sequence |
+| 3 | Audit (reconciliation) | two concurrent agents reconcile a real imbalance without corruption, each attributed by `client_id` | attribution, balance, and the reviewer-vs-corrector isolation conflict |
+| 4 | Coding (sandbox) | (mechanism demo here; the real out-of-box CLI form is the **OpenClaw capstone**, `feat/local-openclaw`) | an out-of-box CLI's actions are governed at the environment level, agent-agnostic |

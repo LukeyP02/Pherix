@@ -1,17 +1,44 @@
-"""Audit dogfood — two reconciliation agents racing on one ledger, attributed.
+"""Audit dogfood — two reconciliation agents on one ledger, attributed + isolated.
 
 A real model is given three Pherix-wrapped tools over a seeded SQLite ledger:
 
-- ``query_ledger`` — read ledger rows (reads journalled for isolation).
-- ``post_adjustment`` — write a correcting entry (writes journalled).
-- ``flag_discrepancy`` — record a flag (a write into the ``flags`` table).
+- ``query_ledger`` — read a ledger entry by id (reads journalled for isolation).
+- ``post_adjustment`` — book a correcting adjustment (writes journalled).
+- ``flag_discrepancy`` — record a flag for human review (an append to ``flags``).
 
-The dogfood runs the agent **twice concurrently** under two ``client_id``s,
-each in its own thread with its own ``SQLiteAdapter`` connection to the same
-on-disk ledger file. The payoff is the read *afterwards*: every adjustment is
-attributed by ``client_id``, the ledger is uncorrupted (isolation held — if the
-two agents touch the same row the commit-time conflict diff catches it), and the
-whole thing is queryable as a per-client compliance view.
+The genuine task (read the entry, then correct that same entry)
+---------------------------------------------------------------
+The ledger is seeded with a **real arithmetic imbalance**: a trial balance whose
+signed entries should sum to zero (debits = credits) but do not, because two
+entries are overstated against their expected control values. A reconciliation
+agent has to *read the live amounts*, compare them to the expected values it is
+given, work out the correcting deltas, and **book a correcting adjustment
+against the entry that is wrong** so the books balance. Success is checkable —
+the corrected trial balance must reach zero — and depends on what the agent
+actually computes, not on a scripted sequence. A real agent can get a sign
+wrong, miss an entry, or over-correct; that variance is the honest signal.
+
+This is the natural reconciliation flow — *read entry N, then correct entry N in
+the same transaction*. It relies on Pherix's Slice-4 isolation handling a txn
+that reads key ``("entries", N)`` and then writes the same key without a false
+self-conflict. That used to misfire (the commit-time ``read_version`` could not
+see the txn's own uncommitted write); it is **fixed on main** (the commit-time
+diff reconciles own-write-visible vs committed-only adapters — see
+``test_isolation_self_write.py``), so the dogfood now does the genuine thing
+rather than routing corrections through a suspense account to dodge the bug.
+
+The two-agent payoff: attribution + isolation
+----------------------------------------------
+The dogfood runs the agent **twice concurrently** under two ``client_id``s, each
+in its own thread with its own ``SQLiteAdapter`` connection to the same on-disk
+ledger file. Every adjustment is attributed by ``client_id`` (in the audit
+journal *and* on the ledger row), the source entries are uncorrupted, and the
+whole run is queryable as a per-client compliance view. Genuine isolation is
+demonstrated deterministically in-process: two reconcilers contend on the same
+entry — one reads it and corrects it, the other commits a correction to that
+entry first, and the slow one's now-stale read is aborted at commit. See the
+README for why the live threaded demo does not gate on free-running SQLite
+concurrency.
 
 Threading model (the load-bearing constraint):
 
@@ -49,12 +76,17 @@ from examples.dogfood.infra import ScratchDB
 # Default model inherited from the harness; named here so a real run can override.
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
-# The seed ledger: a handful of entries, one of which is wrong on purpose so a
-# reconciliation agent has something to correct. ``entries`` is the source of
-# truth; ``adjustments`` is the append-only correction log (every row carries
-# the ``client_id`` of the agent that posted it — provenance at the data layer,
-# mirrored by the audit journal's per-transaction ``client_id``); ``flags``
-# records discrepancies the agent could not (or chose not to) auto-correct.
+# The seed ledger: a trial balance that SHOULD sum to zero but does not, because
+# entries 2 (receivable) and 4 (inventory) are each overstated by 50 against
+# their expected control values. A reconciler must read the actual amounts,
+# compare to EXPECTED, and book a correcting delta against each wrong entry so
+# the corrected balance reaches zero.
+#
+# ``entries`` is the source of truth; ``adjustments`` is the append-only
+# correction log (every row carries the ``client_id`` of the agent that posted
+# it — provenance at the data layer, mirrored by the audit journal's
+# per-transaction ``client_id``); ``flags`` records discrepancies the agent
+# could not (or chose not to) auto-correct.
 LEDGER_SCHEMA = """
 PRAGMA journal_mode=WAL;
 CREATE TABLE entries (
@@ -76,11 +108,18 @@ CREATE TABLE flags (
     client_id TEXT
 );
 INSERT INTO entries (id, account, amount) VALUES
-    (1, 'cash',       1000),
-    (2, 'receivable',  500),
-    (3, 'payable',    -300),
-    (4, 'inventory',   750);
+    (1,  'cash',        1000),
+    (2,  'receivable',   550),
+    (3,  'payable',     -300),
+    (4,  'inventory',    800),
+    (5,  'equity',     -1950);
 """
+
+# The expected (control) amounts for the seeded entries. Two are wrong on
+# purpose: entry 2 is 550 but should be 500, entry 4 is 800 but should be 750.
+# A correct reconciliation books -50 against entry 2 and -50 against entry 4, so
+# the corrected trial balance (sum of entries + sum of adjustments) reaches 0.
+EXPECTED_AMOUNTS = {1: 1000, 2: 500, 3: -300, 4: 750, 5: -1950}
 
 
 # --- the agent's @tool surface ---------------------------------------------
@@ -120,20 +159,31 @@ def query_ledger(conn, entry_id):
 
 @tool(resource="sql")
 def post_adjustment(conn, entry_id, delta, reason):
-    """Post a correcting adjustment of `delta` against ledger entry `entry_id`."""
+    """Book a correcting adjustment of `delta` against ledger entry `entry_id`.
+
+    A reconciler reads the entry it is checking and, if it is wrong, books the
+    correction against that same entry in the same transaction — the natural
+    flow, legal since the Slice-4 self-write fix on main. The write declares
+    ``writes=[("entries", entry_id)]``, which shares the version side-table key
+    with ``query_ledger``'s read key: if another open transaction has *read*
+    this entry, the commit-time diff aborts that stale reader (the isolation
+    conflict path) — but a txn reading and then writing its *own* entry no
+    longer false-conflicts.
+    """
     client_id = _ACTIVE_CLIENT.get()
     execute_isolated(
         conn,
         "INSERT INTO adjustments (entry_id, delta, reason, client_id) "
         "VALUES (?, ?, ?, ?)",
         (entry_id, delta, reason, client_id),
-        # The entry row is the row this adjustment corrects: the version
-        # side-table key is ("entries", entry_id), shared with query_ledger's
-        # read key, so a concurrent write to the same entry moves the version a
-        # stale reader recorded.
+        # The write-key is the entry this adjustment corrects. The version
+        # side-table key ("entries", N) is shared with query_ledger's read key,
+        # so a write to an entry ANOTHER txn read moves the version that stale
+        # reader recorded → it aborts at commit. A txn reading and then writing
+        # its own entry N is fine (own write is visible to the commit-time diff).
         writes=[("entries", entry_id)],
     )
-    return f"adjustment posted to entry {entry_id} (delta={delta})"
+    return f"adjustment posted against entry {entry_id} (delta={delta})"
 
 
 @tool(resource="sql")
@@ -141,12 +191,10 @@ def flag_discrepancy(conn, entry_id, note):
     """Flag a discrepancy on ledger entry `entry_id` for human review."""
     client_id = _ACTIVE_CLIENT.get()
     # A flag is a pure APPEND to the flags log — it does not mutate the entry,
-    # so it declares no isolation write-key on ("entries", entry_id). That keeps
-    # the realistic flow "read an entry, then flag it" inside one transaction
-    # legal: a read-only-then-flag txn has read_keys but no conflicting write to
-    # the same key, so it commits clean. (Contrast post_adjustment, which DOES
-    # mutate the entry's reconciled state and so declares the entry write-key —
-    # see the README's note on the read-then-write-same-key engine limitation.)
+    # so it declares no isolation write-key on ("entries", entry_id): a flag
+    # records a discrepancy for human review rather than correcting it, so it
+    # never contends with another agent's correction. (Contrast post_adjustment,
+    # which declares an entry write-key.)
     execute_isolated(
         conn,
         "INSERT INTO flags (entry_id, note, client_id) VALUES (?, ?, ?)",
@@ -162,15 +210,73 @@ AUDIT_TOOLS: list[Callable[..., Any]] = [
 ]
 
 SYSTEM_PROMPT = (
-    "You are a ledger reconciliation auditor. You have tools to read a ledger "
-    "entry by its id, post correcting adjustments against an entry, and flag "
-    "discrepancies for human review. Read the entries you are asked about. If "
-    "an entry is clearly wrong, post ONE adjustment for it. If you are merely "
-    "unsure, flag it instead. Important: do not both read AND post an "
-    "adjustment for the very same entry id in this session — decide from the "
-    "values you are given. Keep your changes minimal and explain each "
-    "adjustment's reason."
+    "You are a ledger reconciliation auditor. A correct trial balance sums to "
+    "zero. Some entries are overstated against their expected values and you "
+    "must correct them. You have tools to read a ledger entry by its id, to "
+    "book a correcting adjustment, and to flag a discrepancy for human review.\n\n"
+    "For each entry you are asked to reconcile: read its actual amount, compare "
+    "it to the expected amount you are given, and if they differ, book ONE "
+    "correcting adjustment against that entry whose delta brings it back to its "
+    "expected value (delta = expected - actual), stating the reason. If you are "
+    "merely unsure about an entry, flag it for review instead of adjusting it. "
+    "Keep your changes minimal and explain each adjustment."
 )
+
+
+# --- default two-agent tasks (shared by __main__ and the capture harness) ---
+
+CLIENT_A = "auditor-a"
+CLIENT_B = "auditor-b"
+
+
+def default_tasks() -> dict[str, str]:
+    """The two reconcilers' tasks: disjoint entry subsets, expected values given.
+
+    Agent A owns entries {1, 2}, agent B owns {3, 4}; the seeded discrepancies
+    sit on entries 2 and 4, so each agent has exactly one entry to correct. Each
+    task hands the agent the expected (control) amounts and asks it to read the
+    actual values, work out the correcting deltas, and book a correction against
+    the wrong entry. Disjoint subsets make the common path clean parallel work;
+    the deterministic conflict path is exercised in the mechanism test.
+    """
+    return {
+        CLIENT_A: (
+            f"Reconcile ledger entries 1 (cash, expected {EXPECTED_AMOUNTS[1]}) "
+            f"and 2 (receivable, expected {EXPECTED_AMOUNTS[2]}). Read each "
+            "entry's actual amount, and for any entry whose actual differs from "
+            "expected, book a correcting adjustment against that entry to bring "
+            "it back to the expected value. Flag anything you cannot resolve."
+        ),
+        CLIENT_B: (
+            f"Reconcile ledger entries 3 (payable, expected {EXPECTED_AMOUNTS[3]}) "
+            f"and 4 (inventory, expected {EXPECTED_AMOUNTS[4]}). Read each "
+            "entry's actual amount, and for any entry whose actual differs from "
+            "expected, book a correcting adjustment against that entry to bring "
+            "it back to the expected value. Flag anything you cannot resolve."
+        ),
+    }
+
+
+# --- balance / verdict helpers ---------------------------------------------
+
+
+def ledger_balance(ledger_db: ScratchDB) -> int:
+    """The corrected trial balance: sum of all entries + all adjustments.
+
+    A genuinely-reconciled ledger sums to zero. Read through a fresh connection
+    (a long-lived one can hold a stale WAL read snapshot — see ``ledger_snapshot``).
+    """
+    conn = ledger_db.connect()
+    try:
+        entries_total = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM entries"
+        ).fetchone()[0]
+        adj_total = conn.execute(
+            "SELECT COALESCE(SUM(delta), 0) FROM adjustments"
+        ).fetchone()[0]
+        return entries_total + adj_total
+    finally:
+        conn.close()
 
 
 # --- running one agent (thread body) ---------------------------------------
@@ -257,7 +363,8 @@ def run_two_agents(
 
     ``tasks`` maps ``client_id -> task prompt`` (two entries). ``clients`` maps
     ``client_id -> Anthropic-compatible client``; when absent each agent
-    lazy-constructs the real SDK (needs a key). The offline test injects mocks.
+    lazy-constructs the real SDK (needs a key). The offline mechanism test
+    injects mocks.
 
     Each agent runs in its own thread with its own ledger connection and its own
     ``AuditJournal(audit_path)`` to the shared on-disk audit file — see the

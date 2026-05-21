@@ -2,12 +2,17 @@
 
     python -m examples.dogfood.audit
 
-Needs an Anthropic key (``.env`` at the repo root — see ``examples/dogfood``'s
-README). The two agents run in parallel threads against one on-disk ledger and
-one on-disk audit DB, under two ``client_id``s. Afterwards we read the audit on
-the main thread and print a per-``client_id`` compliance view plus the ledger
-state — proof that every adjustment is attributed and the source rows survived
-two concurrent reconcilers without corruption.
+This is the **real-agent run** (needs an Anthropic key in ``.env`` at the repo
+root — see ``examples/dogfood``'s README). Two real agents run in parallel
+threads against one on-disk ledger seeded with a genuine arithmetic imbalance,
+under two ``client_id``s. Each must read the live amounts, compare them to the
+expected values it is given, and book a correcting adjustment against each wrong
+entry so the books balance. Afterwards we read the audit on the main thread
+and print a per-``client_id`` compliance view, the corrected trial balance, and
+the ledger state — proof that every adjustment is attributed, the books were
+genuinely reconciled, and the source rows survived two concurrent reconcilers
+without corruption. The offline ``tests/test_dogfood_audit.py`` is the *mechanism
+test* (mocked client, deterministic, CI) — not a real agent.
 """
 
 from __future__ import annotations
@@ -16,32 +21,23 @@ import os
 import tempfile
 
 from examples.dogfood.audit import (
+    CLIENT_A,
+    CLIENT_B,
     LEDGER_SCHEMA,
     compliance_view,
+    default_tasks,
+    ledger_balance,
     ledger_snapshot,
     run_two_agents,
 )
 from examples.dogfood.infra import scratch_sqlite
 
-CLIENT_A = "auditor-a"
-CLIENT_B = "auditor-b"
-
-# Two tasks pointed at DIFFERENT accounts so the common case is clean parallel
-# work; if the model wanders onto the same entry the Abort policy catches the
-# conflict at commit and that agent's run carries the IsolationConflict on
-# ``AgentRun.error`` — which the view below surfaces.
-TASKS = {
-    CLIENT_A: (
-        "Reconcile ledger entries 1 (cash) and 2 (receivable). Read each by its "
-        "entry id, and if an amount looks wrong post a correcting adjustment; "
-        "flag anything you cannot resolve."
-    ),
-    CLIENT_B: (
-        "Reconcile ledger entries 3 (payable) and 4 (inventory). Read each by "
-        "its entry id, and if an amount looks wrong post a correcting "
-        "adjustment; flag anything you cannot resolve."
-    ),
-}
+# Disjoint entry subsets so the common case is clean parallel work; if the model
+# wanders onto the same entry the Abort policy catches the conflict at commit and
+# that agent's run carries the IsolationConflict on ``AgentRun.error`` — surfaced
+# in the view below. Each task hands the agent the expected (control) amounts and
+# asks it to compute and book the corrections itself.
+TASKS = default_tasks()
 
 
 def _print_view(views: dict, runs: dict) -> None:
@@ -91,11 +87,20 @@ def main() -> None:
             print("=" * 72)
             for row in ledger_snapshot(db):
                 print(f"  entry {row['id']:>2}  {row['account']:12s} {row['amount']}")
+
+            balance = ledger_balance(db)
+            verdict = "BALANCED" if balance == 0 else f"STILL OFF BY {balance}"
             print(
-                "\n! Two agents reconciled the same ledger in parallel. Every "
-                "adjustment\n  is attributed to its client_id in the audit and "
-                "in the row itself; the\n  source entries are intact — isolation "
-                "held. If both had raced on one\n  entry row, the Abort policy "
+                f"\n  corrected trial balance (entries + adjustments) = {balance}"
+                f"  -> {verdict}"
+            )
+            print(
+                "\n! Two agents reconciled the same ledger in parallel against a "
+                "genuine\n  imbalance. Every adjustment is attributed to its "
+                "client_id in the audit\n  and in the row itself; the source "
+                "entries are intact — isolation held.\n  Whether the books reach "
+                "zero depends on what each agent actually computed,\n  not on a "
+                "script. If both had raced on one entry row, the Abort policy\n  "
                 "would have unwound the second committer.\n"
             )
     finally:
