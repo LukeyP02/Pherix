@@ -17,9 +17,6 @@ test* (mocked client, deterministic, CI) — not a real agent.
 
 from __future__ import annotations
 
-import os
-import tempfile
-
 from examples.dogfood.audit import (
     CLIENT_A,
     CLIENT_B,
@@ -30,6 +27,7 @@ from examples.dogfood.audit import (
     ledger_snapshot,
     run_two_agents,
 )
+from examples.dogfood.capture import inspector_hint, journal_path_for
 from examples.dogfood.infra import scratch_sqlite
 
 # Disjoint entry subsets so the common case is clean parallel work; if the model
@@ -64,47 +62,47 @@ def _print_view(views: dict, runs: dict) -> None:
 
 
 def main() -> None:
-    audit_fd, audit_path = tempfile.mkstemp(suffix=".audit.db", prefix="pherix_")
-    os.close(audit_fd)
-    try:
-        with scratch_sqlite(schema=LEDGER_SCHEMA) as db:
-            print("Ledger before reconciliation:")
-            for row in ledger_snapshot(db):
-                print(f"  entry {row['id']:>2}  {row['account']:12s} {row['amount']}")
-            print("\nRunning two reconciliation agents concurrently...\n")
+    # Persist the journal where the inspector can open it. Both clients' txns
+    # land in this one file, so the console's per-client_id view IS the
+    # attributed-audit demo. Kept (not a tempfile) so it survives the run.
+    audit_path = journal_path_for("audit")
+    with scratch_sqlite(schema=LEDGER_SCHEMA) as db:
+        print("Ledger before reconciliation:")
+        for row in ledger_snapshot(db):
+            print(f"  entry {row['id']:>2}  {row['account']:12s} {row['amount']}")
+        print("\nRunning two reconciliation agents concurrently...\n")
 
-            runs = run_two_agents(db=db, audit_path=audit_path, tasks=TASKS)
+        runs = run_two_agents(db=db, audit_path=str(audit_path), tasks=TASKS)
 
-            views = compliance_view(
-                audit_path=audit_path,
-                ledger_db=db,
-                client_ids=[CLIENT_A, CLIENT_B],
-            )
-            _print_view(views, runs)
+        views = compliance_view(
+            audit_path=str(audit_path),
+            ledger_db=db,
+            client_ids=[CLIENT_A, CLIENT_B],
+        )
+        _print_view(views, runs)
 
-            print("\n" + "=" * 72)
-            print("Ledger after reconciliation (source entries — uncorrupted):")
-            print("=" * 72)
-            for row in ledger_snapshot(db):
-                print(f"  entry {row['id']:>2}  {row['account']:12s} {row['amount']}")
+        print("\n" + "=" * 72)
+        print("Ledger after reconciliation (source entries — uncorrupted):")
+        print("=" * 72)
+        for row in ledger_snapshot(db):
+            print(f"  entry {row['id']:>2}  {row['account']:12s} {row['amount']}")
 
-            balance = ledger_balance(db)
-            verdict = "BALANCED" if balance == 0 else f"STILL OFF BY {balance}"
-            print(
-                f"\n  corrected trial balance (entries + adjustments) = {balance}"
-                f"  -> {verdict}"
-            )
-            print(
-                "\n! Two agents reconciled the same ledger in parallel against a "
-                "genuine\n  imbalance. Every adjustment is attributed to its "
-                "client_id in the audit\n  and in the row itself; the source "
-                "entries are intact — isolation held.\n  Whether the books reach "
-                "zero depends on what each agent actually computed,\n  not on a "
-                "script. If both had raced on one entry row, the Abort policy\n  "
-                "would have unwound the second committer.\n"
-            )
-    finally:
-        os.unlink(audit_path)
+        balance = ledger_balance(db)
+        verdict = "BALANCED" if balance == 0 else f"STILL OFF BY {balance}"
+        print(
+            f"\n  corrected trial balance (entries + adjustments) = {balance}"
+            f"  -> {verdict}"
+        )
+        print(
+            "\n! Two agents reconciled the same ledger in parallel against a "
+            "genuine\n  imbalance. Every adjustment is attributed to its "
+            "client_id in the audit\n  and in the row itself; the source "
+            "entries are intact — isolation held.\n  Whether the books reach "
+            "zero depends on what each agent actually computed,\n  not on a "
+            "script. If both had raced on one entry row, the Abort policy\n  "
+            "would have unwound the second committer.\n"
+        )
+        print(inspector_hint(audit_path))
 
 
 if __name__ == "__main__":
