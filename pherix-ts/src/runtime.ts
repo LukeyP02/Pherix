@@ -28,6 +28,7 @@ import {
 import { AuditJournal } from "./audit.js";
 import { DryRunResult } from "./dry-run.js";
 import { Effect, EffectStatus, StagedResult } from "./effects.js";
+import { flushIncrements, isDurableCap, pendingIncrements } from "./envelope.js";
 import { Policy, PolicyContext, PolicyViolation, type PolicyVerdict, sqlReader } from "./policy.js";
 import { REGISTRY, activeEffect, activeTxn, type RecordingContext } from "./tools.js";
 import { Transaction, TxnState } from "./transaction.js";
@@ -322,6 +323,15 @@ export class TxnContext implements RecordingContext {
     }
     this.txn.transition(TxnState.COMMITTED);
     this.audit.updateTransactionState(this.txn.txnId, this.txn.state);
+
+    // #10: flush durable (longitudinal) cap increments — reached only on a
+    // successful commit, so a denied / gated / rolled-back txn consumes no
+    // budget. The deny and unwind paths return before here.
+    const durable = this.policy.caps.filter(isDurableCap);
+    if (durable.length > 0) {
+      flushIncrements(pendingIncrements(durable, this.txn.effects));
+    }
+
     this.finishedFlag = true;
   }
 

@@ -103,5 +103,17 @@ export type { AgentTxnOptions, TxnContextOptions } from "./runtime.js";
 export { dryRun, DryRunResult } from "./dry-run.js";
 export type { DryRunOptions } from "./dry-run.js";
 
+// Longitudinal envelope — durable, cross-run spend caps (#10)
+export {
+  EnvelopeStore,
+  DurableCap,
+  dayPeriod,
+  allTimePeriod,
+  isDurableCap,
+  pendingIncrements,
+  flushIncrements,
+} from "./envelope.js";
+export type { PeriodFn, EnvelopeIncrement } from "./envelope.js";
+
 // Compensator catalog — vetted semantic left-inverses
 export * from "./compensators/index.js";
