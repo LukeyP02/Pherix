@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -310,12 +311,38 @@ def audit_report(
 # --- batch runners ----------------------------------------------------------
 
 
+@contextmanager
+def _devops_db(backend: str, pg_dsn: str | None):
+    """Yield a fresh scratch DB for one devops run, on the chosen backend.
+
+    Both :class:`ScratchDB` (SQLite) and :class:`ScratchPG` (Postgres) expose a
+    ``.conn`` the release runs against, so the caller is backend-blind. Postgres
+    is the real demo backend (a genuine SAVEPOINT against a real server);
+    SQLite is what the offline mechanism test drives.
+    """
+    if backend == "postgres":
+        from examples.dogfood.devops.scenario import ACCOUNTS_SCHEMA_PG
+        from examples.dogfood.infra import scratch_postgres
+
+        with scratch_postgres(ACCOUNTS_SCHEMA_PG, dsn=pg_dsn) as db:
+            yield db
+    else:
+        from examples.dogfood.devops.scenario import ACCOUNTS_SCHEMA
+        from examples.dogfood.infra import scratch_sqlite
+
+        with scratch_sqlite(ACCOUNTS_SCHEMA) as db:
+            yield db
+
+
 def run_devops_batch(
     *,
     runs: int = 4,
     model: str | None = None,
     api: str = "anthropic",
     base_url: str | None = None,
+    backend: str = "sqlite",
+    pg_dsn: str | None = None,
+    audit_path: str | None = None,
     client_factory: Callable[[int], Any] | None = None,
 ) -> BatchSummary:
     """Run the devops release ``runs`` times and summarise the variance.
@@ -324,23 +351,35 @@ def run_devops_batch(
     ``None`` each run builds the real SDK (needs a key, or a reachable local
     endpoint). ``api`` / ``base_url`` select the chat backend (cloud Anthropic or
     a local OpenAI-compatible endpoint) — the same batch runs identically against
-    a local open-source model. Each run gets fresh infrastructure (its own scratch
-    DB + tree + deploy target + audit), so the runs are independent samples of
-    what a real agent does with the same goal.
+    a local open-source model.
+
+    ``backend`` selects the *resource* backend the release runs against:
+    ``"postgres"`` (the real demo — a genuine server) or ``"sqlite"`` (what the
+    offline mechanism test drives). ``pg_dsn`` overrides the Postgres DSN
+    (otherwise ``PHERIX_PG_DSN`` / ``DATABASE_URL``).
+
+    ``audit_path`` is the inspector wiring: when given, every run in the batch
+    writes its journal to that *one* on-disk audit DB, so the inspector renders
+    the whole batch — committed and contained runs together — which is exactly
+    the variance the demo is about. When ``None`` each run keeps an in-memory
+    journal (nothing to inspect afterwards). Each run still gets fresh resource
+    infrastructure (its own scratch DB + tree + deploy target).
     """
     from examples.dogfood.devops.scenario import (
-        ACCOUNTS_SCHEMA,
         DeployTarget,
         SmokeTestFailed,
         run_release,
     )
-    from examples.dogfood.infra import scratch_sqlite, temp_tree
+    from examples.dogfood.infra import temp_tree
 
     reports: list[RunReport] = []
     for i in range(runs):
         REGISTRY.clear()
         client = client_factory(i) if client_factory else None
-        with scratch_sqlite(ACCOUNTS_SCHEMA) as db, temp_tree() as tree:
+        run_audit = (
+            AuditJournal(audit_path) if audit_path else AuditJournal.in_memory()
+        )
+        with _devops_db(backend, pg_dsn) as db, temp_tree() as tree:
             target = DeployTarget()
             run = run_release(
                 conn=db.conn,
@@ -348,10 +387,11 @@ def run_devops_batch(
                 target=target,
                 client=client,
                 client_id=f"devops-{i}",
-                audit=AuditJournal.in_memory(),
+                audit=run_audit,
                 model=model,
                 api=api,
                 base_url=base_url,
+                backend=backend,
             )
             problems = (
                 list(run.error.problems)
@@ -428,6 +468,37 @@ def run_audit_batch(
         finally:
             os.unlink(audit_path)
     return BatchSummary.from_reports("audit", reports)
+
+
+# --- inspector wiring -------------------------------------------------------
+
+
+def journal_path_for(scenario: str, out_dir: Any = "reports") -> Path:
+    """A fresh on-disk audit-journal path for one demo run, under ``out_dir``.
+
+    The inspector renders a *persisted* journal, so each demo writes one here and
+    points the console at it. The file is removed if it already exists, so a run
+    shows only its own batch (the variance) and not a pile-up of past runs. The
+    ``reports/`` tree is gitignored — these are generated evidence, not source.
+    """
+    p = Path(out_dir) / f"{scenario}.audit.db"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    for sib in (p, Path(str(p) + "-wal"), Path(str(p) + "-shm")):
+        try:
+            sib.unlink()
+        except FileNotFoundError:
+            pass
+    return p
+
+
+def inspector_hint(audit_path: Any) -> str:
+    """The operator-facing line: how to open this run's journal in the console."""
+    return (
+        "\nInspect this run in the governance console (the rollback / gate / "
+        "audit trail, rendered):\n"
+        f"    python -m pherix.inspector --db {audit_path}\n"
+        "    # then open http://127.0.0.1:8765"
+    )
 
 
 # --- rendering / persistence ------------------------------------------------
