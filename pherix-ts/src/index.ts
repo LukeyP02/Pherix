@@ -115,5 +115,9 @@ export {
 } from "./envelope.js";
 export type { PeriodFn, EnvelopeIncrement } from "./envelope.js";
 
+// Crash-consistent recovery — resume an interrupted backward fold (#9)
+export { recover, RecoveryReport, TxnRecovery } from "./recovery.js";
+export type { EffectRecovery } from "./recovery.js";
+
 // Compensator catalog — vetted semantic left-inverses
 export * from "./compensators/index.js";
