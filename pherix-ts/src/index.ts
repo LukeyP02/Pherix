@@ -18,12 +18,15 @@
  * is awaitable here — the one deliberate divergence from Python's synchronous
  * psycopg lane.
  *
- * Still deliberately deferred (pull-driven — wire only when a TS user needs
- * them): cross-process isolation (#8), crash-consistent recovery (#9), and the
- * durable longitudinal envelope (#10). The `readKeys` / `writeKeys` slots exist
- * on `Effect` (and adapters record them) for shape parity, but the isolation
- * conflict engine is not wired here. The MCP gateway and deterministic replay
- * are not part of the TS SDK's job.
+ * The hardened engine tier is now mirrored too: commit-time isolation with the
+ * conflict diff + Abort/Serialize policies (#8, in-process tier), crash-
+ * consistent recovery that resumes the backward fold from the durable journal
+ * (#9), and the durable longitudinal envelope of cross-run spend caps (#10).
+ *
+ * Still deliberately deferred (single-host hacks + the #12 control plane, which
+ * Python itself defers cross-host): the cross-*process* intent ledger and the
+ * Retry-via-run-loop for #8, and hard cross-process budget enforcement for #10.
+ * The MCP gateway and deterministic replay are not part of the TS SDK's job.
  *
  * Tool calls are async: the agent `await`s every registered-tool call so an
  * async tool (the normal TS case) is fully resolved before its effect is
@@ -118,6 +121,20 @@ export type { PeriodFn, EnvelopeIncrement } from "./envelope.js";
 // Crash-consistent recovery — resume an interrupted backward fold (#9)
 export { recover, RecoveryReport, TxnRecovery } from "./recovery.js";
 export type { EffectRecovery } from "./recovery.js";
+
+// Isolation — commit-time conflict diff + resolution policies (#8)
+export {
+  checkConflicts,
+  Abort,
+  Serialize,
+  IsolationConflict,
+  JournalRegistry,
+  REGISTRY as ISOLATION_REGISTRY,
+} from "./isolation.js";
+export type { Conflict, IsolationPolicy } from "./isolation.js";
+
+// Isolated SQL execution — records read/write keys for the conflict diff
+export { executeIsolated } from "./adapters/sql.js";
 
 // Compensator catalog — vetted semantic left-inverses
 export * from "./compensators/index.js";
