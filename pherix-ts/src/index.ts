@@ -78,3 +78,6 @@ export {
   CompensatorNotRegistered,
 } from "./runtime.js";
 export type { AgentTxnOptions, TxnContextOptions } from "./runtime.js";
+
+// Compensator catalog — vetted semantic left-inverses
+export * from "./compensators/index.js";
