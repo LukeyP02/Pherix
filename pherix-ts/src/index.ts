@@ -40,15 +40,19 @@ export { tool, REGISTRY, ToolRegistry, activeTxn, activeEffect } from "./tools.j
 export type { ToolSpec, ToolOptions, ToolWrapper, RecordingContext } from "./tools.js";
 
 // Adapters
-export { isTransactionalAdapter } from "./adapters/base.js";
+export { isTransactionalAdapter, isStateDiffable } from "./adapters/base.js";
 export type {
   ResourceAdapter,
   TransactionalResourceAdapter,
+  StateDiffable,
   ToolFn,
 } from "./adapters/base.js";
 export { SqliteAdapter } from "./adapters/sql.js";
 export type { SqliteDatabase } from "./adapters/sql.js";
 export { HttpAdapter, IrreversibleAdapterError } from "./adapters/http.js";
+export { FilesystemAdapter, FsHandle } from "./adapters/fs.js";
+export { PostgresAdapter } from "./adapters/postgres.js";
+export type { PgClient, PgResult } from "./adapters/postgres.js";
 
 // Policy
 export {
