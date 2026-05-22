@@ -8,13 +8,22 @@
  *
  * Parity scope: this is a faithful semantic mirror of the Python library's
  * core lanes — interception, the reversible/irreversible split, the
- * twice-evaluated policy (allow/deny + caps + the human gate), the SQL +
- * irreversible adapters, compensators, and the audit journal. The hardened
- * engine features added to Python after this branch's base (world-state
- * policy, cross-process isolation, crash-consistent recovery, the longitudinal
- * envelope) are NOT yet mirrored and are tracked as follow-ups. The `readKeys`
- * / `writeKeys` slots exist on `Effect` for shape parity, but the isolation
- * conflict engine is not wired here.
+ * twice-evaluated policy (allow/deny + caps + the human gate), and the audit
+ * journal. The TS SDK now also carries: the SQL (SQLite), filesystem, Postgres,
+ * and irreversible (HTTP) adapters; the vetted compensator catalog
+ * (payments / identity / provisioning / SaaS); world-state-aware policy (#7)
+ * with the twice-evaluated TOCTOU divergence; and speculative dry-run
+ * (`dryRun` + `DryRunResult`, with per-adapter state diff). Because async DB
+ * drivers (node-postgres) have no synchronous query API, the adapter lifecycle
+ * is awaitable here — the one deliberate divergence from Python's synchronous
+ * psycopg lane.
+ *
+ * Still deliberately deferred (pull-driven — wire only when a TS user needs
+ * them): cross-process isolation (#8), crash-consistent recovery (#9), and the
+ * durable longitudinal envelope (#10). The `readKeys` / `writeKeys` slots exist
+ * on `Effect` (and adapters record them) for shape parity, but the isolation
+ * conflict engine is not wired here. The MCP gateway and deterministic replay
+ * are not part of the TS SDK's job.
  *
  * Tool calls are async: the agent `await`s every registered-tool call so an
  * async tool (the normal TS case) is fully resolved before its effect is
@@ -66,6 +75,7 @@ export {
   sqlReader,
   refundIfPaid,
 } from "./policy.js";
+export { PolicyVerdict } from "./policy.js";
 export type {
   Verdict,
   RuleFn,
@@ -88,6 +98,10 @@ export {
   CompensatorNotRegistered,
 } from "./runtime.js";
 export type { AgentTxnOptions, TxnContextOptions } from "./runtime.js";
+
+// Dry-run — speculative execution (fold forward, then discard)
+export { dryRun, DryRunResult } from "./dry-run.js";
+export type { DryRunOptions } from "./dry-run.js";
 
 // Compensator catalog — vetted semantic left-inverses
 export * from "./compensators/index.js";

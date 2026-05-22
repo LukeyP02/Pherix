@@ -386,6 +386,140 @@ export class Policy {
       this.evaluate(effect, ctx, "commit");
     }
   }
+
+  // -- capture-mode (dry-run): never raise, return verdicts ------------------
+
+  /**
+   * Capture-mode counterpart of `evaluate`. Walks every rule and every cap
+   * against `effect`; never raises; returns one PolicyVerdict per rule/cap
+   * evaluation. The allow/deny tool-name lists contribute at most one extra
+   * verdict, and only on Deny (an allow-list pass is implicit, matching
+   * `evaluate`). Caps accumulate only on Allow, so the running total at the end
+   * of the walk is identical to what `evaluate` would produce for the same
+   * prefix of Allow-yielding effects — the load-bearing equality between
+   * raise-mode and capture-mode.
+   */
+  tryEvaluate(effect: Effect, ctx: PolicyContext, where?: Where): PolicyVerdict[] {
+    if (where !== undefined) ctx.where = where;
+    const activeWhere = ctx.where;
+    const verdicts: PolicyVerdict[] = [];
+
+    // 1. allow/deny — capture as Deny verdict when it bites; passes are implicit.
+    if (this.deny.has(effect.tool)) {
+      verdicts.push(
+        new PolicyVerdict({
+          allow: false,
+          rule: null,
+          effectIndex: effect.index,
+          where: activeWhere,
+          tool: effect.tool,
+          reason: "tool is deny-listed",
+        }),
+      );
+    } else if (this.allow !== null && !this.allow.has(effect.tool)) {
+      verdicts.push(
+        new PolicyVerdict({
+          allow: false,
+          rule: null,
+          effectIndex: effect.index,
+          where: activeWhere,
+          tool: effect.tool,
+          reason: "tool is not in the allow-list",
+        }),
+      );
+    }
+
+    // 2. registered rules — one verdict each, regardless of outcome.
+    for (const rule of this.rules) {
+      const v = rule.evaluate(effect, ctx);
+      verdicts.push(
+        new PolicyVerdict({
+          allow: v.allow,
+          rule,
+          effectIndex: effect.index,
+          where: activeWhere,
+          tool: effect.tool,
+          reason: v.allow ? null : v.reason,
+        }),
+      );
+    }
+
+    // 3. caps — one verdict each; accumulate only on Allow.
+    for (const cap of this.caps) {
+      const v = cap.evaluate(effect, ctx);
+      verdicts.push(
+        new PolicyVerdict({
+          allow: v.allow,
+          rule: cap,
+          effectIndex: effect.index,
+          where: activeWhere,
+          tool: effect.tool,
+          reason: v.allow ? null : v.reason,
+        }),
+      );
+      if (v.allow && cap.appliesTo(effect)) {
+        ctx.capAdd(cap, cap.contribution(effect));
+      }
+    }
+
+    return verdicts;
+  }
+
+  /**
+   * Commit-time capture walk over the whole journal. Resets per-cap totals
+   * (matching `evaluateJournal`'s re-accumulate-from-zero) then folds forward
+   * through every effect with `tryEvaluate`. Never raises on Deny. Used by
+   * `dryRun` as the commit-time policy bracket.
+   */
+  collectVerdicts(txn: { effects: Effect[] }, ctx: PolicyContext): PolicyVerdict[] {
+    ctx.resetCaps();
+    const out: PolicyVerdict[] = [];
+    for (const effect of txn.effects) {
+      out.push(...this.tryEvaluate(effect, ctx, "commit"));
+    }
+    return out;
+  }
+}
+
+// -- capture-mode verdict carrier ------------------------------------------
+
+/**
+ * One evaluation of one rule (or cap, or the allow/deny list) against one
+ * effect, captured rather than raised. Emitted by `Policy.tryEvaluate`
+ * (per stage-time tool call) and `Policy.collectVerdicts` (per commit-time
+ * journal walk). Aggregated into `DryRunResult.policyVerdicts`.
+ *
+ * `rule` is the live rule object, or null for verdicts attributable to the
+ * allow/deny tool-name lists. `ruleName` is the convenience handle for
+ * printing / asserting.
+ */
+export class PolicyVerdict {
+  readonly allow: boolean;
+  readonly rule: NamedRule | null;
+  readonly effectIndex: number;
+  readonly where: Where;
+  readonly tool: string;
+  readonly reason: string | null;
+
+  constructor(opts: {
+    allow: boolean;
+    rule: NamedRule | null;
+    effectIndex: number;
+    where: Where;
+    tool: string;
+    reason?: string | null;
+  }) {
+    this.allow = opts.allow;
+    this.rule = opts.rule;
+    this.effectIndex = opts.effectIndex;
+    this.where = opts.where;
+    this.tool = opts.tool;
+    this.reason = opts.reason ?? null;
+  }
+
+  get ruleName(): string | null {
+    return this.rule === null ? null : this.rule.name;
+  }
 }
 
 // -- #7: world-state-aware rules + the SQL read mediator -------------------

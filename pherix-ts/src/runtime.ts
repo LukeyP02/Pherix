@@ -22,11 +22,13 @@
 import {
   isTransactionalAdapter,
   type ResourceAdapter,
+  type StateDiffable,
   type TransactionalResourceAdapter,
 } from "./adapters/base.js";
 import { AuditJournal } from "./audit.js";
+import { DryRunResult } from "./dry-run.js";
 import { Effect, EffectStatus, StagedResult } from "./effects.js";
-import { Policy, PolicyContext, PolicyViolation, sqlReader } from "./policy.js";
+import { Policy, PolicyContext, PolicyViolation, type PolicyVerdict, sqlReader } from "./policy.js";
 import { REGISTRY, activeEffect, activeTxn, type RecordingContext } from "./tools.js";
 import { Transaction, TxnState } from "./transaction.js";
 
@@ -77,6 +79,12 @@ function uniqueAdapters(adapters: Record<string, ResourceAdapter>): ResourceAdap
 
 export interface TxnContextOptions {
   clientId?: string | null;
+  /** Dry-run mode: capture policy verdicts instead of raising, and finalise by
+   *  rolling back. Set by `dryRun()`, not by `agentTxn()`. */
+  dryRun?: boolean;
+  /** Per-StateDiffable-adapter baselines captured at txn begin (dry-run only),
+   *  diffed at the finalise hook before the rollback discards the world. */
+  stateBaselines?: Array<[StateDiffable, unknown]>;
 }
 
 /** The active-transaction object stored in the activeTxn async-local store. The
@@ -90,6 +98,13 @@ export class TxnContext implements RecordingContext {
   private readonly policyCtx: PolicyContext;
   private readonly clientId: string | null;
   private finishedFlag = false;
+  /** Dry-run mode: stage-time policy captures verdicts instead of raising, and
+   *  the txn finalises by rolling back. */
+  private readonly dryRunMode: boolean;
+  private readonly stateBaselines: Array<[StateDiffable, unknown]>;
+  private readonly stageVerdicts: PolicyVerdict[] = [];
+  /** The dry-run product, populated by `dryRunFinalise`. Null otherwise. */
+  result: DryRunResult | null = null;
 
   constructor(
     adapters: Record<string, ResourceAdapter>,
@@ -103,6 +118,8 @@ export class TxnContext implements RecordingContext {
     this.adapters = adapters;
     this.policy = policy;
     this.clientId = options.clientId ?? null;
+    this.dryRunMode = options.dryRun ?? false;
+    this.stateBaselines = options.stateBaselines ?? [];
     // One PolicyContext per txn: carries the journal-so-far reference + per-cap
     // running totals across every stage-time evaluate(), reused for the
     // commit-time evaluateJournal walk (which resets caps and re-folds).
@@ -114,7 +131,10 @@ export class TxnContext implements RecordingContext {
       where: "stage",
       reader: sqlReader(adapters),
     });
-    this.audit.recordTransaction(this.txn, { clientId: this.clientId });
+    this.audit.recordTransaction(this.txn, {
+      clientId: this.clientId,
+      dryRun: this.dryRunMode,
+    });
   }
 
   get txnId(): string {
@@ -167,9 +187,15 @@ export class TxnContext implements RecordingContext {
       compensator: spec.compensator,
     });
 
-    // Stage-time policy: raise on first Deny, before journalling (so a denied
-    // effect leaves no journal entry).
-    this.policy.evaluate(effect, this.policyCtx, "stage");
+    // Stage-time policy. In a normal txn: raise on first Deny, before
+    // journalling (so a denied effect leaves no journal entry). In a dry-run:
+    // capture the verdicts without raising, so the body keeps running and the
+    // full journal materialises for the final DryRunResult.
+    if (this.dryRunMode) {
+      this.stageVerdicts.push(...this.policy.tryEvaluate(effect, this.policyCtx, "stage"));
+    } else {
+      this.policy.evaluate(effect, this.policyCtx, "stage");
+    }
 
     this.txn.addEffect(effect);
     this.audit.recordEffect(effect);
@@ -322,6 +348,50 @@ export class TxnContext implements RecordingContext {
     this.txn.transition(TxnState.ROLLED_BACK);
     this.audit.updateTransactionState(this.txn.txnId, this.txn.state);
     this.finishedFlag = true;
+  }
+
+  // --- dry-run finalise -----------------------------------------------------
+
+  /**
+   * Commit-time bracket for a dry-run: capture verdicts, build the result, then
+   * unwind everything via the existing rollback bracket. A dry-run is the same
+   * forward fold of the journal as a real txn, ending in `rollback` instead of
+   * `commit` — the measurement without collapse. What you observe is the
+   * journal-as-built plus the policy verdicts that would fire; what survives is
+   * nothing (the world is bit-identical to its pre-dry-run state, save for the
+   * populated `result` and the audit row's dry_run=1 flag).
+   */
+  async dryRunFinalise(): Promise<void> {
+    // collectVerdicts re-walks the journal in capture mode (no short-circuit).
+    const commitVerdicts = this.policy.collectVerdicts(this.txn, this.policyCtx);
+    const allVerdicts = [...this.stageVerdicts, ...commitVerdicts];
+    const wouldHaveFired = this.txn.effects.filter(
+      (e) => !e.reversible && e.status === EffectStatus.STAGED,
+    );
+    // State diff is computed *before* the rollback, so the live resource still
+    // carries the dry-run's writes.
+    const stateDiff = await this.computeStateDiff();
+    this.result = new DryRunResult({
+      txnId: this.txn.txnId,
+      journal: [...this.txn.effects],
+      wouldHaveFired,
+      policyVerdicts: allVerdicts,
+      isClean: allVerdicts.every((v) => v.allow),
+      stateDiff,
+    });
+    // Unwind: identical mechanics to a normal rollback.
+    await this.rollback();
+  }
+
+  /** Per-resource structural delta — current state vs the begin baseline, keyed
+   *  by adapter name. Adapters that did not opt into StateDiffable contribute
+   *  nothing (their baseline was never captured). */
+  private async computeStateDiff(): Promise<Record<string, Record<string, unknown>>> {
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const [adapter, baseline] of this.stateBaselines) {
+      out[adapter.name] = await adapter.stateDiff(baseline);
+    }
+    return out;
   }
 
   // --- mixed-fold unwind after a commit-time failure ---
