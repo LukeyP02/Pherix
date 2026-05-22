@@ -24,7 +24,7 @@ describe("reversible lane", () => {
     const ctx = await agentTxn(f.adapters, async (txn) => {
       await f.tools.transfer({ from: "alice", to: "bob", amount: 30 });
       expect(f.balanceOf("bob")).toBe(30); // applied live, mid-txn
-      txn.rollback();
+      await txn.rollback();
     });
     expect(ctx.txn.state).toBe(TxnState.ROLLED_BACK);
     expect(f.balanceOf("alice")).toBe(100);

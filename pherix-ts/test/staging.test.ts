@@ -33,7 +33,7 @@ describe("irreversible staging lane", () => {
     let staged: StagedResult | undefined;
     const ctx = await agentTxn(f.adapters, async (txn) => {
       staged = (await f.tools.sendEmail({ to: "x@y.z", body: "hi" })) as StagedResult;
-      txn.rollback(); // we only need the journal entry, not a commit
+      await txn.rollback(); // we only need the journal entry, not a commit
     });
     const entry = ctx.txn.effects.find((e) => e.tool === "sendEmail");
     expect(staged!.effectId).toBe(entry!.effectId);
@@ -48,7 +48,7 @@ describe("irreversible staging lane", () => {
       snapshotMidTxn = e.snapshot;
       reversibleMidTxn = e.reversible;
       expect(e.status).toBe(EffectStatus.STAGED);
-      txn.rollback(); // avoid the gate; we are asserting mid-txn shape only
+      await txn.rollback(); // avoid the gate; we are asserting mid-txn shape only
     });
     expect(snapshotMidTxn).toBeNull();
     expect(reversibleMidTxn).toBe(false);
@@ -57,7 +57,7 @@ describe("irreversible staging lane", () => {
   it("rollback before commit means staged effects never fire (strongest containment)", async () => {
     const ctx = await agentTxn(f.adapters, async (txn) => {
       await f.tools.sendEmail({ to: "x@y.z", body: "hi" });
-      txn.rollback();
+      await txn.rollback();
     });
     expect(ctx.txn.state).toBe("rolled_back");
     expect(f.log.sent).toHaveLength(0);

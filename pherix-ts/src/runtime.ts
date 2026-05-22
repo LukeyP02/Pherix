@@ -182,7 +182,7 @@ export class TxnContext implements RecordingContext {
     // FAILED status + the unwind, exactly like a synchronous throw. The await
     // sits inside activeEffect.run so the async-local store survives the tool's
     // internal await boundaries.
-    effect.snapshot = adapter.snapshot(effect);
+    effect.snapshot = await adapter.snapshot(effect);
     try {
       effect.result = await activeEffect.run(effect, async () => adapter.apply(effect, spec.fn));
     } catch (e) {
@@ -237,7 +237,7 @@ export class TxnContext implements RecordingContext {
         if (this.txn.state === TxnState.STAGED) {
           await this.partialUnwind();
         } else {
-          this.rollback();
+          await this.rollback();
         }
       }
       throw e;
@@ -285,7 +285,7 @@ export class TxnContext implements RecordingContext {
 
     // Finalize: commit transactional adapters.
     for (const adapter of uniqueAdapters(this.adapters)) {
-      if (isTransactionalAdapter(adapter)) adapter.commit();
+      if (isTransactionalAdapter(adapter)) await adapter.commit();
     }
     this.txn.transition(TxnState.COMMITTED);
     this.audit.updateTransactionState(this.txn.txnId, this.txn.state);
@@ -294,14 +294,14 @@ export class TxnContext implements RecordingContext {
 
   // --- rollback (backward fold) ---
 
-  rollback(): void {
+  async rollback(): Promise<void> {
     this.guardOpen();
 
     for (let i = this.txn.effects.length - 1; i >= 0; i--) {
       const effect = this.txn.effects[i]!;
       if (effect.snapshot === null) continue; // staged irreversibles never fired
       const adapter = this.resolveAdapter(effect.resource);
-      adapter.restore(effect.snapshot);
+      await adapter.restore(effect.snapshot);
       if (effect.status === EffectStatus.APPLIED) {
         effect.status = EffectStatus.COMPENSATED;
         this.audit.updateEffect(effect);
@@ -309,7 +309,7 @@ export class TxnContext implements RecordingContext {
     }
 
     for (const adapter of uniqueAdapters(this.adapters)) {
-      if (isTransactionalAdapter(adapter)) adapter.rollback();
+      if (isTransactionalAdapter(adapter)) await adapter.rollback();
     }
 
     this.txn.transition(TxnState.ROLLED_BACK);
@@ -331,7 +331,7 @@ export class TxnContext implements RecordingContext {
       if (effect.reversible) {
         // Restore from snapshot (state rollback).
         const adapter = this.resolveAdapter(effect.resource);
-        if (effect.snapshot !== null) adapter.restore(effect.snapshot);
+        if (effect.snapshot !== null) await adapter.restore(effect.snapshot);
         effect.status = EffectStatus.COMPENSATED;
         this.audit.updateEffect(effect);
         continue;
@@ -364,7 +364,7 @@ export class TxnContext implements RecordingContext {
     }
 
     for (const adapter of uniqueAdapters(this.adapters)) {
-      if (isTransactionalAdapter(adapter)) adapter.rollback();
+      if (isTransactionalAdapter(adapter)) await adapter.rollback();
     }
 
     this.txn.transition(stuck ? TxnState.STUCK : TxnState.ROLLED_BACK);
@@ -397,7 +397,7 @@ export async function agentTxn(
   const audit = options.audit ?? AuditJournal.inMemory();
 
   for (const adapter of uniqueAdapters(adapters)) {
-    if (isTransactionalAdapter(adapter)) (adapter as TransactionalResourceAdapter).begin();
+    if (isTransactionalAdapter(adapter)) await (adapter as TransactionalResourceAdapter).begin();
   }
 
   const ctx = new TxnContext(adapters, policy, audit, { clientId: options.clientId ?? null });
@@ -407,7 +407,7 @@ export async function agentTxn(
       await fn(ctx);
       if (!ctx.finished) await ctx.commit();
     } catch (e) {
-      if (!ctx.finished) ctx.rollback();
+      if (!ctx.finished) await ctx.rollback();
       throw e;
     }
     return ctx;
