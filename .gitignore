@@ -10,6 +10,8 @@ venv/
 *.sqlite
 *.sqlite3
 .DS_Store
+# Generated dogfood evidence — per-run JSON reports + inspector audit journals.
+reports/
 # Secrets — dogfood agents read ANTHROPIC_API_KEY from here. Never commit.
 .env
 .gstack/
