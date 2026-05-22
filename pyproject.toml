@@ -7,6 +7,10 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# The public site service (server/) — a FastAPI app that serves site/ and
+# exposes the real engine over HTTP. A deploy artifact, never needed to import
+# or use the library; the kernel stays dependency-free. `pip install .[site]`.
+site = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
 # Property-based / chaos / differential testing of the kernel laws
 # (tests/test_laws_*.py). Hypothesis is a TEST-ONLY dependency — the kernel
 # (pherix/core/) imports nothing from it; only the law suites do. Everything

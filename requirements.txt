@@ -1,0 +1,4 @@
+# Railway / pip entry point for the public site service.
+# Installs the Pherix package plus the `site` server extra (FastAPI + uvicorn).
+# The library itself stays dependency-free — see pyproject.toml.
+.[site]

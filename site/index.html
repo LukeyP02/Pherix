@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pherix — autonomy inside a reversible envelope</title>
+<style>
+  :root {
+    --bg: #0c0d10;
+    --panel: #14161b;
+    --panel-2: #1a1d24;
+    --ink: #e6e9ef;
+    --ink-2: #9aa3b2;
+    --ink-3: #5e6675;
+    --rule: #262a33;
+    --green: #5ad17f;
+    --amber: #e0b341;
+    --red: #e0614e;
+    --accent: #6ea8fe;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  main { max-width: 920px; margin: 0 auto; padding: 0 1.5rem; }
+
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    max-width: 920px; margin: 0 auto; padding: 1.2rem 1.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  nav .brand { font-weight: 700; letter-spacing: 0.04em; }
+  nav .brand .dot { color: var(--green); }
+  nav .links a { color: var(--ink-2); margin-left: 1.4rem; font-size: 0.86rem; }
+
+  .hero { padding: 4.5rem 0 2.5rem; }
+  .tag {
+    color: var(--green); font-size: 0.8rem; letter-spacing: 0.08em;
+    margin: 0 0 1rem; text-transform: uppercase;
+  }
+  h1 { font-size: 2.9rem; line-height: 1.05; margin: 0 0 1.1rem; font-weight: 700; letter-spacing: -0.02em; }
+  h1 .cursor { color: var(--green); animation: blink 1.1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .sub { color: var(--ink-2); font-size: 1.08rem; max-width: 60ch; margin: 0 0 2rem; }
+
+  .code {
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 8px;
+    padding: 1.1rem 1.3rem; margin: 1.5rem 0; overflow-x: auto;
+    font-size: 0.9rem; line-height: 1.7;
+  }
+  .code .c { color: var(--ink-3); }
+  .code .k { color: var(--accent); }
+  .code .s { color: var(--green); }
+  .code .f { color: var(--amber); }
+  .prompt { color: var(--green); }
+  .install {
+    display: inline-flex; align-items: center; gap: 0.6rem;
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+    padding: 0.5rem 0.9rem; font-size: 0.92rem; margin-right: 0.8rem;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: var(--green); color: #08130c; border-radius: 6px;
+    padding: 0.55rem 1.1rem; font-weight: 700; font-size: 0.9rem;
+  }
+  .btn:hover { text-decoration: none; filter: brightness(1.08); }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--rule); }
+
+  /* the demo slot — the centrepiece, space reserved for the demo film */
+  .demo { margin: 3.5rem 0; }
+  .demo-label { color: var(--ink-3); font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.8rem; }
+  .demo-frame {
+    position: relative; border: 1px solid var(--rule); border-radius: 10px;
+    background:
+      radial-gradient(120% 120% at 50% 0%, var(--panel-2), var(--panel));
+    aspect-ratio: 16 / 9; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1rem; text-align: center;
+  }
+  .demo-frame .play {
+    width: 64px; height: 64px; border-radius: 50%;
+    border: 1px solid var(--green); color: var(--green);
+    display: flex; align-items: center; justify-content: center; font-size: 1.4rem;
+  }
+  .demo-frame .caption { color: var(--ink-2); font-size: 0.95rem; max-width: 48ch; }
+  .demo-frame .caption b { color: var(--ink); }
+  .demo-frame .terminal {
+    position: absolute; bottom: 1rem; left: 1rem; right: 1rem;
+    font-size: 0.74rem; color: var(--ink-3); text-align: left;
+  }
+  .demo-frame .terminal .ok { color: var(--green); }
+  .demo-frame .terminal .bad { color: var(--red); }
+
+  .axes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem; margin: 3rem 0; }
+  @media (max-width: 760px) { .axes { grid-template-columns: 1fr 1fr; } h1 { font-size: 2.2rem; } }
+  .axis { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 1rem 1.1rem; }
+  .axis .n { color: var(--green); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.4rem; }
+  .axis h3 { margin: 0 0 0.35rem; font-size: 1rem; font-weight: 700; }
+  .axis p { margin: 0; color: var(--ink-2); font-size: 0.82rem; line-height: 1.5; }
+
+  .strip { border-top: 1px solid var(--rule); margin: 3rem 0 0; padding: 2.5rem 0; }
+  .strip h2 { font-size: 1.4rem; margin: 0 0 0.6rem; font-weight: 700; }
+  .strip p { color: var(--ink-2); margin: 0 0 1.4rem; max-width: 62ch; }
+
+  footer {
+    border-top: 1px solid var(--rule); margin-top: 2rem; padding: 1.6rem 0 3rem;
+    color: var(--ink-3); font-size: 0.8rem;
+  }
+</style>
+</head>
+<body>
+  <nav>
+    <span class="brand">pherix<span class="dot">.</span></span>
+    <span class="links">
+      <a href="#demo">demo</a>
+      <a href="governance.html">how it works</a>
+      <a href="#start">get started</a>
+    </span>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <p class="tag">// transactional guardrails for autonomous agents</p>
+      <h1>Autonomy inside a<br/>reversible envelope.<span class="cursor">_</span></h1>
+      <p class="sub">Wrap your agent's tools and let it run. Reversible actions are journalled and undoable; irreversible ones are gated by policy. <b>See, stop, undo</b> — without a human watching every call.</p>
+
+      <div class="code">
+<span class="c"># your agent loop, unchanged — just wrapped</span>
+<span class="k">with</span> <span class="f">agent_txn</span>(adapters, policy) <span class="k">as</span> txn:
+    agent.run(task)          <span class="c"># tool calls journalled + snapshotted live</span>
+<span class="c"># clean exit commits; any exception rolls the whole thing back</span>
+      </div>
+
+      <div>
+        <span class="install"><span class="prompt">$</span>&nbsp;pip install pherix</span>
+        <a class="btn" href="#start">get started →</a>
+      </div>
+    </section>
+
+    <!-- ───────────── the demo slot: centre stage, reserved for the film ───────────── -->
+    <section class="demo" id="demo">
+      <p class="demo-label">▶ watch it contain a real mistake</p>
+      <div class="demo-frame" role="img" aria-label="Demo video placeholder">
+        <div class="play">▶</div>
+        <p class="caption">An agent tries <b>rm&nbsp;-rf</b>, <b>DROP&nbsp;TABLE</b>, and a push to <b>main</b>. Every one is contained, undone, and on the audit trail.</p>
+        <div class="terminal">
+          <div>agent&gt; rm -rf /src &nbsp;&nbsp;<span class="bad">⨯ gated</span></div>
+          <div>agent&gt; UPDATE ledger ... &nbsp;<span class="ok">✓ applied → rolled back</span></div>
+          <div>txn&gt; rollback() &nbsp;<span class="ok">✓ working tree byte-identical</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <p class="demo-label">// four axes over one journal</p>
+      <div class="axes">
+        <div class="axis"><div class="n">how it arrives</div><h3>Interception</h3><p>Python &amp; TypeScript SDKs, an MCP gateway, a sandbox for off-the-shelf agents.</p></div>
+        <div class="axis"><div class="n">what's allowed</div><h3>Policy</h3><p>Caps, allow/deny, the human gate, live-state checks — a clean slate you write rules against.</p></div>
+        <div class="axis"><div class="n">undo, reversible</div><h3>Adapters</h3><p>Snapshot &amp; restore per resource. The backend does the undo — Postgres, files, more.</p></div>
+        <div class="axis"><div class="n">undo, irreversible</div><h3>Compensators</h3><p>Vetted semantic inverses for what can't be snapshot — charge&nbsp;→&nbsp;refund, and growing.</p></div>
+      </div>
+    </section>
+
+    <section class="strip" id="start">
+      <h2>Get started</h2>
+      <p>An open-source library — install it, wrap your tools, keep your loop and model. The hosted control plane (fleet policy, audit search, governed memory) is the layer above.</p>
+      <div>
+        <span class="install"><span class="prompt">$</span>&nbsp;pip install pherix</span>
+        <a class="btn ghost" href="mailto:lukepledger2912@icloud.com">talk to us</a>
+      </div>
+    </section>
+
+    <footer>
+      pherix · autonomy inside a reversible envelope · the demo slot above is reserved for the film
+    </footer>
+  </main>
+</body>
+</html>

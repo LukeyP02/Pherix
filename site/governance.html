@@ -127,19 +127,17 @@
     <span class="brand">pherix<span class="dot">.</span></span>
     <span class="links">
       <a href="index.html">home</a>
-      <a href="../docs/north-star.html">how it works</a>
-      <a href="../docs/operator/policy.md">policy doc</a>
+      <a href="index.html#start">get started</a>
     </span>
   </nav>
 
   <main>
     <header class="hero">
-      <p class="tag">// policy axis — define governance visually</p>
-      <h1>Governance builder &amp; policy explainer</h1>
-      <p class="sub">Compose a Pherix policy from primitives, watch what it would
-      <b>allow / deny / gate / cap</b> against a sample journal — live, before it governs a
-      real agent — then export a policy the engine runs unchanged. The preview here is the
-      same fold the runtime does (<code>collect_verdicts</code>), pinned to the engine by tests.</p>
+      <p class="tag">// policy axis</p>
+      <h1>Build a policy. Watch what it does.</h1>
+      <p class="sub">Compose a policy from primitives and see what it would
+      <b>allow, deny, gate, or cap</b> against a sample journal — live. Export it, and the
+      engine runs it unchanged. This preview runs the <b>real engine</b>, not a copy.</p>
 
       <div class="starters" id="starters"><span class="lbl">start from</span></div>
     </header>
@@ -227,9 +225,9 @@
     </section>
 
     <footer>
-      pherix · governance builder · the JSON exports load via
-      <code>pherix.governance.from_spec</code>; the Python via plain import.
-      Preview pinned to the engine by <code>test_governance_js_conformance</code>.
+      pherix · governance builder · preview runs the live engine via
+      <code>POST /api/preview</code> (it falls back to an in-browser mirror offline).
+      JSON exports load via <code>pherix.governance.from_spec</code>.
     </footer>
   </main>
 

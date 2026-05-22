@@ -412,10 +412,48 @@
 
   // -- preview --------------------------------------------------------------
 
+  // The preview is computed by the *real* engine over HTTP (POST /api/preview),
+  // so the verdicts shown are the verdicts the runtime produces. The in-browser
+  // mirror (window.PolicyEval) is the fallback for when there's no server —
+  // opened as a static file, or offline. Edits are debounced into one call, and
+  // a sequence token drops responses that a newer edit has superseded.
+  var _previewSeq = 0;
+  var _previewTimer = null;
+
   function refresh() {
-    var result = window.PolicyEval.preview(state.spec, state.scenario, state.world);
-    renderPreview(result);
-    renderExport();
+    renderExport(); // export is client-side and independent — render it now
+    if (_previewTimer) clearTimeout(_previewTimer);
+    _previewTimer = setTimeout(runPreview, 120);
+  }
+
+  function localPreview() {
+    return window.PolicyEval.preview(state.spec, state.scenario, state.world);
+  }
+
+  function runPreview() {
+    var seq = ++_previewSeq;
+    var payload = {
+      spec: specForExport(),
+      scenario: state.scenario,
+      world: state.world,
+    };
+    fetch("/api/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("api " + r.status);
+        return r.json();
+      })
+      .then(function (result) {
+        if (seq !== _previewSeq) return;
+        renderPreview(result);
+      })
+      .catch(function () {
+        if (seq !== _previewSeq) return;
+        renderPreview(localPreview());
+      });
   }
 
   function renderPreview(result) {
