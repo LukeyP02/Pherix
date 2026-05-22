@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pherix · position</title>
+<style>
+  :root {
+    --bg: #faf8f4;
+    --panel: #f1ece2;
+    --ink: #161513;
+    --ink-2: #4a443c;
+    --ink-3: #7a7268;
+    --rule: #d0c7b5;
+    --accent: #b4421e;
+    --green: #355c3a;
+    --amber: #8a6a14;
+    --blue: #2c4a6a;
+    --shade: rgba(22, 21, 19, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14130f;
+      --panel: #1c1a14;
+      --ink: #ece6d8;
+      --ink-2: #c0baac;
+      --ink-3: #7a7268;
+      --rule: #3a342a;
+      --accent: #e07a4e;
+      --green: #6ba070;
+      --amber: #d4ac56;
+      --blue: #7ea0c8;
+      --shade: rgba(255, 250, 240, 0.04);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
+    font-size: 17px; line-height: 1.55; padding: 4rem 1.5rem 6rem;
+  }
+  main { max-width: 920px; margin: 0 auto; }
+  a.back {
+    font-family: ui-monospace, monospace; font-size: 0.74rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3); text-decoration: none;
+  }
+  a.back:hover { color: var(--accent); }
+  header { margin: 1.5rem 0 2.5rem; }
+  .eyebrow {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-3); margin-bottom: 0.5rem;
+  }
+  h1 { font-size: 2.4rem; line-height: 1.08; margin: 0 0 0.85rem; font-weight: 500; letter-spacing: -0.01em; }
+  .lede { color: var(--ink-2); font-size: 1.1rem; max-width: 64ch; margin: 0; }
+
+  h2 {
+    font-size: 1.5rem; font-weight: 500; letter-spacing: -0.005em;
+    margin: 3.2rem 0 1rem; padding-top: 1.6rem; border-top: 1px solid var(--rule);
+  }
+  h3 { font-size: 1.1rem; font-weight: 600; margin: 1.6rem 0 0.5rem; }
+  p { color: var(--ink-2); margin: 0 0 1rem; }
+  strong { color: var(--ink); }
+  em { color: var(--ink); font-style: italic; }
+  code {
+    font-family: ui-monospace, monospace; font-size: 0.88em;
+    background: var(--shade); padding: 1px 5px; border-radius: 3px;
+  }
+
+  .thesis {
+    margin: 2.5rem 0; padding: 1.5rem 1.75rem;
+    background: var(--panel); border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+    border-radius: 6px;
+  }
+  .thesis p { margin: 0; color: var(--ink); font-size: 1.18rem; line-height: 1.45; }
+  .thesis .sub { margin-top: 0.7rem; color: var(--ink-2); font-size: 0.97rem; }
+
+  .callout {
+    margin: 1.5rem 0; padding: 1.1rem 1.4rem;
+    background: var(--shade); border: 1px solid var(--rule); border-radius: 6px;
+    color: var(--ink-2); font-size: 0.97rem;
+  }
+  .callout strong { color: var(--ink); }
+
+  ul { margin: 0 0 1rem; padding-left: 1.2rem; color: var(--ink-2); }
+  li { margin: 0.35rem 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1.2rem 0; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-family: ui-monospace, monospace; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  td { color: var(--ink-2); }
+  td strong { color: var(--ink); }
+
+  .vert { margin: 1.5rem 0; }
+  .vert-row {
+    display: grid; grid-template-columns: 170px 1fr; gap: 1rem;
+    padding: 1.1rem 0; border-bottom: 1px solid var(--rule);
+  }
+  @media (max-width: 640px) { .vert-row { grid-template-columns: 1fr; gap: 0.4rem; } }
+  .vert-name { font-weight: 600; color: var(--ink); }
+  .vert-name .who { display: block; font-family: ui-monospace, monospace; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin-top: 0.3rem; font-weight: 400; }
+  .vert-body p { margin: 0 0 0.5rem; }
+  .no  { color: var(--accent); font-weight: 600; }
+  .yes { color: var(--green); font-weight: 600; }
+
+  .ba { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.5rem 0; }
+  @media (max-width: 640px) { .ba { grid-template-columns: 1fr; } }
+  .ba > div { padding: 1.1rem 1.3rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); }
+  .ba .hd { font-family: ui-monospace, monospace; font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.7rem; }
+  .ba .before .hd { color: var(--accent); }
+  .ba .after  .hd { color: var(--green); }
+  .ba p { margin: 0; font-size: 0.95rem; }
+
+  footer { margin-top: 4rem; padding-top: 1.6rem; border-top: 1px solid var(--rule); font-size: 0.86rem; color: var(--ink-3); }
+  footer p { margin: 0.35rem 0; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="index.html">← docs</a>
+  <header>
+    <p class="eyebrow">Pherix · position &amp; direction</p>
+    <h1>Autonomy inside an enforced, reversible envelope.</h1>
+    <p class="lede">A statement of what Pherix is, who it is for, and why it holds — written to be argued with, not admired. The engine is built; this fixes the <em>direction</em>.</p>
+  </header>
+
+  <div class="thesis">
+    <p>Pherix lets you deploy an autonomous agent fast, because its actions are <strong>continuously bounded and reversible</strong> — so being wrong is cheap, and you no longer need a governance meeting to say yes.</p>
+    <p class="sub">We replace the governance <em>meeting</em> with a governance <em>policy</em>. Trust becomes mechanical, not procedural.</p>
+  </div>
+
+  <h2>The stance: autonomy-first, not human-first</h2>
+  <p>The whole promise of agents is collapsing weeks of work into hours. A governance design that puts a human in the loop on every action gives that speed straight back. So we reject it as the mechanism.</p>
+  <p>Governance is not a checkpoint the agent stops at. It is an <strong>invariant preserved along the whole trajectory</strong> — a bound that holds at every step, automatically, so the agent runs flat-out inside it and nobody watches.</p>
+  <table>
+    <tr><th>Kind of action</th><th>What happens</th><th>Human?</th></tr>
+    <tr><td><strong>Reversible</strong></td><td>Runs live, journalled; auto-undone if the run fails.</td><td>No</td></tr>
+    <tr><td><strong>Irreversible, pre-authorised</strong> (within policy / caps, or has a compensator)</td><td>Runs, or auto-fires at commit with its compensator on standby.</td><td>No</td></tr>
+    <tr><td><strong>Irreversible <em>and</em> outside the envelope</strong></td><td>Gates — the rare safety valve. And the data loop shrinks this set over time.</td><td>Only here</td></tr>
+  </table>
+  <div class="callout"><strong>The gate is the exception, not the product.</strong> If a demo leads with "a human approves the dangerous call," it is selling the ugly 10%. Pherix leads with the envelope; the gate is the footnote.</div>
+
+  <h2>Who we solve for</h2>
+  <p>One claim — <em>autonomy inside a reversible envelope</em> — stress-tested at five interception points. Each is a <span class="no">NO</span> someone is saying today that becomes a bounded <span class="yes">YES</span>.</p>
+  <div class="vert">
+    <div class="vert-row">
+      <div class="vert-name">Coding-CLI agents<span class="who">Cursor · Claude Code · Aider — buyer: platform / security lead</span></div>
+      <div class="vert-body">
+        <p><span class="no">NO:</span> "We blocked the agentic coding tool over guardrails concerns."</p>
+        <p><span class="yes">YES:</span> shell / file / git calls run through Pherix — a bad refactor rolls back byte-clean, a destructive command gates, every action is on the audit trail. The banned tool becomes a provisioned one, fleet-wide.</p>
+      </div>
+    </div>
+    <div class="vert-row">
+      <div class="vert-name">Audit agents<span class="who">agents acting on systems of record — buyer: compliance / ops</span></div>
+      <div class="vert-body">
+        <p><span class="no">NO:</span> "We won't let an agent mutate the ledger / records."</p>
+        <p><span class="yes">YES:</span> every mutation is reversible and recorded; a wrong remediation is undone; the journal <em>is</em> the compliance evidence — what was attempted, allowed, denied, undone, with provenance.</p>
+      </div>
+    </div>
+    <div class="vert-row">
+      <div class="vert-name">Dev agents<span class="who">migrations · infra · internal automation — buyer: engineering lead</span></div>
+      <div class="vert-body">
+        <p><span class="no">NO:</span> "An agent running migrations or infra changes on prod is too risky to allow."</p>
+        <p><span class="yes">YES:</span> the whole run is atomic — all-or-nothing at the workflow boundary. A failed step at #14 unwinds #1–13; no half-applied mess, no manual cleanup.</p>
+      </div>
+    </div>
+    <div class="vert-row">
+      <div class="vert-name">Regulated agents<span class="who">finance · health · legal — buyer: risk / compliance</span></div>
+      <div class="vert-body">
+        <p><span class="no">NO:</span> "Compliance will not approve an autonomous agent in this domain."</p>
+        <p><span class="yes">YES:</span> a policy envelope enforced continuously (and re-checked at commit), an immutable audit trail, and reversibility — the three things an auditor asks for, as first-class primitives rather than bolted-on logging.</p>
+      </div>
+    </div>
+    <div class="vert-row">
+      <div class="vert-name">Local agents<span class="who">on a dev machine / air-gapped — buyer: developer / endpoint security</span></div>
+      <div class="vert-body">
+        <p><span class="no">NO:</span> "I won't run an agent loose on my machine."</p>
+        <p><span class="yes">YES:</span> copy-on-write over the filesystem and savepoints over local DBs mean "let it rip" — if it makes a mess, roll the working tree back to byte-identical. Model-blind and offline-capable.</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>What we provide — see, stop, undo</h2>
+  <p>A side-effecting tool call goes from a one-way door to a door you can walk back through.</p>
+  <div class="ba">
+    <div class="before">
+      <div class="hd">Before Pherix</div>
+      <p>Effects fire instantly, irreversibly, unlogged, unbounded. A mistake is discovered after the fact and cleaned up by hand — if it can be. Deploying the agent is an unbounded bet.</p>
+    </div>
+    <div class="after">
+      <div class="hd">After Pherix</div>
+      <p>Effects run inside a transaction: reversible ones journalled and undoable, irreversible ones staged and bounded by policy, all of it audited. A mistake is one <code>rollback</code> away. Deploying is a bet you can retract.</p>
+    </div>
+  </div>
+  <p>Every other governance tool lowers the <strong>cost of detection</strong> (it tells you, after, that you were wrong). Pherix lowers the <strong>cost of being wrong</strong>. Only the second one actually unblocks deployment.</p>
+
+  <h2>User journeys</h2>
+  <p>How the NO&rarr;YES plays out, end to end:</p>
+  <h3>The platform lead unblocking a coding-agent fleet</h3>
+  <p>Security blocked Cursor / Claude Code org-wide. The lead runs the agents inside the Pherix sandbox — every shell / file / git action goes through the engine: a bad refactor rolls back byte-clean, a destructive command gates, every action is on the audit trail. They take that trail to security; the banned tool becomes a provisioned one. <em>Lands free on the OSS engine; expands to the control plane when it's fleet-wide.</em></p>
+  <h3>The compliance owner allowing a ledger agent</h3>
+  <p>An agent mutating systems of record was a non-starter. Now every mutation is reversible and recorded, a wrong remediation is undone, and the journal <em>is</em> the compliance evidence. Compliance approves against the policy + audit trail, not a promise.</p>
+  <h3>The developer running a local agent</h3>
+  <p>"I won't run an agent loose on my machine." Copy-on-write over the filesystem + savepoints over local DBs mean "let it rip" — if it makes a mess, roll the tree back to byte-identical. Model-blind, offline.</p>
+
+  <h2>Demos — the footage that sells</h2>
+  <p>You don't sell the journal; you sell the <em>gasp</em>. Three runnable demos, each a real agent making a real mistake that Pherix contains:</p>
+  <table>
+    <tr><th>Demo</th><th>What it proves</th></tr>
+    <tr><td><strong>Atomic unwind</strong> (devops)</td><td>A migration/deploy run fails at step 14 &rarr; steps 1&ndash;13 unwind automatically. No half-applied mess, no manual cleanup.</td></tr>
+    <tr><td><strong>Attributed audit</strong></td><td>Concurrent agents mutate a ledger; the journal shows exactly what each attempted, was allowed, denied, undone — with provenance. The compliance artifact, for free.</td></tr>
+    <tr><td><strong>Air-gapped coding red-team</strong></td><td>An off-the-shelf agent on a local model, air-gapped, genuinely attempts destructive actions (<code>rm -rf</code>, <code>DROP TABLE</code>, push to main) inside the sandbox — and every one is contained. Cross-agent, cross-model, cross-deployment neutrality in one run.</td></tr>
+  </table>
+  <div class="callout"><strong>Real, not scripted.</strong> Genuinely autonomous agents (a goal, not a tool script), with a capture harness for batch evidence. The red-team is the flagship — a Pherix miss costs nothing on a disposable box, so the agent can really try.</div>
+
+  <h2>How it works — one idea</h2>
+  <p>A <strong>versioned effect journal</strong>, mediated by <strong>resource adapters</strong>. Every tool call becomes an entry in an append-only, ordered log. Every capability is a traversal of that log:</p>
+  <ul>
+    <li><strong>Commit</strong> — fold forward, apply each effect.</li>
+    <li><strong>Rollback</strong> — fold backward, restore each snapshot (or run its compensator).</li>
+    <li><strong>Govern</strong> — evaluate policy over the journal, at stage-time and again at commit-time (the world moved between them).</li>
+    <li><strong>Audit</strong> — the journal <em>is</em> the record; just read it.</li>
+  </ul>
+  <p>Adapters use <em>real backend semantics</em>: database savepoints, filesystem copy-on-write. The backend does the undo — we don't guess at it. And the adapter is honest when it <em>cannot</em> undo (an external API), forcing that effect down the staged / gated path rather than pretending.</p>
+
+  <h2>The moat — honestly</h2>
+  <p>For a library, <strong>the code is not the moat and never will be.</strong> The engine is clever, not exotic; it is copyable, and AI now makes copying cheap. Any defensibility thesis that rests on "they can't rebuild it" is dead. We concede that on purpose, and put the moat where it actually lives for infrastructure software — the same place Redis, Terraform, Sentry and Temporal keep theirs:</p>
+  <ul>
+    <li><strong>Neutrality.</strong> The buyer needs <em>one</em> control point across Cursor <em>and</em> Claude Code <em>and</em> the homegrown agent. A model vendor will never govern a competitor's agent — so a neutral, cross-vendor control plane is a position no vendor can occupy. (Why Okta exists though every product has a login.)</li>
+    <li><strong>Data network effect — the honest version.</strong> Pherix sits on every agent action, so it is the natural place to learn <em>what agents attempt and what proved dangerous</em>. The naive claim — "customer #500 inherits #1–499's raw incidents" — does not survive contact with reality: a buyer acting on systems of record will never let their journal feed a corpus a competitor draws on. So the asset is one step removed — an <em>opt-in, anonymised pattern library</em>: abstracted "this <em>shape</em> of action proved dangerous" rules, never raw effects, shipped as better default policies. It still compounds with volume and no code copy reproduces it, but it lives behind a privacy boundary rather than on top of the raw log.</li>
+    <li><strong>Trust &amp; switching cost.</strong> Nobody forks the thing standing between their agent and prod and self-maintains it. Once an org's policies, compensators and audit integrations are written against Pherix, ripping it out is expensive. Trust — eventually certified (SOC&nbsp;2 / HIPAA) — is earned, not cloned.</li>
+  </ul>
+  <div class="callout"><strong>Open-core.</strong> Open-source the engine and common adapters — that is the wedge and the distribution, <em>not</em> the moat. The business is the layer above: the hosted control plane (policy management, audit search &amp; retention, cross-agent coordination) and the cross-customer policy intelligence.</div>
+  <div class="callout"><strong>One clarification — policy intelligence is not governed memory.</strong> The roadmap's Phase-3 "governed memory" pillar is a <em>per-customer</em> product feature: an agent's own memory placed under the same transactional, policy-bound, auditable envelope as its other effects. The cross-customer pattern library above is a <em>different</em> thing — anonymised, aggregate, sitting behind a privacy boundary. They share the journal as substrate but are distinct: one is a feature you sell, the other is a moat you accrue. Both stay on the map.</div>
+
+  <h2>Pricing — open-core: metered where it's consumed, flat where it's compliance</h2>
+  <p>The shape follows the moat: the runtime is free so it spreads; you charge for the operated layer that can't be forked, and you meter each tier on the thing <em>its</em> buyer can reason about. Numbers are the model, not committed figures — calibrated with the first design partner.</p>
+  <table>
+    <tr><th>Tier</th><th>What's in it</th><th>Price shape</th></tr>
+    <tr><td><strong>Open source</strong></td><td>The runtime itself, self-hosted — both lanes, the adapters, policy, the Python + TS SDKs, <strong>and the local inspector + governance dashboard</strong> (single-user, your own journal, offline). Run it flat-out, free, forever.</td><td>Free — adoption, not revenue. <em>Unmetered</em>, so usage pricing never punishes running the agent.</td></tr>
+    <tr><td><strong>Managed / gateway</strong></td><td>The operated control plane: hosted gateway, the inspector + audit storage &amp; search at scale, cross-host coordination, the policy library — the painful-to-self-operate parts.</td><td>Metered on <strong>governed transactions</strong> — smooth from 1 deployment to 7,000 with no cliff; committed tiers + a hard cap (the longitudinal envelope is the customer's own spend-control).</td></tr>
+    <tr><td><strong>Enterprise / compliance</strong></td><td>Audit retention, replay guarantees, SSO, policy-as-code governance, certified compliance (SOC&nbsp;2 / HIPAA), support — the things that aren't usage-shaped.</td><td><strong>Flat platform fee, decoupled from instance / usage count.</strong> A bank with 7,000 deployments shouldn't pay 7,000× for SSO. Where regulated buyers actually spend.</td></tr>
+  </table>
+  <div class="callout"><strong>Why metered there, flat here.</strong> The OSS runtime is unmetered — self-host and run flat-out free, so usage pricing never taxes the behaviour we want. The managed gateway meters throughput because it's an operated service you <em>opt into and consume</em> (like any gateway), kept smooth and capped so there's no bill-shock. The regulated buyer — who hates variable bills — lives on the flat tier, because the compliance surface (retention, replay, SSO, audit) genuinely isn't usage-shaped. Each tier meters the thing its buyer can reason about; the metered unit is the legible one (a transaction the customer already counts), not raw effects.</div>
+  <div class="callout"><strong>Design-partner phase (now).</strong> The first one or two partners get it hands-on and effectively free — what we're buying from them is the logo, the reference, and the incident data that seeds the default-policy library. Revenue is a Phase-2-exit concern; the partner is the asset.</div>
+
+  <h2>The technical depth — where it isn't a weekend clone</h2>
+  <p>The reversible engine itself — savepoints, copy-on-write, fold-forward/back — is the easy, copyable part, and we delegate its hardest work to the backend (SQLite/Postgres do the rollback; we don't reinvent it). The genuinely hard, defensible complexity lives elsewhere — not in <em>novel</em> distributed-systems theory (that's decades-solved), but in getting known-but-fiddly correctness <em>right</em> and <em>verified</em>, the class of problem where competent teams ship subtle bugs. Most of this is now built (the engine-hardening pass, merged); cross-host and hard cross-process budgets are deferred to the control plane.</p>
+  <ul>
+    <li><strong>Concurrent multi-agent isolation.</strong> MVCC-style read/write-set tracking and conflict resolution. <em>In-process and cross-process (single-host) coordination are built and tested; cross-host arbitration is deferred to the control plane.</em> Distributed-systems correctness is precisely what AI does <em>not</em> reliably get right — and verifying it is the expensive part.</li>
+    <li><strong>Crash-consistent compensation.</strong> Exactly-once semantic inverses under partial failure: the compensator as a <em>left-inverse</em> (<code>compensator ∘ tool ≈ identity</code>). <em>Built: mid-commit unwind <strong>and</strong> crash-consistent recovery-on-restart — resuming an interrupted unwind correctly, exactly-once, even when the process died mid-fold.</em></li>
+    <li><strong>The longitudinal envelope.</strong> Bounds that span the agent's whole life, not one transaction — caps folded over the <em>durable</em> journal ("£X / Y rows / Z irreversible calls per day, across every run"). <em>Built (single-host): per-transaction <strong>and</strong> durable cross-session caps over the journal; hard cross-process budget enforcement is deferred to the control plane.</em> This is what turns a gating tool into continuous lifecycle governance.</li>
+  </ul>
+
+  <h2>What this means — change the story, not the engine</h2>
+  <p>This direction is, deliberately, <strong>the product we already built</strong> — interrogated from every angle (moat, buyer, friction) and still standing. The engine doesn't move. Three things do:</p>
+  <table>
+    <tr><th>Layer</th><th>Change</th></tr>
+    <tr><td><strong>Engine</strong></td><td>Unchanged. Reversible-first, gate-as-exception and continuous (stage + commit) policy are already the spec.</td></tr>
+    <tr><td><strong>Story / framing</strong></td><td>Lead with the <em>enforced reversible envelope</em>; demote human-in-the-loop to the safety valve.</td></tr>
+    <tr><td><strong>Commercial layer</strong></td><td>Add the hosted control plane + cross-customer policy data as the business — the part the library was never meant to be.</td></tr>
+    <tr><td><strong>Backlog</strong></td><td>The longitudinal envelope (cross-session caps over the durable journal).</td></tr>
+  </table>
+
+  <footer>
+    <p>Served by one <code>python -m http.server</code> at the repo root. A direction statement, not marketing copy — argue with it.</p>
+    <p>See <code>CLAUDE.md</code> for the engine spec and <code>north-star.html</code> for the system &amp; the trajectory this slots into.</p>
+  </footer>
+</main>
+</body>
+</html>

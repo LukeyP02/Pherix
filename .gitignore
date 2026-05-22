@@ -12,3 +12,4 @@ venv/
 .DS_Store
 # Secrets — dogfood agents read ANTHROPIC_API_KEY from here. Never commit.
 .env
+.gstack/

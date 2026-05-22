@@ -64,8 +64,10 @@ Every capability is then just a **traversal of the journal**:
 | Isolation / conflict detection | **diff** this txn's read/write keys + versions against the journal |
 | Audit / observability | the journal **is** the audit log — just read it |
 
-Five problems → one engine + one protocol. **Slice 1 builds that engine.** Every
-later slice is a thin feature that traverses the journal differently.
+Five problems → one engine + one protocol. **The engine is built** (Phase 1: all
+lanes + isolation + replay + policy + dry-run + the MCP gateway + the
+hardening pass). Every feature on top is a thin traversal of the journal — and the
+canonical framing for *what* those features are is the **four axes** below.
 
 **Honest caveat:** one elegant *core* is not the same as less *work*. You still
 write each adapter, each compensator, and the conflict-resolution policy. But you
@@ -188,60 +190,76 @@ right adapter.
 
 ---
 
-## Build slices
+## The four axes — the canonical framing
 
-Each slice ships something demoable. The system gets *deeper*, not just wider.
+The journal-traversal above is the *substrate*. On top of it, Pherix is exactly the
+answer to the four questions any system must answer to make an action transactional —
+**one axis each, extended independently**, and *complete*: there is no fifth question,
+and everything else collapses into these four + the journal.
 
-| Slice | Delivers |
-|---|---|
-| **1** | SQL adapter (savepoints) + `Transaction` state machine + `agent_txn()` + SQLite journal + allow-list policy. Reversible path end-to-end. |
-| 2 | Filesystem adapter (copy-on-write) — proves the adapter protocol is a real abstraction. |
-| 3 | HTTP/irreversible adapter — staging, `StagedResult`, gate, compensation registry, idempotency keys. |
-| 4 | Isolation — read/write-set tracking, conflict detection, resolution policy (abort/retry/serialize). |
-| 5 | Replay from the journal. Nearly free once the journal exists. |
-| 6 | Real policy engine — capability grants, spend caps, content-aware rules, commit-time re-eval. |
-| 7 | Speculative dry-run diff. Nearly free once the journal exists. |
-| 8 | MCP gateway front-end on the same core. |
+| Axis | Question it answers | Filled by |
+|---|---|---|
+| **Interception** | How do actions reach us? | the Python library, the **TypeScript SDK**, the MCP gateway, the agent-agnostic sandbox |
+| **Policy** | What do we allow? | allow/deny + caps + the human gate + world-state-aware rules — a clean slate the buyer writes against |
+| **Adapters** | How do we undo what *can* be undone? | per-resource `snapshot/apply/restore` (the backend does the undo) |
+| **Compensators** | How do we undo what *can't*? | the staged/gated lane + a catalog of vetted semantic inverses |
+
+**Adapters and compensators are two *different* undo mechanisms, not one.** Adapter
+restore = *state rollback* (snapshot, then revert — exact, needs no knowledge of what
+the action meant). Compensator = *semantic inverse* (run an opposite action —
+approximate, needs the meaning). Restore does **not** "use compensation"; compensation
+is the fallback for exactly when snapshotting is impossible. The boundary is
+`supports_rollback()`. They meet only at the journal — the backward fold calls one or
+the other per effect.
+
+**Everything else is a consequence, not an axis:** audit = the journal, read; isolation
+= a correctness property of adapters + journal under concurrency; replay / dry-run =
+operations over the journal; the control plane = how the four axes are delivered and
+sold at org scale; governed memory = an adapter + a policy pointed at the agent's
+memory.
+
+**Convergent generalisation — the architectural test.** As we grow an axis, the shared
+substrate must get *more general, not more bloated*. A new adapter satisfying the
+protocol unchanged confirms the abstraction; an extension that forces the fold to
+generalise (crash-recovery driving the fold from the durable journal; cross-process
+isolation; world-state policy) lifts *all four* axes at once. The failure mode to avoid
+is **divergent special-casing** — per-feature engine branches. If a feature wants engine
+surgery, that is the signal to generalise the substrate, not special-case it. A core
+that generalises as it grows is why "small" is correct, not thin.
+
+**Two languages, no more.** Most agent infra is Python or TypeScript. We do both and
+nothing else — no Go/Java SDKs. The MCP gateway + the sandbox cover other-language
+agents without a per-language SDK.
 
 ---
 
-## SLICE 1 — what to build now
+## Status & what to build now
 
-Build in this order. **Tests first** for the core logic (it is pure, well-understood
-behaviour — TDD applies).
+**Phase 1 — the engine — is done.** Both lanes, MVCC isolation, replay, policy,
+dry-run, the MCP gateway, plus the engine-hardening pass that made the moat claims
+true: crash-consistent recovery (`core/recovery.py`), cross-process isolation
+(single-host), world-state policy (`PolicyContext.read`), the longitudinal envelope
+(`core/envelope.py`). **433 tests, fully offline.**
 
-1. **`pyproject.toml` is done; repo skeleton is done.** Confirm `pytest` runs.
-2. **`core/effects.py`** — `Effect` dataclass + `EffectStatus` enum. Include
-   `read_keys` / `write_keys` slots now (no retrofit later).
-3. **`core/transaction.py`** — `Transaction` + `TxnState` state machine, ordered
-   effect list, `txn_id` generation.
-4. **`core/adapters/base.py`** — the `ResourceAdapter` protocol + `SnapshotHandle`.
-5. **`core/adapters/sql.py`** — `SQLiteAdapter`: `snapshot()` → `SAVEPOINT`,
-   `apply()` runs the effect, `restore()` → `ROLLBACK TO SAVEPOINT`,
-   `supports_rollback()` → `True`. (Postgres variant is the same shape — can stub.)
-6. **`core/tools.py`** — `@tool` decorator + registry. A tool declares its
-   `resource` binding and `reversible` flag. Unregistered tools are invisible to
-   the runtime.
-7. **`core/audit.py`** — SQLite append-only journal persistence: transaction +
-   effect records, snapshots stored as JSON.
-8. **`core/policy.py`** — minimal allow/deny list, evaluated at stage-time. The
-   real engine is Slice 6.
-9. **`core/runtime.py`** — `agent_txn()` context manager: intercept registered
-   tool calls → build `Effect` → route to adapter → `snapshot` → `apply`
-   (reversible path) → journal. `commit()` finalises the journal; `rollback()`
-   folds the journal backward calling `adapter.restore()`.
-10. **`frontends/library.py`** — expose `agent_txn`, `@tool`, `approve_irreversible`.
+**Now — flesh each axis to its base, in two languages** (active worktrees):
 
-### Slice 1 is done when
+- **Adapters** (`adapter-compensator-base`): SQLite/filesystem/HTTP are built; add
+  **Postgres** (non-negotiable — SQLite alone reads as a toy), MySQL, MongoDB, S3.
+  Backend drivers are optional extras, imported lazily; the kernel stays
+  dependency-free.
+- **Compensators** (same worktree): a vetted, tested catalog of common semantic
+  inverses (charge→refund, invite→revoke, provision→delete), each tested as a true
+  left-inverse including the partial-failure path.
+- **Interception** (`typescript-sdk`): bring the library surface to TypeScript at
+  semantic parity with Python.
+- **Policy**: expressiveness + starter templates (the base is built).
 
-You can wrap an agent loop with a SQLite-writing tool, watch reversible writes
-journal live, call `rollback()` and see the row gone, call `commit()` and see the
-row persist — and the audit journal shows the entire story. Plus:
-
-- `pytest -q` → 0 failures
-- tests cover: savepoint snapshot/restore correctness, `Transaction` state
-  transitions, rollback actually restoring DB state, journal completeness,
-  policy denial at stage-time
+Build to the **base** (the common things any buyer assumes work); let the design
+partner bring the **edge** cases. Test each axis *hard* — golden / failure / crash /
+adversarial paths, each new claim shipping a test that fails against the prior commit
+— but not ratio-chasing (SQLite's ~600:1 is the anti-target). Then the demos, then
+the first design partner; the control plane (cross-host / hard cross-process arbiter,
+audit search, the anonymised policy library) is pulled by that partner.
 
 ---
 

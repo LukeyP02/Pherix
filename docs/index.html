@@ -151,63 +151,29 @@
 <main>
   <header>
     <p class="eyebrow">Pherix · internal docs</p>
-    <h1>Thinking tools for a system mid-build.</h1>
-    <p class="lede">Where we are, what we picked, what we shipped, what we want to build. Each artifact is a learning / decision / visualisation aid — not marketing material.</p>
+    <h1>What Pherix is, and why it holds.</h1>
+    <p class="lede">Two authoritative artifacts: the <strong>system</strong> and the <strong>position</strong>. Everything we build is judged against the north star; everything we sell is in the position.</p>
   </header>
 
-  <section class="status" aria-label="Current build state">
-    <p class="status-label">Where we are · 8-slice build</p>
-    <div class="progress" role="img" aria-label="All 8 slices done; Phase 1 complete; Phase 2 next.">
-      <span class="step done"><span class="lbl">1</span></span>
-      <span class="step done"><span class="lbl">2</span></span>
-      <span class="step done"><span class="lbl">3</span></span>
-      <span class="step done"><span class="lbl">4</span></span>
-      <span class="step done"><span class="lbl">5</span></span>
-      <span class="step done"><span class="lbl">6</span></span>
-      <span class="step done"><span class="lbl">7</span></span>
-      <span class="step done"><span class="lbl">8</span></span>
-      <a class="beyond" href="future.html"
-         title="Slice 9+ — memory-adapter family, memory-specific policy vocabulary, agent-memory frontend. See future.html."
-         aria-label="Beyond Slice 8: speculative ambition (Slice 9+). See future.html.">9+<span class="lbl">beyond</span></a>
-    </div>
+  <section class="status" aria-label="Current state">
+    <p class="status-label">Where we are</p>
     <p class="status-note">
-      <strong>Phase 1 is complete — all 8 slices merged.</strong> The determinism engine: reversible engine (<code>ad4e9c0</code>), filesystem adapter (<code>c926f97</code>), irreversible lane (<code>a13018b</code>), isolation/MVCC (<code>0fab344</code>), replay (<code>9ff69a6</code>), policy engine (<code>c2318d5</code>), speculative dry-run (<code>6ee8980</code>), and the MCP gateway (<code>9d41df8</code>) — Pherix is now both a Python library and an MCP server driving the same core. The gateway landed with <code>core/</code> essentially untouched (one nullable <code>client_id</code> audit column + the absorbed <code>StateDiffable</code> sub-protocol), so the front-end-agnostic discipline held across all eight slices.
-      <strong>The real-agent dogfood suite has since landed</strong> — a shared harness + DevOps / audit / coding-sandbox / live-MCP streams — and on day one the audit dogfood surfaced a genuine Slice-4 isolation bug all the deterministic tests missed; <strong>it's now fixed</strong> (merged), local agents + OpenClaw are wired in (the harness drives a local model via <code>--local</code>; an air-gapped capstone proves model- and deployment-blindness), and the accuracy pass landed — the runnable dogfoods are now genuinely autonomous (de-railed prompts, un-rigged outcomes) with a <code>capture.py</code> evidence harness. <strong>396 tests green.</strong>
-      <strong>Phase 2 now — the guardrails MVP:</strong> run the dogfoods for real (the first-user signal), land a design partner, stand up the audit pillar, toward a YC application. See <code>phases.html</code> for the three-act roadmap and <code>dogfood.html</code> &rarr; <em>Start here</em> to run the agents.
-      Beyond: the trilogy of <em>determinism, memory, audit</em> — see <code>future.html</code>.
+      <strong>The engine is built and the value is crystallised.</strong> Pherix is one idea — <em>make being wrong cheap</em> — factored into <strong>four orthogonal axes over a journal</strong>: interception, policy, adapters, compensators. Everything else (audit, isolation, replay, control plane, governed memory) is a <em>consequence</em> of those four, not a fifth thing.
+      <strong>Phase 1, the engine, is done</strong> — reversible + irreversible lanes, MVCC isolation, replay, policy, dry-run, the MCP gateway, plus the engine-hardening pass that made the moat claims true: crash-consistent recovery, cross-process isolation, world-state policy, the longitudinal envelope. <strong>433 tests green.</strong>
+      <strong>Now:</strong> flesh each axis to its base — the common adapters + the compensator catalog — in <strong>two languages</strong> (Python done, TypeScript in progress); then the demos; then the first design partner. The architecture is a <em>convergently generalising</em> core: each axis we grow strengthens the shared substrate rather than bloating it.
     </p>
   </section>
 
   <section class="grid" aria-label="Artifacts">
-    <a class="card" href="where-we-are.html">
-      <div class="card-head"><h2>Where we are</h2><span class="badge learn">Orient</span></div>
-      <p>A grounding artifact for when "send it" momentum has obscured the picture. What Pherix is, what's shipped (all of Phase 1), the unifying axiom that ties it together (every capability is a traversal of the same journal), and where the project stands right now.</p>
-      <span class="url">where-we-are.html</span>
+    <a class="card" href="north-star.html">
+      <div class="card-head"><h2>North star</h2><span class="badge vision">The system</span></div>
+      <p>The essence, fixed. <em>Make being wrong cheap</em>, via four orthogonal axes (interception · policy · adapters · compensators) over a journal — why they're complete, why everything else collapses in, why the small core is a correct basis that <em>generalises</em> as it grows, and the trajectory from here. The page every decision is judged against.</p>
+      <span class="url">north-star.html</span>
     </a>
-    <a class="card" href="slice-1.html">
-      <div class="card-head"><h2>Slice 1 deep-dive</h2><span class="badge learn">Learn</span></div>
-      <p>What got shipped: the journal as an append-only sequence; commit and rollback as forward and backward folds; the state machine; the data structures; the demo walked end-to-end; the six locked decisions.</p>
-      <span class="url">slice-1.html</span>
-    </a>
-    <a class="card" href="roadmap.html">
-      <div class="card-head"><h2>Roadmap</h2><span class="badge review">Review</span></div>
-      <p>All 8 slices as a dependency graph with status colour-coding, the four Slice-1 review follow-ups attached to the slices they gate, and a "you are here" marker between 1 and 2.</p>
-      <span class="url">roadmap.html</span>
-    </a>
-    <a class="card" href="phases.html">
-      <div class="card-head"><h2>Phases · the product roadmap</h2><span class="badge review">Strategy</span></div>
-      <p>The three-act arc above the slice-level roadmap: Phase 1 (the determinism engine — done) → Phase 2 (guardrails MVP + first design partner → YC application) → Phase 3 (the full agent-guardrails platform: MCP + agent ACID + audit + governed memory). Commercial exits, not engineering milestones.</p>
-      <span class="url">phases.html</span>
-    </a>
-    <a class="card" href="future.html">
-      <div class="card-head"><h2>Future · Slices 2–8</h2><span class="badge vision">Vision</span></div>
-      <p>What Pherix grows into. Every capability is the same fold/diff over the same journal, used differently — capabilities-vs-operations matrix, architecture growing slice by slice, wedge heatmap.</p>
-      <span class="url">future.html</span>
-    </a>
-    <a class="card" href="dogfood.html">
-      <div class="card-head"><h2>Dogfood suite</h2><span class="badge learn">Run it</span></div>
-      <p>Real LLM agents with Pherix in the tool-call path — shipped and runnable. DevOps (atomic release unwind), audit (concurrent + attributed), coding sandbox (agent-agnostic governance), plus the air-gapped local-agent capstone. Includes a <em>Start here</em> run guide and the story of the Slice-4 bug a real agent found that 367 tests missed.</p>
-      <span class="url">dogfood.html</span>
+    <a class="card" href="position.html">
+      <div class="card-head"><h2>Position</h2><span class="badge review">The business</span></div>
+      <p>Who it's for and why they pay. Autonomy inside a reversible envelope; the NO→YES for each agent type; the user journeys; the demos (atomic unwind, attributed audit, the air-gapped coding red-team); the honest privacy-bounded moat; and the open-core pricing model.</p>
+      <span class="url">position.html</span>
     </a>
   </section>
 
