@@ -56,6 +56,7 @@ from typing import Any, Callable
 
 from pherix.core.adapters.filesystem import FilesystemAdapter, FsHandle
 from pherix.core.adapters.http import HTTPAdapter
+from pherix.core.adapters.postgres import PostgresAdapter
 from pherix.core.adapters.sql import SQLiteAdapter, execute_isolated
 from pherix.core.audit import AuditJournal
 from pherix.core.policy import Policy
@@ -70,6 +71,55 @@ ACCOUNTS_SCHEMA = """
 CREATE TABLE accounts (id INTEGER PRIMARY KEY, name TEXT);
 INSERT INTO accounts (name) VALUES ('alice'), ('bob');
 """
+
+# The same seed on PostgreSQL — SERIAL for the auto-increment PK (SQLite's
+# INTEGER PRIMARY KEY is implicitly rowid; Postgres needs SERIAL). The two
+# existing rows, and therefore the backfill trap, are identical.
+ACCOUNTS_SCHEMA_PG = """
+CREATE TABLE accounts (id SERIAL PRIMARY KEY, name TEXT);
+INSERT INTO accounts (name) VALUES ('alice'), ('bob');
+"""
+
+
+@dataclass(frozen=True)
+class SqlDialect:
+    """The thin slice of SQL that actually differs between SQLite and Postgres.
+
+    Everything else in this scenario is portable DDL/DML; only three things vary,
+    so they live here behind one seam: the seed schema (PK syntax), the
+    parameter placeholder (``?`` vs ``%s``), and how you ask the database which
+    columns a table has (``PRAGMA table_info`` is SQLite-only). The mechanism
+    test drives :data:`SQLITE`; the real-agent demo drives :data:`POSTGRES`
+    against a genuine server. Same goal, same backfill trap, same atomic unwind —
+    only the dialect under it changes, which is the whole "not a toy" point.
+    """
+
+    name: str
+    schema: str
+    placeholder: str
+
+    def columns(self, conn: Any) -> list[str]:
+        """The column names on the ``accounts`` table, read live from the DB."""
+        if self.name == "sqlite":
+            return [r[1] for r in conn.execute("PRAGMA table_info(accounts)")]
+        cur = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'accounts' AND table_schema = current_schema()"
+        )
+        return [r[0] for r in cur.fetchall()]
+
+
+SQLITE = SqlDialect(name="sqlite", schema=ACCOUNTS_SCHEMA, placeholder="?")
+POSTGRES = SqlDialect(name="postgres", schema=ACCOUNTS_SCHEMA_PG, placeholder="%s")
+
+
+def dialect_for(backend: str) -> SqlDialect:
+    """Map a backend name (``"sqlite"`` / ``"postgres"``) to its dialect."""
+    if backend == "postgres":
+        return POSTGRES
+    if backend == "sqlite":
+        return SQLITE
+    raise ValueError(f"backend must be 'sqlite' or 'postgres', got {backend!r}")
 
 # The version this dogfood ships. The smoke test checks the agent deployed and
 # configured *this* version.
@@ -153,7 +203,11 @@ class DeployTarget:
 
 
 def health_problems(
-    target: DeployTarget, conn: Any, fs_root: Path, version: str
+    target: DeployTarget,
+    conn: Any,
+    fs_root: Path,
+    version: str,
+    dialect: SqlDialect = SQLITE,
 ) -> list[str]:
     """Compute, from the *real* post-deploy state, why the release is unhealthy.
 
@@ -161,7 +215,8 @@ def health_problems(
     actual state the agent produced — the deployed version, the on-disk config,
     and the live schema/rows on the transaction's own connection (the migration
     and backfill applied live inside the SAVEPOINT, so they are visible here at
-    commit-time before the txn finalises).
+    commit-time before the txn finalises). ``dialect`` decides how the column
+    introspection is phrased (SQLite ``PRAGMA`` vs Postgres ``information_schema``).
     """
     problems: list[str] = []
 
@@ -176,7 +231,7 @@ def health_problems(
     elif f"version={version}" not in conf.read_text():
         problems.append(f"release.conf does not declare version={version}")
 
-    columns = [r[1] for r in conn.execute("PRAGMA table_info(accounts)")]
+    columns = dialect.columns(conn)
     if FLAG_COLUMN not in columns:
         problems.append(
             f"accounts.{FLAG_COLUMN} column is missing (migration not applied)"
@@ -195,13 +250,16 @@ def health_problems(
 
 
 def build_tools(
-    target: DeployTarget, *, db_conn: Any, fs_root: Path
+    target: DeployTarget, *, db_conn: Any, fs_root: Path, dialect: SqlDialect = SQLITE
 ) -> list[Callable[..., Any]]:
     """Register and return the agent's release tools (+ the compensator).
 
     ``db_conn`` / ``fs_root`` are the same connection and root the adapters are
     bound to; ``smoke_test`` closes over them to read the live post-deploy state
-    when it fires at commit-time. Tools must be registered *inside* a function
+    when it fires at commit-time. ``dialect`` carries the SQL that differs between
+    SQLite and Postgres (the param placeholder, the column introspection) so the
+    same tools run unchanged on either backend. Tools must be registered *inside*
+    a function
     (never at module top level): the ``REGISTRY`` is process-global and
     re-registering a name raises, so the test fixture clears it around each test
     and the caller registers fresh. The returned list is the agent's tool
@@ -230,7 +288,7 @@ def build_tools(
         """Set `column` to `value` for ALL existing accounts rows (reversible)."""
         cur = execute_isolated(
             conn,
-            f"UPDATE accounts SET {_safe_ident(column)} = ?",
+            f"UPDATE accounts SET {_safe_ident(column)} = {dialect.placeholder}",
             (value,),
             writes=[("accounts", "rows")],
         )
@@ -298,7 +356,7 @@ def build_tools(
         in the engine's staged-fire loop and triggers the mixed-fold unwind.
         """
         target.record_smoke(version)
-        problems = health_problems(target, db_conn, fs_root, version)
+        problems = health_problems(target, db_conn, fs_root, version, dialect)
         if problems:
             raise SmokeTestFailed(version, problems)
         return f"smoke test passed for {version!r}: release is healthy"
@@ -334,6 +392,7 @@ def run_release(
     task: str | None = None,
     api: str = "anthropic",
     base_url: str | None = None,
+    backend: str = "sqlite",
 ) -> AgentRun:
     """Run the v2 release through a real (or mocked) agent.
 
@@ -359,9 +418,13 @@ def run_release(
     proof.
     """
     audit = audit or AuditJournal.in_memory()
-    tools = build_tools(target, db_conn=conn, fs_root=fs_root)
+    dialect = dialect_for(backend)
+    sql_adapter = (
+        PostgresAdapter(conn) if backend == "postgres" else SQLiteAdapter(conn)
+    )
+    tools = build_tools(target, db_conn=conn, fs_root=fs_root, dialect=dialect)
     adapters = {
-        "sql": SQLiteAdapter(conn),
+        "sql": sql_adapter,
         "fs": FilesystemAdapter(fs_root),
         "http": HTTPAdapter(),
     }

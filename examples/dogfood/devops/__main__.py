@@ -20,9 +20,19 @@ The local endpoint is taken from ``--base-url`` (or ``OPENAI_BASE_URL``,
 defaulting to Ollama's ``http://localhost:11434/v1``) and the model from
 ``--model`` (or ``PHERIX_LOCAL_MODEL``).
 
-Needs ``pip install -e '.[dogfood]'``. The cloud path needs an Anthropic key in
-``.env`` at the repo root (see ``.env.example``); the local path needs a running
-local server and no key. Two phases:
+**This demo is Postgres-only.** The release runs against a *real* PostgreSQL
+server (a genuine ``SAVEPOINT`` / ``ROLLBACK TO SAVEPOINT`` is the point — SQLite
+alone reads as a toy), so set ``PHERIX_PG_DSN`` (or ``DATABASE_URL``) to a
+reachable server, e.g. ``postgresql://localhost/pherix_dogfood`` after a local
+``createdb pherix_dogfood``. Each run gets its own disposable schema, dropped on
+exit. (The offline mechanism test still uses SQLite — see ``test_dogfood_devops``;
+the Postgres lane is guarded in ``test_dogfood_devops_postgres``.)
+
+Needs ``pip install -e '.[dogfood,postgres]'``. The cloud path needs an Anthropic
+key in ``.env`` at the repo root (see ``.env.example``); the local path needs a
+running local model server and no key. Both still need the Postgres DSN. Two
+phases, and the whole run's journal is written to ``reports/devops.audit.db`` so
+you can open it in the governance console afterwards. Two phases:
 
   1. **Dry-run preview.** A real agent plans the release against a snapshot;
      Pherix folds it forward, prints the structured ``state_diff`` (the rows the
@@ -49,17 +59,23 @@ import os
 import sys
 from dataclasses import dataclass
 
-from examples.dogfood.capture import render_batch, run_devops_batch
+from examples.dogfood.capture import (
+    inspector_hint,
+    journal_path_for,
+    render_batch,
+    run_devops_batch,
+)
 from examples.dogfood.devops.scenario import (
-    ACCOUNTS_SCHEMA,
+    ACCOUNTS_SCHEMA_PG,
     DeployTarget,
     build_tools,
+    dialect_for,
 )
 from examples.dogfood.harness import run_agent
-from examples.dogfood.infra import scratch_sqlite, temp_tree
+from examples.dogfood.infra import scratch_postgres, temp_tree
 from pherix.core.adapters.filesystem import FilesystemAdapter
 from pherix.core.adapters.http import HTTPAdapter
-from pherix.core.adapters.sql import SQLiteAdapter
+from pherix.core.adapters.postgres import PostgresAdapter
 from pherix.core.audit import AuditJournal
 from pherix.core.policy import Policy
 from pherix.core.tools import REGISTRY
@@ -102,11 +118,14 @@ def preview_release(audit: AuditJournal, backend: Backend) -> None:
     """Phase 1 — a real agent plans the release as a dry-run; we print the diff."""
     _banner("1. DRY-RUN PREVIEW — what the release would do (nothing committed)")
     REGISTRY.clear()
-    with scratch_sqlite(ACCOUNTS_SCHEMA) as db, temp_tree() as tree:
+    dialect = dialect_for("postgres")
+    with scratch_postgres(ACCOUNTS_SCHEMA_PG) as db, temp_tree() as tree:
         target = DeployTarget()
-        tools = build_tools(target, db_conn=db.conn, fs_root=tree)
+        tools = build_tools(
+            target, db_conn=db.conn, fs_root=tree, dialect=dialect
+        )
         adapters = {
-            "sql": SQLiteAdapter(db.conn),
+            "sql": PostgresAdapter(db.conn),
             "fs": FilesystemAdapter(tree),
             "http": HTTPAdapter(),
         }
@@ -146,12 +165,24 @@ def preview_release(audit: AuditJournal, backend: Backend) -> None:
 
 
 def real_releases(backend: Backend, runs: int = 4) -> None:
-    """Phase 2 — a batch of real releases; the genuine smoke check decides each."""
+    """Phase 2 — a batch of real releases; the genuine smoke check decides each.
+
+    Writes the whole batch's journal to ``reports/devops.audit.db`` so the
+    variance — committed and contained runs together — is openable in the
+    inspector afterwards.
+    """
     _banner(f"2. REAL RELEASES — {runs} runs, genuine smoke check decides each")
+    audit_path = journal_path_for("devops")
     summary = run_devops_batch(
-        runs=runs, model=backend.model, api=backend.api, base_url=backend.base_url
+        runs=runs,
+        model=backend.model,
+        api=backend.api,
+        base_url=backend.base_url,
+        backend="postgres",
+        audit_path=str(audit_path),
     )
     print(render_batch(summary))
+    print(inspector_hint(audit_path))
 
 
 _USAGE = """usage: python -m examples.dogfood.devops [--local] [--base-url URL] [--model ID]
