@@ -13,8 +13,20 @@ network, fully governed — is one **no cloud vendor can serve**.
 
 This is a **manual red-team**, not an automated test. The deterministic proofs
 live in the suite (`tests/test_openclaw_mcp.py`, `tests/test_dogfood_coding.py`,
-`tests/test_dogfood_harness_openai.py`); this guide is where a human drives the
-real thing end to end.
+`tests/test_dogfood_coding_redteam.py`, `tests/test_dogfood_harness_openai.py`);
+this guide is where a human drives the real thing end to end.
+
+> **Warm up with the autonomous red-team first.** Before wiring the full OpenClaw
+> daemon, run the harness-driven red-team — a real model given the same
+> "slim the repo and ship it" goal, contained by the same policy, attributed to
+> the same OpenClaw `client_id`, captured to the inspector:
+> ```bash
+> python -m examples.dogfood.coding redteam --local \
+>     --base-url http://localhost:11434/v1 --model qwen2.5-coder:7b
+> ```
+> It runs today with no OpenClaw install and produces the containment evidence
+> automatically (see [`demos.md`](demos.md)). The capstone below is the manual,
+> on-camera finale that adds the real OpenClaw daemon across both surfaces.
 
 ---
 
