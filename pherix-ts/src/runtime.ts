@@ -192,9 +192,9 @@ export class TxnContext implements RecordingContext {
     // capture the verdicts without raising, so the body keeps running and the
     // full journal materialises for the final DryRunResult.
     if (this.dryRunMode) {
-      this.stageVerdicts.push(...this.policy.tryEvaluate(effect, this.policyCtx, "stage"));
+      this.stageVerdicts.push(...(await this.policy.tryEvaluate(effect, this.policyCtx, "stage")));
     } else {
-      this.policy.evaluate(effect, this.policyCtx, "stage");
+      await this.policy.evaluate(effect, this.policyCtx, "stage");
     }
 
     this.txn.addEffect(effect);
@@ -257,7 +257,7 @@ export class TxnContext implements RecordingContext {
 
     // Commit-time policy re-eval (TOCTOU): walks the entire journal.
     try {
-      this.policy.evaluateJournal(this.txn, this.policyCtx);
+      await this.policy.evaluateJournal(this.txn, this.policyCtx);
     } catch (e) {
       if (e instanceof PolicyViolation) {
         if (e.effectIndex !== null) {
@@ -363,7 +363,7 @@ export class TxnContext implements RecordingContext {
    */
   async dryRunFinalise(): Promise<void> {
     // collectVerdicts re-walks the journal in capture mode (no short-circuit).
-    const commitVerdicts = this.policy.collectVerdicts(this.txn, this.policyCtx);
+    const commitVerdicts = await this.policy.collectVerdicts(this.txn, this.policyCtx);
     const allVerdicts = [...this.stageVerdicts, ...commitVerdicts];
     const wouldHaveFired = this.txn.effects.filter(
       (e) => !e.reversible && e.status === EffectStatus.STAGED,

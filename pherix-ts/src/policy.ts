@@ -27,7 +27,7 @@ export type Where = "stage" | "commit";
  * over its adapters with zero ceremony, and a test can supply a one-line fake
  * to prove a rule's behaviour at the policy layer.
  */
-export type ReadMediator = (resource: string, key: unknown) => unknown;
+export type ReadMediator = (resource: string, key: unknown) => unknown | Promise<unknown>;
 
 export class PolicyViolation extends Error {
   tool: string | null;
@@ -76,14 +76,22 @@ export function Deny(reason: string): Verdict {
 
 // -- rules -------------------------------------------------------------------
 
-export type RuleFn = (effect: Effect, ctx: PolicyContext) => Verdict;
+/**
+ * A rule is a predicate over (effect, world). It may be synchronous (the
+ * common args-only / cap case) or asynchronous — a world-state-aware rule that
+ * `await`s `ctx.read` over an async driver (Postgres) returns a `Promise`. The
+ * engine awaits every rule uniformly, so a sync rule is unaffected (awaiting a
+ * non-promise is a no-op). This is the same widening the adapter lifecycle took
+ * for async drivers, applied to the policy axis.
+ */
+export type RuleFn = (effect: Effect, ctx: PolicyContext) => Verdict | Promise<Verdict>;
 
 /** Anything the engine treats as a rule carries a stable `name` and evaluates. */
 export interface NamedRule {
   readonly name: string;
   appliesTo(effect: Effect): boolean;
   contribution(effect: Effect): number;
-  evaluate(effect: Effect, ctx: PolicyContext): Verdict;
+  evaluate(effect: Effect, ctx: PolicyContext): Verdict | Promise<Verdict>;
 }
 
 export class PolicyRule implements NamedRule {
@@ -103,7 +111,7 @@ export class PolicyRule implements NamedRule {
     return 0;
   }
 
-  evaluate(effect: Effect, ctx: PolicyContext): Verdict {
+  evaluate(effect: Effect, ctx: PolicyContext): Verdict | Promise<Verdict> {
     return this.fn(effect, ctx);
   }
 }
@@ -242,7 +250,7 @@ export class PolicyContext {
    * refund-if-paid rule pass against a phantom reading; the loud error is the
    * honest failure mode.
    */
-  read(resource: string, key: unknown): unknown {
+  async read(resource: string, key: unknown): Promise<unknown> {
     if (this.reader === null) {
       throw new Error(
         "PolicyContext.read called but no read mediator is bound. World-state-aware " +
@@ -250,7 +258,10 @@ export class PolicyContext {
           "reader; the runtime threads its adapter map in as that callable.",
       );
     }
-    return this.reader(resource, key);
+    // Awaitable so a rule reads uniformly whether the underlying driver is
+    // synchronous (SQLite) or asynchronous (Postgres). A rule does `await
+    // ctx.read(...)` either way.
+    return await this.reader(resource, key);
   }
 }
 
@@ -324,7 +335,7 @@ export class Policy {
    * allow/deny lists, then rules, then caps (accumulating contribution on
    * Allow). Raises PolicyViolation on the first Deny.
    */
-  evaluate(effect: Effect, ctx: PolicyContext, where?: Where): void {
+  async evaluate(effect: Effect, ctx: PolicyContext, where?: Where): Promise<void> {
     if (where !== undefined) ctx.where = where;
     const activeWhere = ctx.where;
     const indexFor = (): number | null => (activeWhere === "commit" ? effect.index : null);
@@ -345,9 +356,10 @@ export class Policy {
       });
     }
 
-    // 2. registered rules
+    // 2. registered rules — awaited so a world-state-aware rule can read live
+    // state over an async driver; a sync rule resolves immediately.
     for (const rule of this.rules) {
-      const verdict = rule.evaluate(effect, ctx);
+      const verdict = await rule.evaluate(effect, ctx);
       if (!verdict.allow) {
         throw new PolicyViolation(verdict.reason, {
           tool: effect.tool,
@@ -360,7 +372,7 @@ export class Policy {
 
     // 3. caps — evaluate, then accumulate on Allow.
     for (const cap of this.caps) {
-      const verdict = cap.evaluate(effect, ctx);
+      const verdict = await cap.evaluate(effect, ctx);
       if (!verdict.allow) {
         throw new PolicyViolation(verdict.reason, {
           tool: effect.tool,
@@ -380,10 +392,10 @@ export class Policy {
    * against every effect in journal order. First Deny raises with
    * where="commit" and the offending effect's index.
    */
-  evaluateJournal(txn: { effects: Effect[] }, ctx: PolicyContext): void {
+  async evaluateJournal(txn: { effects: Effect[] }, ctx: PolicyContext): Promise<void> {
     ctx.resetCaps();
     for (const effect of txn.effects) {
-      this.evaluate(effect, ctx, "commit");
+      await this.evaluate(effect, ctx, "commit");
     }
   }
 
@@ -399,7 +411,7 @@ export class Policy {
    * prefix of Allow-yielding effects — the load-bearing equality between
    * raise-mode and capture-mode.
    */
-  tryEvaluate(effect: Effect, ctx: PolicyContext, where?: Where): PolicyVerdict[] {
+  async tryEvaluate(effect: Effect, ctx: PolicyContext, where?: Where): Promise<PolicyVerdict[]> {
     if (where !== undefined) ctx.where = where;
     const activeWhere = ctx.where;
     const verdicts: PolicyVerdict[] = [];
@@ -431,7 +443,7 @@ export class Policy {
 
     // 2. registered rules — one verdict each, regardless of outcome.
     for (const rule of this.rules) {
-      const v = rule.evaluate(effect, ctx);
+      const v = await rule.evaluate(effect, ctx);
       verdicts.push(
         new PolicyVerdict({
           allow: v.allow,
@@ -446,7 +458,7 @@ export class Policy {
 
     // 3. caps — one verdict each; accumulate only on Allow.
     for (const cap of this.caps) {
-      const v = cap.evaluate(effect, ctx);
+      const v = await cap.evaluate(effect, ctx);
       verdicts.push(
         new PolicyVerdict({
           allow: v.allow,
@@ -471,11 +483,11 @@ export class Policy {
    * through every effect with `tryEvaluate`. Never raises on Deny. Used by
    * `dryRun` as the commit-time policy bracket.
    */
-  collectVerdicts(txn: { effects: Effect[] }, ctx: PolicyContext): PolicyVerdict[] {
+  async collectVerdicts(txn: { effects: Effect[] }, ctx: PolicyContext): Promise<PolicyVerdict[]> {
     ctx.resetCaps();
     const out: PolicyVerdict[] = [];
     for (const effect of txn.effects) {
-      out.push(...this.tryEvaluate(effect, ctx, "commit"));
+      out.push(...(await this.tryEvaluate(effect, ctx, "commit")));
     }
     return out;
   }
@@ -531,6 +543,12 @@ interface SyncSqlConnection {
   prepare(source: string): { get(...params: unknown[]): unknown };
 }
 
+/** The asynchronous slice of a SQL connection a reader needs: node-postgres'
+ *  `query(text, params)` returning `{ rows }` keyed by column name. */
+interface AsyncSqlConnection {
+  query(text: string, params?: unknown[]): Promise<{ rows: Array<Record<string, unknown>> }>;
+}
+
 /**
  * Build a ReadMediator over an adapter map for SQL reads. The returned callable
  * takes `(resource, key)` where `key` is a `[table, pkColumn, pkValue,
@@ -543,30 +561,42 @@ interface SyncSqlConnection {
  * from agent input — so interpolating them is safe by construction (SQLite
  * cannot parameterise identifiers regardless); pkValue is always bound.
  *
- * This is the synchronous SQLite path, mirroring Python's `sql_reader`. A
- * resource whose adapter exposes no synchronous `.connection` raises a clear
- * error — world-state reads over an async driver (Postgres) are a deferred
- * follow-up, since `ctx.read` is synchronous.
+ * Works over both drivers. A synchronous connection (SQLite's `.prepare().get`)
+ * returns the value directly; an asynchronous one (Postgres' `.query`) returns
+ * a Promise. `ctx.read` awaits whichever it gets, so a world-state rule reads
+ * uniformly regardless of the backing database.
  */
 export function sqlReader(adapters: Record<string, unknown>): ReadMediator {
-  return (resource: string, key: unknown): unknown => {
+  return (resource: string, key: unknown): unknown | Promise<unknown> => {
     const adapter = adapters[resource] as { connection?: unknown } | undefined;
     if (adapter === undefined) {
       throw new Error(`ctx.read: no adapter registered for resource ${JSON.stringify(resource)}`);
     }
-    const conn = adapter.connection as SyncSqlConnection | undefined;
-    if (conn === undefined || typeof conn.prepare !== "function") {
-      throw new Error(
-        `ctx.read: adapter for resource ${JSON.stringify(resource)} has no synchronous SQL ` +
-          `connection (.connection.prepare); world-state reads need a SQL-shaped adapter`,
-      );
-    }
-    const [table, pkCol, pkVal, valueCol] = key as [string, string, unknown, string];
-    const row = conn.prepare(`SELECT ${valueCol} FROM ${table} WHERE ${pkCol} = ?`).get(pkVal) as
-      | Record<string, unknown>
+    const conn = adapter.connection as
+      | (Partial<SyncSqlConnection> & Partial<AsyncSqlConnection>)
       | undefined;
-    if (row === undefined) return null;
-    return row[valueCol];
+    const [table, pkCol, pkVal, valueCol] = key as [string, string, unknown, string];
+
+    // Synchronous driver (SQLite): prepare + get, return the value directly.
+    if (conn !== undefined && typeof conn.prepare === "function") {
+      const row = conn.prepare(`SELECT ${valueCol} FROM ${table} WHERE ${pkCol} = ?`).get(pkVal) as
+        | Record<string, unknown>
+        | undefined;
+      return row === undefined ? null : row[valueCol];
+    }
+
+    // Asynchronous driver (Postgres): query with a bound $1, await the rows.
+    if (conn !== undefined && typeof conn.query === "function") {
+      return conn
+        .query(`SELECT ${valueCol} FROM ${table} WHERE ${pkCol} = $1`, [pkVal])
+        .then((res) => (res.rows.length === 0 ? null : (res.rows[0]![valueCol] ?? null)));
+    }
+
+    throw new Error(
+      `ctx.read: adapter for resource ${JSON.stringify(resource)} has no SQL connection ` +
+        `(.connection.prepare for SQLite or .connection.query for Postgres); world-state ` +
+        `reads need a SQL-shaped adapter`,
+    );
   };
 }
 
@@ -603,13 +633,13 @@ export function refundIfPaid(opts: RefundIfPaidOptions = {}): RuleFn {
   const paidValue = opts.paidValue ?? "paid";
   const resource = opts.resource ?? "sql";
 
-  const rule: RuleFn = (effect, ctx) => {
+  const rule: RuleFn = async (effect, ctx) => {
     if (effect.tool !== tool) return Allow();
     if (!(idArg in effect.args)) {
       return Deny(`refundIfPaid: tool ${JSON.stringify(tool)} has no ${JSON.stringify(idArg)} arg`);
     }
     const orderId = effect.args[idArg];
-    const liveStatus = ctx.read(resource, [table, pkColumn, orderId, statusColumn]);
+    const liveStatus = await ctx.read(resource, [table, pkColumn, orderId, statusColumn]);
     if (liveStatus !== paidValue) {
       return Deny(
         `refundIfPaid: order ${JSON.stringify(orderId)} is ${JSON.stringify(liveStatus)}, not ` +
