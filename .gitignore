@@ -14,3 +14,4 @@ venv/
 reports/
 # Secrets — dogfood agents read ANTHROPIC_API_KEY from here. Never commit.
 .env
+*.demo.json

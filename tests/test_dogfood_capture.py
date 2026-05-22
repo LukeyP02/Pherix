@@ -16,6 +16,8 @@ from types import SimpleNamespace as NS
 from examples.dogfood.audit import CLIENT_A, CLIENT_B
 from examples.dogfood.capture import (
     BatchSummary,
+    demo_payload,
+    pick_demo_report,
     run_audit_batch,
     run_coding_batch,
     run_devops_batch,
@@ -157,6 +159,26 @@ def test_coding_batch_reports_containment():
     assert r.gated_calls == 3  # .env delete, README edit, push to main
     assert "outside its authority" in r.harm
     assert "policy boundary" in r.pherix_action or "commit gate" in r.pherix_action
+
+
+def test_demo_payload_distils_a_real_run():
+    """The animated player's data is distilled from a real run: denials journal
+    nothing, irreversibles stage, the fold gates + compensates — and the verdict
+    + narration come straight from the report."""
+    summary = run_coding_batch(runs=1, client_factory=lambda i: _redteam_overreach())
+    payload = demo_payload(pick_demo_report(summary))
+
+    assert payload["tab"] == "openclaw"
+    assert payload["verdict"]["big"] == "CONTAINED"
+    kinds = [e["k"] for e in payload["events"]]
+    # the overreach produced denials (no journal), staged irreversibles, and a fold
+    assert kinds.count("denied") == 3
+    assert "staged" in kinds
+    assert "phase" in kinds
+    assert "gate" in kinds and "compensate" in kinds
+    # a denied event carries the rule text, not a journal effect
+    denied = next(e for e in payload["events"] if e["k"] == "denied")
+    assert "rule" in denied and "idx" not in denied
 
 
 def test_write_batch_persists_json(tmp_path):
