@@ -1,0 +1,201 @@
+"""Stdlib HTTP server for the inspector — zero third-party dependencies.
+
+A :class:`http.server.ThreadingHTTPServer` exposing a small read-only JSON
+API over a :class:`pherix.inspector.reader.JournalReader`, plus the static
+frontend. Live mode is plain polling: the page re-fetches the list and the
+open timeline on an interval, so a demo run *animates* as effects land and
+unwind — no websockets, no SSE, nothing to break offline.
+
+Routes:
+
+==============================  ===========================================
+``GET /``                       the console (static ``index.html``)
+``GET /static/<file>``          frontend assets (allow-listed names only)
+``GET /api/stats``              headline counts + the filter vocabulary
+``GET /api/transactions``       list + filter (query params below)
+``GET /api/transactions/<id>``  one transaction's full timeline
+==============================  ===========================================
+
+``/api/transactions`` accepts ``state``, ``client_id``, ``tool``, ``since``,
+``until``, ``include_dry_run`` (``0``/``1``), and ``limit``.
+
+The reader is shared across request threads behind a lock — SQLite reads are
+fast and the console is single-operator, so serialising them is simpler and
+safer than juggling a connection pool.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib import resources
+from typing import cast
+from urllib.parse import parse_qs, urlparse
+
+from pherix.inspector.reader import JournalReader
+
+# Allow-listed static assets — no filesystem path is ever derived from the
+# request, so path traversal is impossible by construction.
+_STATIC = {
+    "index.html": "text/html; charset=utf-8",
+    "app.js": "application/javascript; charset=utf-8",
+    "style.css": "text/css; charset=utf-8",
+}
+
+
+def _static_bytes(name: str) -> bytes:
+    return (resources.files("pherix.inspector.static") / name).read_bytes()
+
+
+class InspectorServer(ThreadingHTTPServer):
+    """Server subclass that declares the read-only journal handles the
+    handler reaches for. Declaring them here (rather than ad-hoc attribute
+    assignment) keeps the handler's ``self.srv`` access type-clean."""
+
+    reader: JournalReader
+    lock: threading.Lock
+    verbose: bool = False
+
+
+class InspectorHandler(BaseHTTPRequestHandler):
+    server_version = "PherixInspector/1.0"
+
+    @property
+    def srv(self) -> InspectorServer:
+        # self.server is typed as the base BaseServer; it is always an
+        # InspectorServer here (make_server builds one). cast is a no-op at
+        # runtime and avoids per-access type-ignores.
+        return cast(InspectorServer, self.server)
+
+    # --- helpers ------------------------------------------------------------
+
+    def _send(self, code: int, body: bytes, content_type: str) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        # Local console; the journal is read-only. No caching so live mode
+        # always sees the freshest rows.
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _json(self, code: int, payload: object) -> None:
+        self._send(
+            code,
+            json.dumps(payload).encode("utf-8"),
+            "application/json; charset=utf-8",
+        )
+
+    def _read(self, fn, *args, **kwargs):
+        """Run a reader call under the shared lock (SQLite read serialisation)."""
+        with self.srv.lock:
+            return fn(*args, **kwargs)
+
+    # --- routing ------------------------------------------------------------
+
+    def do_HEAD(self) -> None:  # noqa: N802 (http.server naming)
+        self.do_GET()
+
+    def do_GET(self) -> None:  # noqa: N802 (http.server naming)
+        parsed = urlparse(self.path)
+        path = parsed.path
+        try:
+            if path == "/" or path == "/index.html":
+                self._send(200, _static_bytes("index.html"), _STATIC["index.html"])
+                return
+            if path.startswith("/static/"):
+                name = path[len("/static/"):]
+                if name in _STATIC:
+                    self._send(200, _static_bytes(name), _STATIC[name])
+                else:
+                    self._json(404, {"error": "not found"})
+                return
+            if path == "/api/stats":
+                self._json(200, self._read(self.srv.reader.stats))
+                return
+            if path == "/api/transactions":
+                self._json(200, self._list(parse_qs(parsed.query)))
+                return
+            if path.startswith("/api/transactions/"):
+                txn_id = path[len("/api/transactions/"):]
+                timeline = self._read(self.srv.reader.get_timeline, txn_id)
+                if timeline is None:
+                    self._json(404, {"error": f"no transaction {txn_id!r}"})
+                else:
+                    self._json(200, timeline)
+                return
+            self._json(404, {"error": "not found"})
+        except BrokenPipeError:
+            # Client navigated away mid-response (common during live polling).
+            pass
+        except Exception as exc:  # surface as JSON rather than a stack-trace page
+            self._json(500, {"error": str(exc)})
+
+    def _list(self, q: dict[str, list[str]]) -> list[dict]:
+        def one(key: str) -> str | None:
+            vals = q.get(key)
+            return vals[0] if vals else None
+
+        include_dry_run = one("include_dry_run")
+        limit = one("limit")
+        return self._read(
+            self.srv.reader.list_transactions,
+            state=one("state"),
+            client_id=one("client_id"),
+            tool=one("tool"),
+            since=one("since"),
+            until=one("until"),
+            include_dry_run=(include_dry_run != "0"),
+            limit=int(limit) if (limit and limit.isdigit()) else 200,
+        )
+
+    def log_message(self, *args) -> None:  # quieter: one line, opt-in
+        if self.srv.verbose:
+            super().log_message(*args)
+
+
+def make_server(db_path: str, host: str = "127.0.0.1", port: int = 8765,
+                verbose: bool = False) -> InspectorServer:
+    """Build (but don't start) the inspector server over ``db_path``."""
+    httpd = InspectorServer((host, port), InspectorHandler)
+    httpd.reader = JournalReader(db_path)
+    httpd.lock = threading.Lock()
+    httpd.verbose = verbose
+    return httpd
+
+
+def serve(db_path: str, host: str = "127.0.0.1", port: int = 8765,
+          verbose: bool = False) -> None:
+    httpd = make_server(db_path, host, port, verbose)
+    url = f"http://{host}:{port}/"
+    print(f"Pherix inspector → {url}")
+    print(f"  journal: {db_path}  (read-only)")
+    print("  Ctrl-C to stop.")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped.")
+    finally:
+        httpd.reader.close()
+        httpd.server_close()
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="python -m pherix.inspector",
+        description="Live governance console over a Pherix audit journal.",
+    )
+    ap.add_argument("--db", required=True, help="path to the audit journal SQLite file")
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--verbose", action="store_true", help="log each request")
+    args = ap.parse_args(argv)
+    serve(args.db, args.host, args.port, args.verbose)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
