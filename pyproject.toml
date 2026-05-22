@@ -42,6 +42,13 @@ all-adapters = ["psycopg[binary]", "pymysql", "pymongo", "boto3", "redis"]
 # server-backed tests skip cleanly when absent.
 test-adapters = ["psycopg[binary]", "pymysql", "pymongo", "boto3", "moto", "redis", "fakeredis", "mongomock"]
 
+# The commercial control plane (dashboard/backend/) — a separate multi-tenant
+# service, NOT part of the OSS kernel. The library never imports it; `import
+# pherix` needs none of these and the default test suite skips the control-plane
+# tests when the extra is absent (importorskip), so everything stays offline-clean.
+# httpx ships FastAPI's TestClient. uvicorn runs the service.
+control-plane = ["fastapi", "uvicorn", "httpx"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
