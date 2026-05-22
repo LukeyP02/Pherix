@@ -26,7 +26,7 @@ import {
 } from "./adapters/base.js";
 import { AuditJournal } from "./audit.js";
 import { Effect, EffectStatus, StagedResult } from "./effects.js";
-import { Policy, PolicyContext, PolicyViolation } from "./policy.js";
+import { Policy, PolicyContext, PolicyViolation, sqlReader } from "./policy.js";
 import { REGISTRY, activeEffect, activeTxn, type RecordingContext } from "./tools.js";
 import { Transaction, TxnState } from "./transaction.js";
 
@@ -106,7 +106,14 @@ export class TxnContext implements RecordingContext {
     // One PolicyContext per txn: carries the journal-so-far reference + per-cap
     // running totals across every stage-time evaluate(), reused for the
     // commit-time evaluateJournal walk (which resets caps and re-folds).
-    this.policyCtx = new PolicyContext({ journal: this.txn.effects, where: "stage" });
+    // The reader is a closure over the live adapter map, so a world-state-aware
+    // rule's ctx.read(resource, key) queries the right adapter's live committed
+    // state — the substrate for #7's TOCTOU divergence between the two walks.
+    this.policyCtx = new PolicyContext({
+      journal: this.txn.effects,
+      where: "stage",
+      reader: sqlReader(adapters),
+    });
     this.audit.recordTransaction(this.txn, { clientId: this.clientId });
   }
 

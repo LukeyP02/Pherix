@@ -63,8 +63,18 @@ export {
   Cap,
   Allow,
   Deny,
+  sqlReader,
+  refundIfPaid,
 } from "./policy.js";
-export type { Verdict, RuleFn, NamedRule, Where, PolicyInit } from "./policy.js";
+export type {
+  Verdict,
+  RuleFn,
+  NamedRule,
+  Where,
+  PolicyInit,
+  ReadMediator,
+  RefundIfPaidOptions,
+} from "./policy.js";
 
 // Audit journal
 export { AuditJournal } from "./audit.js";

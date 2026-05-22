@@ -19,6 +19,16 @@ import type { Effect } from "./effects.js";
 
 export type Where = "stage" | "commit";
 
+/**
+ * A read mediator answers "what is the live value at (resource, key) right
+ * now?" for world-state-aware rules (#7). The runtime owns the adapter map and
+ * the live connections, so it constructs one of these and threads it into every
+ * PolicyContext. Kept as a bare callable so the runtime can supply a closure
+ * over its adapters with zero ceremony, and a test can supply a one-line fake
+ * to prove a rule's behaviour at the policy layer.
+ */
+export type ReadMediator = (resource: string, key: unknown) => unknown;
+
 export class PolicyViolation extends Error {
   tool: string | null;
   reason: string;
@@ -191,10 +201,12 @@ export class PolicyContext {
   private readonly journalRef: readonly Effect[];
   where: Where;
   private readonly capTotals = new Map<NamedRule, number>();
+  private readonly reader: ReadMediator | null;
 
-  constructor(opts: { journal: readonly Effect[]; where: Where }) {
+  constructor(opts: { journal: readonly Effect[]; where: Where; reader?: ReadMediator | null }) {
     this.journalRef = opts.journal;
     this.where = opts.where;
+    this.reader = opts.reader ?? null;
   }
 
   /** The journal so far, as a snapshot a rule cannot mutate. */
@@ -215,8 +227,30 @@ export class PolicyContext {
     this.capTotals.clear();
   }
 
-  read(_resource: string, _key: unknown): unknown {
-    throw new Error("world-state-aware reads are not implemented in the base SDK");
+  /**
+   * Read live world-state through the runtime-supplied mediator (#7).
+   *
+   * A rule that needs live adapter state — e.g. "refund order 42 only if its
+   * status is 'paid' *right now*" — calls `ctx.read(resource, key)`. The read
+   * is live, so the commit-time re-walk can *diverge* from stage-time: if the
+   * world moved between the two evaluations of the same predicate, `ctx.read`
+   * returns the new value and the verdict can flip. That divergence is the
+   * TOCTOU protection the twice-evaluated bracket exists to provide.
+   *
+   * Throws if no reader is bound — a rule that needs world state must be run by
+   * a runtime (or test) that supplied one. A silent `null` would let a
+   * refund-if-paid rule pass against a phantom reading; the loud error is the
+   * honest failure mode.
+   */
+  read(resource: string, key: unknown): unknown {
+    if (this.reader === null) {
+      throw new Error(
+        "PolicyContext.read called but no read mediator is bound. World-state-aware " +
+          "rules require the runtime (or test) to construct PolicyContext with a " +
+          "reader; the runtime threads its adapter map in as that callable.",
+      );
+    }
+    return this.reader(resource, key);
   }
 }
 
@@ -352,4 +386,105 @@ export class Policy {
       this.evaluate(effect, ctx, "commit");
     }
   }
+}
+
+// -- #7: world-state-aware rules + the SQL read mediator -------------------
+
+/** The synchronous slice of a SQL connection a reader needs: prepare a query
+ *  and fetch one row keyed by a bound parameter. better-sqlite3's `get`
+ *  returns the row as an object keyed by column name. */
+interface SyncSqlConnection {
+  prepare(source: string): { get(...params: unknown[]): unknown };
+}
+
+/**
+ * Build a ReadMediator over an adapter map for SQL reads. The returned callable
+ * takes `(resource, key)` where `key` is a `[table, pkColumn, pkValue,
+ * valueColumn]` tuple, and returns the live value of `valueColumn` for that row
+ * — or `null` if the row is absent.
+ *
+ * The read goes through the adapter's own connection, so it sees the
+ * transaction's view of committed state at the instant of the call. Identifier
+ * parts (table, pkColumn, valueColumn) come from the rule definition — never
+ * from agent input — so interpolating them is safe by construction (SQLite
+ * cannot parameterise identifiers regardless); pkValue is always bound.
+ *
+ * This is the synchronous SQLite path, mirroring Python's `sql_reader`. A
+ * resource whose adapter exposes no synchronous `.connection` raises a clear
+ * error — world-state reads over an async driver (Postgres) are a deferred
+ * follow-up, since `ctx.read` is synchronous.
+ */
+export function sqlReader(adapters: Record<string, unknown>): ReadMediator {
+  return (resource: string, key: unknown): unknown => {
+    const adapter = adapters[resource] as { connection?: unknown } | undefined;
+    if (adapter === undefined) {
+      throw new Error(`ctx.read: no adapter registered for resource ${JSON.stringify(resource)}`);
+    }
+    const conn = adapter.connection as SyncSqlConnection | undefined;
+    if (conn === undefined || typeof conn.prepare !== "function") {
+      throw new Error(
+        `ctx.read: adapter for resource ${JSON.stringify(resource)} has no synchronous SQL ` +
+          `connection (.connection.prepare); world-state reads need a SQL-shaped adapter`,
+      );
+    }
+    const [table, pkCol, pkVal, valueCol] = key as [string, string, unknown, string];
+    const row = conn.prepare(`SELECT ${valueCol} FROM ${table} WHERE ${pkCol} = ?`).get(pkVal) as
+      | Record<string, unknown>
+      | undefined;
+    if (row === undefined) return null;
+    return row[valueCol];
+  };
+}
+
+export interface RefundIfPaidOptions {
+  tool?: string;
+  table?: string;
+  idArg?: string;
+  pkColumn?: string;
+  statusColumn?: string;
+  paidValue?: string;
+  resource?: string;
+}
+
+/**
+ * The canonical #7 rule: refund order N only if it is 'paid' *right now*.
+ *
+ * Returns a rule `(effect, ctx) -> Verdict` suitable for `policy.rule(...)`. It
+ * applies only to `tool` calls; for every other tool it is a no-op Allow.
+ *
+ * The rule reads the order's live status via `ctx.read` at evaluation time.
+ * Because the runtime evaluates the policy twice — stage-time and commit-time —
+ * the same predicate is checked against the world as it stands at each moment.
+ * If the order is 'paid' when staged but a concurrent actor flips it before
+ * commit, the stage-time read returns 'paid' (Allow) and the commit-time read
+ * returns the new value (Deny). That divergence is the TOCTOU protection an
+ * args-only rule cannot provide — the args never changed, only the world did.
+ */
+export function refundIfPaid(opts: RefundIfPaidOptions = {}): RuleFn {
+  const tool = opts.tool ?? "refundOrder";
+  const table = opts.table ?? "orders";
+  const idArg = opts.idArg ?? "orderId";
+  const pkColumn = opts.pkColumn ?? "id";
+  const statusColumn = opts.statusColumn ?? "status";
+  const paidValue = opts.paidValue ?? "paid";
+  const resource = opts.resource ?? "sql";
+
+  const rule: RuleFn = (effect, ctx) => {
+    if (effect.tool !== tool) return Allow();
+    if (!(idArg in effect.args)) {
+      return Deny(`refundIfPaid: tool ${JSON.stringify(tool)} has no ${JSON.stringify(idArg)} arg`);
+    }
+    const orderId = effect.args[idArg];
+    const liveStatus = ctx.read(resource, [table, pkColumn, orderId, statusColumn]);
+    if (liveStatus !== paidValue) {
+      return Deny(
+        `refundIfPaid: order ${JSON.stringify(orderId)} is ${JSON.stringify(liveStatus)}, not ` +
+          `${JSON.stringify(paidValue)} — refusing to refund a non-paid order (checked live at ` +
+          `${ctx.where}-time)`,
+      );
+    }
+    return Allow();
+  };
+  Object.defineProperty(rule, "name", { value: `refundIfPaid(${tool})` });
+  return rule;
 }
