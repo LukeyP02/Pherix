@@ -660,6 +660,123 @@ def write_batch(summary: BatchSummary, out_dir: Path) -> Path:
     return summary_path
 
 
+# --- demo payload (feeds the animated player / hero card) -------------------
+#
+# The animated demo (docs/operator/demo-player.html, demo-hero.html) plays a
+# scenario as a list of events with Pherix's verdict on each. Rather than
+# hand-author that list, distil it from a *real* RunReport: the journal gives the
+# effects + their final status (applied/staged/gated/compensated/failed), the
+# transcript gives the call order and the policy denials (which journal nothing),
+# and capture already computes the headline narration. Honest, real, and the
+# player drops it straight in by fetching ``<tab>.demo.json``.
+
+_SCN_META = {
+    "devops": ("Atomic unwind · DevOps", "devops",
+               "A prod migration fails its post-deploy smoke check, on real Postgres."),
+    "audit": ("Attributed audit", "audit",
+              "Two agents reconcile one ledger at the same time."),
+    "coding": ("Coding red-team", "openclaw",
+               'An agent told to "clean up and ship" reaches past its authority.'),
+}
+
+
+def _fmt_args(obj: Any, limit: int = 48) -> str:
+    """A compact ``k=v · k=v`` rendering of a tool's args for the demo card."""
+    if isinstance(obj, dict):
+        s = " · ".join(f"{k}={v}" for k, v in obj.items())
+    else:
+        s = str(obj)
+    return s if len(s) <= limit else s[: limit - 1] + "…"
+
+
+def _short(text: str, limit: int = 90) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def build_demo_events(report: RunReport) -> list[dict]:
+    """Distil a RunReport into the player's event list (live phase, then the fold).
+
+    Walks the compact transcript in order so calls, denials and journalled effects
+    interleave chronologically; then appends the commit-time fold (gate /
+    compensate / failed) derived from each effect's persisted final status.
+    """
+    events: list[dict] = []
+    journal = list(report.journal)
+    jpos = 0
+    for msg in report.transcript:
+        if msg.get("role") == "assistant" and isinstance(msg.get("text"), str):
+            events.append({"k": "say", "text": _short(msg["text"])})
+        for b in msg.get("blocks", []) or []:
+            if "text" in b and msg.get("role") == "assistant" and b.get("text"):
+                events.append({"k": "say", "text": _short(b["text"])})
+            elif "tool_use" in b:
+                events.append({"k": "call", "tool": b["tool_use"],
+                               "arg": _fmt_args(b.get("input"))})
+            elif "tool_result" in b:
+                body = str(b.get("tool_result", ""))
+                low = body.lower()
+                if b.get("is_error") and ("denied" in low or "forbidden" in low):
+                    rule = body.split(":", 2)[-1].strip() if ":" in body else body
+                    events.append({"k": "denied", "rule": _short(rule, 60)})
+                elif jpos < len(journal):
+                    e = journal[jpos]; jpos += 1
+                    kind = "applied" if e["reversible"] else "staged"
+                    events.append({"k": kind, "idx": e["index"], "tool": e["tool"],
+                                   "res": e["resource"], "args": _fmt_args(e["args"])})
+    # The commit-time fold, from final statuses.
+    gated = [e["index"] for e in journal if e["status"] == "GATED"]
+    failed = [e["index"] for e in journal if e["status"] == "FAILED"]
+    comp = [e["index"] for e in journal if e["status"] == "COMPENSATED"]
+    if gated or failed or comp:
+        events.append({"k": "phase", "text": "commit() — folding the journal"})
+        for i in failed:
+            events.append({"k": "failed", "idx": i})
+        if gated:
+            events.append({"k": "gate", "idxs": gated})
+        if comp:
+            events.append({"k": "compensate", "idxs": comp})
+    return events
+
+
+def demo_payload(report: RunReport) -> dict:
+    """A player-ready scenario dict for one run (title, situation, events, verdict)."""
+    title, tab, sit = _SCN_META.get(
+        report.scenario, (report.scenario, report.scenario, "")
+    )
+    big = {"contained": "CONTAINED", "committed": "COMMITTED",
+           "gated": "GATED — BLOCKED"}.get(report.verdict, report.verdict.upper())
+    kind = "contained" if report.verdict in ("contained", "gated") else "governed"
+    return {
+        "title": title, "tab": tab, "sit": sit,
+        "events": build_demo_events(report),
+        "verdict": {"kind": kind, "big": big, "narr": report.pherix_action},
+    }
+
+
+def pick_demo_report(summary: BatchSummary) -> RunReport | None:
+    """The most demo-worthy run in a batch — a contained/gated one if any, else the first."""
+    if not summary.reports:
+        return None
+    for r in summary.reports:
+        if r.verdict in ("contained", "gated"):
+            return r
+    return summary.reports[0]
+
+
+def write_demo(summary: BatchSummary, out_dir: Any = "reports") -> Path | None:
+    """Write ``<tab>.demo.json`` for the player from the batch's best run."""
+    report = pick_demo_report(summary)
+    if report is None:
+        return None
+    payload = demo_payload(report)
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"{payload['tab']}.demo.json"
+    path.write_text(json.dumps(payload, indent=2))
+    return path
+
+
 # --- CLI --------------------------------------------------------------------
 
 
@@ -675,6 +792,11 @@ def main(argv: list[str] | None = None) -> None:
         "--no-journal",
         action="store_true",
         help="skip writing the inspector audit journal (reports/<scenario>.audit.db)",
+    )
+    parser.add_argument(
+        "--emit-demo",
+        action="store_true",
+        help="distil the best run into reports/<tab>.demo.json for the animated player",
     )
     args = parser.parse_args(argv)
 
@@ -701,6 +823,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.out:
         path = write_batch(summary, Path(args.out))
         print(f"\nWrote {summary.total} run reports + summary to {path.parent}/")
+    if args.emit_demo:
+        demo = write_demo(summary)
+        if demo:
+            print(f"Wrote demo payload {demo} (load it in docs/operator/demo-player.html)")
     if journal:
         print(inspector_hint(journal))
 
