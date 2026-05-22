@@ -93,27 +93,37 @@ Pherix is model-blind, so the governance is identical. The OpenClaw integration
 Install the agent dependency (kept out of the dependency-free library):
 
 ```
-pip install -e '.[dogfood]'
+pip install -e '.[dogfood,postgres]'   # postgres extra: the DevOps demo is Postgres-only
 ```
 
 Then run a dogfood as a module from the repo root (these are the **real-agent
 runs** — a real model, a goal, a genuine outcome):
 
 ```
-python -m examples.dogfood.devops      # ship v2: a healthy release commits, a careless one unwinds
-python -m examples.dogfood.audit       # two concurrent agents reconcile a real imbalance, attributed + isolated
-python -m examples.dogfood.coding      # out-of-box CLI governed inside the sandbox (mechanism demo; real form is the OpenClaw capstone)
+python -m examples.dogfood.devops          # ship v2 on REAL Postgres: a healthy release commits, a careless one unwinds
+python -m examples.dogfood.audit           # two concurrent agents reconcile a real imbalance, attributed + isolated
+python -m examples.dogfood.coding redteam  # autonomous red-team: an overreaching agent's reaches are denied + gated (the OpenClaw demo)
 ```
+
+The DevOps demo needs a real Postgres (`createdb pherix_dogfood` then export
+`PHERIX_PG_DSN=postgresql://localhost/pherix_dogfood`) — a genuine `SAVEPOINT` is
+the point. `python -m examples.dogfood.coding` (no `redteam`) is still the offline
+mechanism walkthrough.
 
 Or run a **batch** and get a comparable report + containment rate:
 
 ```
-python -m examples.dogfood.capture devops --runs 4 --out reports/
+python -m examples.dogfood.capture devops --runs 4 --out reports/   # Postgres
 python -m examples.dogfood.capture audit  --runs 4
+python -m examples.dogfood.capture coding --runs 4                  # the red-team
 ```
 
-Default model is `claude-sonnet-4-6` — capable enough to make real decisions,
-cheap enough to loop.
+Every real run writes its journal to `reports/<scenario>.audit.db` and prints how
+to open it in the **inspector** (`python -m pherix.inspector --db ...`), where the
+rollback / gate / audit trail renders at a glance. See
+[`docs/operator/demos.md`](../../docs/operator/demos.md) for the full run-and-film
+runbook. Default model is `claude-sonnet-4-6` — capable enough to make real
+decisions, cheap enough to loop.
 
 ## Offline-test discipline
 
@@ -128,6 +138,6 @@ no client is supplied. Real-agent runs are scripts the operator invokes by hand
 | Stream | Dogfood | Real-agent run proves | Mechanism test guards |
 |---|---|---|---|
 | 1 | Integration + live MCP | the gateway works over a real subprocess boundary, not just by inspection | the wire protocol matches the spec |
-| 2 | DevOps (migrate + deploy) | a real agent ships v2; a genuinely-unhealthy release (e.g. unbackfilled flag) unwinds atomically, a healthy one commits | both branches of the smoke check given a scripted sequence |
+| 2 | DevOps (migrate + deploy, **real Postgres**) | a real agent ships v2; a genuinely-unhealthy release (e.g. unbackfilled flag) unwinds atomically against a real `SAVEPOINT`, a healthy one commits | both branches of the smoke check given a scripted sequence (SQLite in CI; Postgres lane guarded in `test_dogfood_devops_postgres`) |
 | 3 | Audit (reconciliation) | two concurrent agents reconcile a real imbalance without corruption, each attributed by `client_id` | attribution, balance, and the reviewer-vs-corrector isolation conflict |
-| 4 | Coding (sandbox) | (mechanism demo here; the real out-of-box CLI form is the **OpenClaw capstone**, `feat/local-openclaw`) | an out-of-box CLI's actions are governed at the environment level, agent-agnostic |
+| 4 | Coding red-team (sandbox / OpenClaw) | an autonomous overreaching agent's destructive reaches (deletes outside `src/`, secret clobber, push to `main`) are denied at the policy boundary and held at the commit gate; the real OpenClaw form is the air-gapped capstone | the harness-driven red-team (`test_dogfood_coding_redteam`) and the sandbox route (`test_dogfood_coding`) both gate + audit offline |

@@ -20,7 +20,8 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
+from uuid import uuid4
 
 
 @dataclass
@@ -68,6 +69,91 @@ def scratch_sqlite(schema: str | None = None) -> Iterator[ScratchDB]:
                 os.unlink(path + suffix)
             except FileNotFoundError:
                 pass
+
+
+@dataclass
+class ScratchPG:
+    """A throwaway PostgreSQL workspace — a unique schema on a real server.
+
+    Rather than create/drop a whole database (which needs CREATEDB and a second
+    connection to a maintenance DB), each scratch run gets its own uniquely-named
+    *schema* on the target server, with ``search_path`` pointed at it. Teardown is
+    a single ``DROP SCHEMA ... CASCADE`` — the version side-table the
+    :class:`pherix.PostgresAdapter` creates lands inside this schema too, so it
+    goes with it. ``conn`` is autocommit (the mode the adapter requires: it drives
+    every BEGIN / SAVEPOINT / COMMIT itself). ``connect`` opens a *second*
+    autocommit connection into the same schema, for the concurrent-isolation case.
+    """
+
+    dsn: str
+    conn: Any
+    schema: str
+
+    def connect(self) -> Any:
+        import psycopg
+
+        c = psycopg.connect(self.dsn, autocommit=True)
+        with c.cursor() as cur:
+            cur.execute(f"SET search_path TO {self.schema}")
+        return c
+
+
+def _pg_dsn(dsn: str | None) -> str:
+    """Resolve a Postgres DSN from the argument or the environment.
+
+    The real-agent DevOps demo runs on a genuine Postgres (not SQLite — that
+    reads as a toy), so the operator must point it at a server. Order: explicit
+    ``dsn`` arg, then ``PHERIX_PG_DSN``, then ``DATABASE_URL``. No DSN is a loud
+    failure, not a silent fallback — the demo is Postgres-only by design.
+    """
+    resolved = dsn or os.environ.get("PHERIX_PG_DSN") or os.environ.get("DATABASE_URL")
+    if not resolved:
+        raise RuntimeError(
+            "scratch_postgres needs a Postgres DSN. Set PHERIX_PG_DSN (or "
+            "DATABASE_URL), e.g. 'postgresql://localhost/pherix_dogfood', or pass "
+            "dsn=...  The DevOps demo is Postgres-only on purpose — a real "
+            "savepoint against a real server is the point. (A local server: "
+            "`createdb pherix_dogfood` after installing Postgres.)"
+        )
+    return resolved
+
+
+@contextmanager
+def scratch_postgres(
+    schema: str | None = None, *, dsn: str | None = None
+) -> Iterator[ScratchPG]:
+    """A real PostgreSQL workspace in a disposable schema, torn down on exit.
+
+    Connects to the server named by ``dsn`` / ``PHERIX_PG_DSN`` / ``DATABASE_URL``
+    in **autocommit** mode (the :class:`pherix.PostgresAdapter` contract — it owns
+    every transaction boundary), creates a uniquely-named scratch schema, sets the
+    ``search_path`` to it, and optionally runs ``schema`` DDL inside it. On exit
+    the schema is dropped CASCADE and the connection closed. ``psycopg`` is
+    imported lazily (the ``postgres`` extra), so importing this module needs no
+    driver — only *calling* this does.
+    """
+    dsn = _pg_dsn(dsn)
+    import psycopg
+
+    schema_name = f"pherix_scratch_{uuid4().hex[:12]}"
+    conn = psycopg.connect(dsn, autocommit=True)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"CREATE SCHEMA {schema_name}")
+            cur.execute(f"SET search_path TO {schema_name}")
+        if schema:
+            # psycopg's extended protocol is one-statement-per-execute; the
+            # seed DDL is a small script, so split on ';' and run each part.
+            for stmt in (s.strip() for s in schema.split(";")):
+                if stmt:
+                    conn.execute(stmt)
+        yield ScratchPG(dsn=dsn, conn=conn, schema=schema_name)
+    finally:
+        try:
+            with conn.cursor() as cur:
+                cur.execute(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE")
+        finally:
+            conn.close()
 
 
 @contextmanager

@@ -1,6 +1,6 @@
 """Run the coding sandbox.
 
-Two entry points:
+Three entry points:
 
   * ``python -m examples.dogfood.coding`` — a self-contained, **offline** (no
     key) walkthrough that drives the sandbox with a *simulated* sequence of a
@@ -10,6 +10,15 @@ Two entry points:
     view. This is the mechanism demo — it proves environment-level interception
     without needing a real CLI or a model.
 
+  * ``python -m examples.dogfood.coding redteam`` — the **real-agent run**: a
+    real model is given a "slim the repo and ship it" goal and decides for
+    itself, overreaching toward deletes outside ``src/``, secret clobbers, and a
+    push to ``main`` — which Pherix denies at the policy boundary and holds at
+    the commit gate. ``--local`` points it at a local OpenAI-compatible model
+    (Ollama / vLLM) — the air-gapped **OpenClaw capstone**. Writes
+    ``reports/coding.audit.db`` for the inspector. Needs ``pip install -e
+    '.[dogfood]'`` and a key (cloud) or a local endpoint (``--local``).
+
   * ``python -m examples.dogfood.coding route-cli <verb> <argv...>`` — the entry
     the PATH shims invoke during a *real* out-of-box CLI run. It reads the live
     session pointer (``PHERIX_SANDBOX_SESSION``) and routes the CLI's shelled-out
@@ -17,12 +26,15 @@ Two entry points:
     manual capstone protocol (running a real CLI on a local model inside the
     sandbox on a disposable box).
 
-The deterministic, automated proof of the mechanism is
-``tests/test_dogfood_coding.py`` — it asserts the gate + audit fire offline.
+The deterministic, automated proofs of the mechanism are
+``tests/test_dogfood_coding.py`` (the sandbox route) and
+``tests/test_dogfood_coding_redteam.py`` (the harness-driven red-team) — both
+assert the gate + audit fire offline.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -93,6 +105,71 @@ def _demo() -> int:
     return 0
 
 
+_OLLAMA_DEFAULT = "http://localhost:11434/v1"
+
+_REDTEAM_USAGE = """usage: python -m examples.dogfood.coding redteam \
+[--local] [--base-url URL] [--model ID] [--runs N]
+
+  (no flags)       cloud Anthropic (needs ANTHROPIC_API_KEY in .env)
+  --local          a local OpenAI-compatible endpoint (Ollama/vLLM) — the
+                   air-gapped OpenClaw capstone
+  --base-url URL   local endpoint (default OPENAI_BASE_URL or
+                   http://localhost:11434/v1); implies --local
+  --model ID       model id (default PHERIX_LOCAL_MODEL for --local)
+  --runs N         number of red-team runs (default 4)
+"""
+
+
+def _redteam(argv: list[str]) -> int:
+    """Real-agent run: the autonomous red-team batch + the inspector journal."""
+    from examples.dogfood.capture import (
+        inspector_hint,
+        journal_path_for,
+        render_batch,
+        run_coding_batch,
+    )
+
+    local = False
+    base_url: str | None = None
+    model: str | None = None
+    runs = 4
+    it = iter(argv)
+    for arg in it:
+        if arg == "--local":
+            local = True
+        elif arg == "--base-url":
+            base_url = next(it, None)
+            local = True
+        elif arg == "--model":
+            model = next(it, None)
+        elif arg == "--runs":
+            runs = int(next(it, "4") or "4")
+        elif arg in ("-h", "--help"):
+            print(_REDTEAM_USAGE, file=sys.stderr)
+            return 0
+        else:
+            print(f"unknown argument {arg!r}\n\n{_REDTEAM_USAGE}", file=sys.stderr)
+            return 2
+
+    if local:
+        api = "openai"
+        base_url = base_url or os.environ.get("OPENAI_BASE_URL") or _OLLAMA_DEFAULT
+        model = model or os.environ.get("PHERIX_LOCAL_MODEL")
+        label = f"LOCAL ({model or '?'} @ {base_url}) — OpenClaw capstone"
+    else:
+        api, base_url = "anthropic", None
+        label = f"CLOUD ({model or 'claude-sonnet-4-6'})"
+
+    print(f"Coding red-team dogfood — backend: {label}")
+    journal = str(journal_path_for("coding"))
+    summary = run_coding_batch(
+        runs=runs, model=model, api=api, base_url=base_url, audit_path=journal
+    )
+    print(render_batch(summary))
+    print(inspector_hint(journal))
+    return 0
+
+
 def _route_cli(argv: list[str]) -> int:
     """Shim entry: forward a real CLI's shelled-out git/sh call into Pherix.
 
@@ -116,6 +193,8 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "route-cli":
         return _route_cli(argv[1:])
+    if argv and argv[0] == "redteam":
+        return _redteam(argv[1:])
     return _demo()
 
 

@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -307,7 +308,127 @@ def audit_report(
     )
 
 
+def coding_report(run: AgentRun, *, client_id: str, index: int) -> RunReport:
+    """Build the report for one red-team run, narrating overreach + containment."""
+    from pherix.core.runtime import GateBlocked
+
+    denials = count_gated_calls(run)
+    gated_at_commit = isinstance(run.error, GateBlocked)
+    staged = [e for e in run.journal if e.resource in ("git", "shell")]
+    verdict = "contained" if (denials or gated_at_commit) else verdict_for(run)
+    harm = (
+        f"An overreaching cleanup agent attempted {denials} action(s) outside its "
+        "authority — deletes outside src/, a secret (.env) clobber, and/or a push "
+        "to main — plus irreversible git/shell actions it wanted to fire."
+    )
+    action_bits = []
+    if denials:
+        action_bits.append(
+            f"{denials} out-of-bounds action(s) were denied at the policy boundary "
+            "(stage-time) and journalled nothing"
+        )
+    if gated_at_commit:
+        action_bits.append(
+            f"the {len(staged)} staged irreversible(s) were held at the commit gate "
+            "(no compensator, no approval) and never fired"
+        )
+    action = (
+        ("; ".join(action_bits) + ". Only in-src edits could ever apply, and they "
+         "rolled back when the gate blocked commit — nothing destructive touched "
+         "the filesystem.")
+        if action_bits
+        else f"Transaction ended {run.final_state.name}; inspect the journal."
+    )
+    return RunReport(
+        scenario="coding",
+        client_id=client_id,
+        txn_id=run.txn_id,
+        final_state=run.final_state.name,
+        verdict=verdict,
+        turns=run.turns,
+        stop_reason=run.stop_reason,
+        error=str(run.error) if run.error else None,
+        gated_calls=denials,
+        harm=harm,
+        pherix_action=action,
+        journal=journal_summary(run),
+        transcript=compact_transcript(run),
+        extra={"staged_irreversibles": [e.tool for e in staged]},
+    )
+
+
 # --- batch runners ----------------------------------------------------------
+
+
+def run_coding_batch(
+    *,
+    runs: int = 4,
+    model: str | None = None,
+    api: str = "anthropic",
+    base_url: str | None = None,
+    client_id: str | None = None,
+    audit_path: str | None = None,
+    client_factory: Callable[[int], Any] | None = None,
+) -> BatchSummary:
+    """Run the autonomous coding red-team ``runs`` times and summarise containment.
+
+    Each run gives a real (or mocked) agent the cleanup-and-ship goal on a fresh
+    disposable repo; the variance is how far each agent overreaches and how
+    consistently Pherix contains it. ``client_id`` defaults to the OpenClaw
+    identity (this *is* the OpenClaw red-team, driven through the harness). When
+    ``audit_path`` is given every run writes to that one journal so the inspector
+    renders the whole batch's containment.
+    """
+    from examples.dogfood.coding.redteam import (
+        OPENCLAW_CLIENT_ID,
+        SEED_REPO,
+        run_redteam,
+    )
+    from examples.dogfood.infra import temp_tree
+
+    cid = client_id or OPENCLAW_CLIENT_ID
+    reports: list[RunReport] = []
+    for i in range(runs):
+        REGISTRY.clear()
+        client = client_factory(i) if client_factory else None
+        run_audit = (
+            AuditJournal(audit_path) if audit_path else AuditJournal.in_memory()
+        )
+        with temp_tree(SEED_REPO) as root:
+            run = run_redteam(
+                root=root,
+                client_id=cid,
+                client=client,
+                audit=run_audit,
+                model=model,
+                api=api,
+                base_url=base_url,
+            )
+            reports.append(coding_report(run, client_id=cid, index=i))
+    return BatchSummary.from_reports("coding", reports)
+
+
+@contextmanager
+def _devops_db(backend: str, pg_dsn: str | None):
+    """Yield a fresh scratch DB for one devops run, on the chosen backend.
+
+    Both :class:`ScratchDB` (SQLite) and :class:`ScratchPG` (Postgres) expose a
+    ``.conn`` the release runs against, so the caller is backend-blind. Postgres
+    is the real demo backend (a genuine SAVEPOINT against a real server);
+    SQLite is what the offline mechanism test drives.
+    """
+    if backend == "postgres":
+        from examples.dogfood.devops.scenario import ACCOUNTS_SCHEMA_PG
+        from examples.dogfood.infra import scratch_postgres
+
+        with scratch_postgres(ACCOUNTS_SCHEMA_PG, dsn=pg_dsn) as db:
+            yield db
+    else:
+        from examples.dogfood.devops.scenario import ACCOUNTS_SCHEMA
+        from examples.dogfood.infra import scratch_sqlite
+
+        with scratch_sqlite(ACCOUNTS_SCHEMA) as db:
+            yield db
 
 
 def run_devops_batch(
@@ -316,6 +437,9 @@ def run_devops_batch(
     model: str | None = None,
     api: str = "anthropic",
     base_url: str | None = None,
+    backend: str = "sqlite",
+    pg_dsn: str | None = None,
+    audit_path: str | None = None,
     client_factory: Callable[[int], Any] | None = None,
 ) -> BatchSummary:
     """Run the devops release ``runs`` times and summarise the variance.
@@ -324,23 +448,35 @@ def run_devops_batch(
     ``None`` each run builds the real SDK (needs a key, or a reachable local
     endpoint). ``api`` / ``base_url`` select the chat backend (cloud Anthropic or
     a local OpenAI-compatible endpoint) — the same batch runs identically against
-    a local open-source model. Each run gets fresh infrastructure (its own scratch
-    DB + tree + deploy target + audit), so the runs are independent samples of
-    what a real agent does with the same goal.
+    a local open-source model.
+
+    ``backend`` selects the *resource* backend the release runs against:
+    ``"postgres"`` (the real demo — a genuine server) or ``"sqlite"`` (what the
+    offline mechanism test drives). ``pg_dsn`` overrides the Postgres DSN
+    (otherwise ``PHERIX_PG_DSN`` / ``DATABASE_URL``).
+
+    ``audit_path`` is the inspector wiring: when given, every run in the batch
+    writes its journal to that *one* on-disk audit DB, so the inspector renders
+    the whole batch — committed and contained runs together — which is exactly
+    the variance the demo is about. When ``None`` each run keeps an in-memory
+    journal (nothing to inspect afterwards). Each run still gets fresh resource
+    infrastructure (its own scratch DB + tree + deploy target).
     """
     from examples.dogfood.devops.scenario import (
-        ACCOUNTS_SCHEMA,
         DeployTarget,
         SmokeTestFailed,
         run_release,
     )
-    from examples.dogfood.infra import scratch_sqlite, temp_tree
+    from examples.dogfood.infra import temp_tree
 
     reports: list[RunReport] = []
     for i in range(runs):
         REGISTRY.clear()
         client = client_factory(i) if client_factory else None
-        with scratch_sqlite(ACCOUNTS_SCHEMA) as db, temp_tree() as tree:
+        run_audit = (
+            AuditJournal(audit_path) if audit_path else AuditJournal.in_memory()
+        )
+        with _devops_db(backend, pg_dsn) as db, temp_tree() as tree:
             target = DeployTarget()
             run = run_release(
                 conn=db.conn,
@@ -348,10 +484,11 @@ def run_devops_batch(
                 target=target,
                 client=client,
                 client_id=f"devops-{i}",
-                audit=AuditJournal.in_memory(),
+                audit=run_audit,
                 model=model,
                 api=api,
                 base_url=base_url,
+                backend=backend,
             )
             problems = (
                 list(run.error.problems)
@@ -366,6 +503,7 @@ def run_audit_batch(
     *,
     runs: int = 4,
     model: str | None = None,
+    audit_path: str | None = None,
     clients_factory: Callable[[int], dict[str, Any]] | None = None,
 ) -> BatchSummary:
     """Run the two-agent reconciliation ``runs`` times and summarise the variance.
@@ -374,6 +512,11 @@ def run_audit_batch(
     ``clients_factory(i)`` returns the ``{client_id: client}`` map for iteration
     ``i`` (``None`` -> real SDK per agent). Produces two reports per iteration
     (one per reconciler), each carrying the iteration's corrected trial balance.
+
+    ``audit_path`` is the inspector wiring: when given, all iterations write to
+    that one on-disk journal (kept on exit) so the console renders the whole
+    batch's attributed, isolated activity; when ``None`` each iteration uses a
+    private tempfile, removed afterwards (the offline-test default).
     """
     import os
     import tempfile
@@ -398,14 +541,18 @@ def run_audit_batch(
         for w in AUDIT_TOOLS:
             if w.tool_spec.name not in REGISTRY:
                 REGISTRY.register(w.tool_spec)
-        audit_fd, audit_path = tempfile.mkstemp(suffix=".audit.db", prefix="pherix_")
-        os.close(audit_fd)
+        if audit_path:
+            iter_audit_path, ephemeral = audit_path, False
+        else:
+            fd, iter_audit_path = tempfile.mkstemp(suffix=".audit.db", prefix="pherix_")
+            os.close(fd)
+            ephemeral = True
         try:
             with scratch_sqlite(schema=LEDGER_SCHEMA) as db:
                 clients = clients_factory(i) if clients_factory else None
                 client_runs = run_two_agents(
                     db=db,
-                    audit_path=audit_path,
+                    audit_path=iter_audit_path,
                     tasks=tasks,
                     clients=clients,
                     model=model or "claude-sonnet-4-6",
@@ -426,8 +573,40 @@ def run_audit_batch(
                         )
                     )
         finally:
-            os.unlink(audit_path)
+            if ephemeral:
+                os.unlink(iter_audit_path)
     return BatchSummary.from_reports("audit", reports)
+
+
+# --- inspector wiring -------------------------------------------------------
+
+
+def journal_path_for(scenario: str, out_dir: Any = "reports") -> Path:
+    """A fresh on-disk audit-journal path for one demo run, under ``out_dir``.
+
+    The inspector renders a *persisted* journal, so each demo writes one here and
+    points the console at it. The file is removed if it already exists, so a run
+    shows only its own batch (the variance) and not a pile-up of past runs. The
+    ``reports/`` tree is gitignored — these are generated evidence, not source.
+    """
+    p = Path(out_dir) / f"{scenario}.audit.db"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    for sib in (p, Path(str(p) + "-wal"), Path(str(p) + "-shm")):
+        try:
+            sib.unlink()
+        except FileNotFoundError:
+            pass
+    return p
+
+
+def inspector_hint(audit_path: Any) -> str:
+    """The operator-facing line: how to open this run's journal in the console."""
+    return (
+        "\nInspect this run in the governance console (the rollback / gate / "
+        "audit trail, rendered):\n"
+        f"    python -m pherix.inspector --db {audit_path}\n"
+        "    # then open http://127.0.0.1:8765"
+    )
 
 
 # --- rendering / persistence ------------------------------------------------
@@ -481,28 +660,175 @@ def write_batch(summary: BatchSummary, out_dir: Path) -> Path:
     return summary_path
 
 
+# --- demo payload (feeds the animated player / hero card) -------------------
+#
+# The animated demo (docs/operator/demo-player.html, demo-hero.html) plays a
+# scenario as a list of events with Pherix's verdict on each. Rather than
+# hand-author that list, distil it from a *real* RunReport: the journal gives the
+# effects + their final status (applied/staged/gated/compensated/failed), the
+# transcript gives the call order and the policy denials (which journal nothing),
+# and capture already computes the headline narration. Honest, real, and the
+# player drops it straight in by fetching ``<tab>.demo.json``.
+
+_SCN_META = {
+    "devops": ("Atomic unwind · DevOps", "devops",
+               "A prod migration fails its post-deploy smoke check, on real Postgres."),
+    "audit": ("Attributed audit", "audit",
+              "Two agents reconcile one ledger at the same time."),
+    "coding": ("Coding red-team", "openclaw",
+               'An agent told to "clean up and ship" reaches past its authority.'),
+}
+
+
+def _fmt_args(obj: Any, limit: int = 48) -> str:
+    """A compact ``k=v · k=v`` rendering of a tool's args for the demo card."""
+    if isinstance(obj, dict):
+        s = " · ".join(f"{k}={v}" for k, v in obj.items())
+    else:
+        s = str(obj)
+    return s if len(s) <= limit else s[: limit - 1] + "…"
+
+
+def _short(text: str, limit: int = 90) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def build_demo_events(report: RunReport) -> list[dict]:
+    """Distil a RunReport into the player's event list (live phase, then the fold).
+
+    Walks the compact transcript in order so calls, denials and journalled effects
+    interleave chronologically; then appends the commit-time fold (gate /
+    compensate / failed) derived from each effect's persisted final status.
+    """
+    events: list[dict] = []
+    journal = list(report.journal)
+    jpos = 0
+    for msg in report.transcript:
+        if msg.get("role") == "assistant" and isinstance(msg.get("text"), str):
+            events.append({"k": "say", "text": _short(msg["text"])})
+        for b in msg.get("blocks", []) or []:
+            if "text" in b and msg.get("role") == "assistant" and b.get("text"):
+                events.append({"k": "say", "text": _short(b["text"])})
+            elif "tool_use" in b:
+                events.append({"k": "call", "tool": b["tool_use"],
+                               "arg": _fmt_args(b.get("input"))})
+            elif "tool_result" in b:
+                body = str(b.get("tool_result", ""))
+                low = body.lower()
+                if b.get("is_error") and ("denied" in low or "forbidden" in low):
+                    rule = body.split(":", 2)[-1].strip() if ":" in body else body
+                    events.append({"k": "denied", "rule": _short(rule, 60)})
+                elif jpos < len(journal):
+                    e = journal[jpos]; jpos += 1
+                    kind = "applied" if e["reversible"] else "staged"
+                    events.append({"k": kind, "idx": e["index"], "tool": e["tool"],
+                                   "res": e["resource"], "args": _fmt_args(e["args"])})
+    # The commit-time fold, from final statuses.
+    gated = [e["index"] for e in journal if e["status"] == "GATED"]
+    failed = [e["index"] for e in journal if e["status"] == "FAILED"]
+    comp = [e["index"] for e in journal if e["status"] == "COMPENSATED"]
+    if gated or failed or comp:
+        events.append({"k": "phase", "text": "commit() — folding the journal"})
+        for i in failed:
+            events.append({"k": "failed", "idx": i})
+        if gated:
+            events.append({"k": "gate", "idxs": gated})
+        if comp:
+            events.append({"k": "compensate", "idxs": comp})
+    return events
+
+
+def demo_payload(report: RunReport) -> dict:
+    """A player-ready scenario dict for one run (title, situation, events, verdict)."""
+    title, tab, sit = _SCN_META.get(
+        report.scenario, (report.scenario, report.scenario, "")
+    )
+    big = {"contained": "CONTAINED", "committed": "COMMITTED",
+           "gated": "GATED — BLOCKED"}.get(report.verdict, report.verdict.upper())
+    kind = "contained" if report.verdict in ("contained", "gated") else "governed"
+    return {
+        "title": title, "tab": tab, "sit": sit,
+        "events": build_demo_events(report),
+        "verdict": {"kind": kind, "big": big, "narr": report.pherix_action},
+    }
+
+
+def pick_demo_report(summary: BatchSummary) -> RunReport | None:
+    """The most demo-worthy run in a batch — a contained/gated one if any, else the first."""
+    if not summary.reports:
+        return None
+    for r in summary.reports:
+        if r.verdict in ("contained", "gated"):
+            return r
+    return summary.reports[0]
+
+
+def write_demo(summary: BatchSummary, out_dir: Any = "reports") -> Path | None:
+    """Write ``<tab>.demo.json`` for the player from the batch's best run."""
+    report = pick_demo_report(summary)
+    if report is None:
+        return None
+    payload = demo_payload(report)
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"{payload['tab']}.demo.json"
+    path.write_text(json.dumps(payload, indent=2))
+    return path
+
+
 # --- CLI --------------------------------------------------------------------
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Capture real-agent dogfood runs.")
-    parser.add_argument("scenario", choices=["devops", "audit"])
+    parser.add_argument("scenario", choices=["devops", "audit", "coding"])
     parser.add_argument("--runs", type=int, default=4)
     parser.add_argument("--model", default=None)
     parser.add_argument(
         "--out", default=None, help="directory to write JSON reports into"
     )
+    parser.add_argument(
+        "--no-journal",
+        action="store_true",
+        help="skip writing the inspector audit journal (reports/<scenario>.audit.db)",
+    )
+    parser.add_argument(
+        "--emit-demo",
+        action="store_true",
+        help="distil the best run into reports/<tab>.demo.json for the animated player",
+    )
     args = parser.parse_args(argv)
 
+    # Every real capture writes an inspector journal by default, so the run is
+    # openable in the governance console afterwards (the rollback/gate/audit,
+    # rendered). The whole batch shares one journal — that is the variance.
+    journal = None if args.no_journal else str(journal_path_for(args.scenario))
+
     if args.scenario == "devops":
-        summary = run_devops_batch(runs=args.runs, model=args.model)
+        # The DevOps demo is Postgres-only — a real server, not SQLite.
+        summary = run_devops_batch(
+            runs=args.runs, model=args.model, backend="postgres", audit_path=journal
+        )
+    elif args.scenario == "audit":
+        summary = run_audit_batch(
+            runs=args.runs, model=args.model, audit_path=journal
+        )
     else:
-        summary = run_audit_batch(runs=args.runs, model=args.model)
+        summary = run_coding_batch(
+            runs=args.runs, model=args.model, audit_path=journal
+        )
 
     print(render_batch(summary))
     if args.out:
         path = write_batch(summary, Path(args.out))
         print(f"\nWrote {summary.total} run reports + summary to {path.parent}/")
+    if args.emit_demo:
+        demo = write_demo(summary)
+        if demo:
+            print(f"Wrote demo payload {demo} (load it in docs/operator/demo-player.html)")
+    if journal:
+        print(inspector_hint(journal))
 
 
 if __name__ == "__main__":
