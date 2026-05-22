@@ -22,11 +22,21 @@
 import {
   isTransactionalAdapter,
   type ResourceAdapter,
+  type StateDiffable,
   type TransactionalResourceAdapter,
 } from "./adapters/base.js";
 import { AuditJournal } from "./audit.js";
+import { DryRunResult } from "./dry-run.js";
 import { Effect, EffectStatus, StagedResult } from "./effects.js";
-import { Policy, PolicyContext, PolicyViolation } from "./policy.js";
+import { flushIncrements, isDurableCap, pendingIncrements } from "./envelope.js";
+import {
+  Abort,
+  REGISTRY as ISOLATION_REGISTRY,
+  Serialize,
+  checkConflicts,
+  type IsolationPolicy,
+} from "./isolation.js";
+import { Policy, PolicyContext, PolicyViolation, type PolicyVerdict, sqlReader } from "./policy.js";
 import { REGISTRY, activeEffect, activeTxn, type RecordingContext } from "./tools.js";
 import { Transaction, TxnState } from "./transaction.js";
 
@@ -77,6 +87,15 @@ function uniqueAdapters(adapters: Record<string, ResourceAdapter>): ResourceAdap
 
 export interface TxnContextOptions {
   clientId?: string | null;
+  /** Dry-run mode: capture policy verdicts instead of raising, and finalise by
+   *  rolling back. Set by `dryRun()`, not by `agentTxn()`. */
+  dryRun?: boolean;
+  /** Per-StateDiffable-adapter baselines captured at txn begin (dry-run only),
+   *  diffed at the finalise hook before the rollback discards the world. */
+  stateBaselines?: Array<[StateDiffable, unknown]>;
+  /** Commit-time conflict-resolution policy (#8). Defaults to Abort. The diff
+   *  itself runs unconditionally; this decides what to do on a conflict. */
+  isolation?: IsolationPolicy;
 }
 
 /** The active-transaction object stored in the activeTxn async-local store. The
@@ -90,6 +109,14 @@ export class TxnContext implements RecordingContext {
   private readonly policyCtx: PolicyContext;
   private readonly clientId: string | null;
   private finishedFlag = false;
+  /** Dry-run mode: stage-time policy captures verdicts instead of raising, and
+   *  the txn finalises by rolling back. */
+  private readonly dryRunMode: boolean;
+  private readonly stateBaselines: Array<[StateDiffable, unknown]>;
+  private readonly isolation: IsolationPolicy;
+  private readonly stageVerdicts: PolicyVerdict[] = [];
+  /** The dry-run product, populated by `dryRunFinalise`. Null otherwise. */
+  result: DryRunResult | null = null;
 
   constructor(
     adapters: Record<string, ResourceAdapter>,
@@ -103,11 +130,24 @@ export class TxnContext implements RecordingContext {
     this.adapters = adapters;
     this.policy = policy;
     this.clientId = options.clientId ?? null;
+    this.dryRunMode = options.dryRun ?? false;
+    this.stateBaselines = options.stateBaselines ?? [];
+    this.isolation = options.isolation ?? new Abort();
     // One PolicyContext per txn: carries the journal-so-far reference + per-cap
     // running totals across every stage-time evaluate(), reused for the
     // commit-time evaluateJournal walk (which resets caps and re-folds).
-    this.policyCtx = new PolicyContext({ journal: this.txn.effects, where: "stage" });
-    this.audit.recordTransaction(this.txn, { clientId: this.clientId });
+    // The reader is a closure over the live adapter map, so a world-state-aware
+    // rule's ctx.read(resource, key) queries the right adapter's live committed
+    // state — the substrate for #7's TOCTOU divergence between the two walks.
+    this.policyCtx = new PolicyContext({
+      journal: this.txn.effects,
+      where: "stage",
+      reader: sqlReader(adapters),
+    });
+    this.audit.recordTransaction(this.txn, {
+      clientId: this.clientId,
+      dryRun: this.dryRunMode,
+    });
   }
 
   get txnId(): string {
@@ -160,9 +200,15 @@ export class TxnContext implements RecordingContext {
       compensator: spec.compensator,
     });
 
-    // Stage-time policy: raise on first Deny, before journalling (so a denied
-    // effect leaves no journal entry).
-    this.policy.evaluate(effect, this.policyCtx, "stage");
+    // Stage-time policy. In a normal txn: raise on first Deny, before
+    // journalling (so a denied effect leaves no journal entry). In a dry-run:
+    // capture the verdicts without raising, so the body keeps running and the
+    // full journal materialises for the final DryRunResult.
+    if (this.dryRunMode) {
+      this.stageVerdicts.push(...(await this.policy.tryEvaluate(effect, this.policyCtx, "stage")));
+    } else {
+      await this.policy.evaluate(effect, this.policyCtx, "stage");
+    }
 
     this.txn.addEffect(effect);
     this.audit.recordEffect(effect);
@@ -182,7 +228,7 @@ export class TxnContext implements RecordingContext {
     // FAILED status + the unwind, exactly like a synchronous throw. The await
     // sits inside activeEffect.run so the async-local store survives the tool's
     // internal await boundaries.
-    effect.snapshot = adapter.snapshot(effect);
+    effect.snapshot = await adapter.snapshot(effect);
     try {
       effect.result = await activeEffect.run(effect, async () => adapter.apply(effect, spec.fn));
     } catch (e) {
@@ -213,6 +259,12 @@ export class TxnContext implements RecordingContext {
   async commit(): Promise<void> {
     this.guardOpen();
 
+    // #8: commit-time conflict diff. Runs first, while the txn is still OPEN and
+    // no irreversible has fired — so a conflict throws cleanly and agentTxn's
+    // catch rolls back the applied reversibles. Under Serialize the runtime
+    // waits for in-flight peers before the diff.
+    await this.runIsolationCheck();
+
     const staged = this.txn.effects.filter(
       (e) => e.status === EffectStatus.STAGED && !e.reversible,
     );
@@ -224,7 +276,7 @@ export class TxnContext implements RecordingContext {
 
     // Commit-time policy re-eval (TOCTOU): walks the entire journal.
     try {
-      this.policy.evaluateJournal(this.txn, this.policyCtx);
+      await this.policy.evaluateJournal(this.txn, this.policyCtx);
     } catch (e) {
       if (e instanceof PolicyViolation) {
         if (e.effectIndex !== null) {
@@ -237,7 +289,7 @@ export class TxnContext implements RecordingContext {
         if (this.txn.state === TxnState.STAGED) {
           await this.partialUnwind();
         } else {
-          this.rollback();
+          await this.rollback();
         }
       }
       throw e;
@@ -285,23 +337,32 @@ export class TxnContext implements RecordingContext {
 
     // Finalize: commit transactional adapters.
     for (const adapter of uniqueAdapters(this.adapters)) {
-      if (isTransactionalAdapter(adapter)) adapter.commit();
+      if (isTransactionalAdapter(adapter)) await adapter.commit();
     }
     this.txn.transition(TxnState.COMMITTED);
     this.audit.updateTransactionState(this.txn.txnId, this.txn.state);
+
+    // #10: flush durable (longitudinal) cap increments — reached only on a
+    // successful commit, so a denied / gated / rolled-back txn consumes no
+    // budget. The deny and unwind paths return before here.
+    const durable = this.policy.caps.filter(isDurableCap);
+    if (durable.length > 0) {
+      flushIncrements(pendingIncrements(durable, this.txn.effects));
+    }
+
     this.finishedFlag = true;
   }
 
   // --- rollback (backward fold) ---
 
-  rollback(): void {
+  async rollback(): Promise<void> {
     this.guardOpen();
 
     for (let i = this.txn.effects.length - 1; i >= 0; i--) {
       const effect = this.txn.effects[i]!;
       if (effect.snapshot === null) continue; // staged irreversibles never fired
       const adapter = this.resolveAdapter(effect.resource);
-      adapter.restore(effect.snapshot);
+      await adapter.restore(effect.snapshot);
       if (effect.status === EffectStatus.APPLIED) {
         effect.status = EffectStatus.COMPENSATED;
         this.audit.updateEffect(effect);
@@ -309,12 +370,78 @@ export class TxnContext implements RecordingContext {
     }
 
     for (const adapter of uniqueAdapters(this.adapters)) {
-      if (isTransactionalAdapter(adapter)) adapter.rollback();
+      if (isTransactionalAdapter(adapter)) await adapter.rollback();
     }
 
     this.txn.transition(TxnState.ROLLED_BACK);
     this.audit.updateTransactionState(this.txn.txnId, this.txn.state);
     this.finishedFlag = true;
+  }
+
+  // --- dry-run finalise -----------------------------------------------------
+
+  /**
+   * Commit-time bracket for a dry-run: capture verdicts, build the result, then
+   * unwind everything via the existing rollback bracket. A dry-run is the same
+   * forward fold of the journal as a real txn, ending in `rollback` instead of
+   * `commit` — the measurement without collapse. What you observe is the
+   * journal-as-built plus the policy verdicts that would fire; what survives is
+   * nothing (the world is bit-identical to its pre-dry-run state, save for the
+   * populated `result` and the audit row's dry_run=1 flag).
+   */
+  async dryRunFinalise(): Promise<void> {
+    // collectVerdicts re-walks the journal in capture mode (no short-circuit).
+    const commitVerdicts = await this.policy.collectVerdicts(this.txn, this.policyCtx);
+    const allVerdicts = [...this.stageVerdicts, ...commitVerdicts];
+    const wouldHaveFired = this.txn.effects.filter(
+      (e) => !e.reversible && e.status === EffectStatus.STAGED,
+    );
+    // State diff is computed *before* the rollback, so the live resource still
+    // carries the dry-run's writes.
+    const stateDiff = await this.computeStateDiff();
+    this.result = new DryRunResult({
+      txnId: this.txn.txnId,
+      journal: [...this.txn.effects],
+      wouldHaveFired,
+      policyVerdicts: allVerdicts,
+      isClean: allVerdicts.every((v) => v.allow),
+      stateDiff,
+    });
+    // Unwind: identical mechanics to a normal rollback.
+    await this.rollback();
+  }
+
+  /** Per-resource structural delta — current state vs the begin baseline, keyed
+   *  by adapter name. Adapters that did not opt into StateDiffable contribute
+   *  nothing (their baseline was never captured). */
+  private async computeStateDiff(): Promise<Record<string, Record<string, unknown>>> {
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const [adapter, baseline] of this.stateBaselines) {
+      out[adapter.name] = await adapter.stateDiff(baseline);
+    }
+    return out;
+  }
+
+  // --- isolation (#8) -------------------------------------------------------
+
+  /** Commit-time conflict diff + resolution. Under Serialize, first await any
+   *  in-flight peer whose write plan hits a key we read; then run the diff. A
+   *  non-empty conflict set is handed to the resolution policy (Abort / Serialize
+   *  raise IsolationConflict, which the txn unwinds on). A txn whose tools never
+   *  recorded read keys (the common case) has an empty diff — a no-op. */
+  private async runIsolationCheck(): Promise<void> {
+    const readKeys = this.txn.effects.flatMap((e) => e.readKeys);
+    if (this.isolation instanceof Serialize) {
+      await ISOLATION_REGISTRY.waitForBlockers(
+        this.txn.txnId,
+        readKeys,
+        this.isolation.waitTimeoutSeconds,
+      );
+    }
+    const conflicts = checkConflicts(this.txn.effects, this.adapters);
+    if (conflicts.length > 0) {
+      this.isolation.resolve(this, conflicts);
+    }
   }
 
   // --- mixed-fold unwind after a commit-time failure ---
@@ -331,7 +458,7 @@ export class TxnContext implements RecordingContext {
       if (effect.reversible) {
         // Restore from snapshot (state rollback).
         const adapter = this.resolveAdapter(effect.resource);
-        if (effect.snapshot !== null) adapter.restore(effect.snapshot);
+        if (effect.snapshot !== null) await adapter.restore(effect.snapshot);
         effect.status = EffectStatus.COMPENSATED;
         this.audit.updateEffect(effect);
         continue;
@@ -364,7 +491,7 @@ export class TxnContext implements RecordingContext {
     }
 
     for (const adapter of uniqueAdapters(this.adapters)) {
-      if (isTransactionalAdapter(adapter)) adapter.rollback();
+      if (isTransactionalAdapter(adapter)) await adapter.rollback();
     }
 
     this.txn.transition(stuck ? TxnState.STUCK : TxnState.ROLLED_BACK);
@@ -397,19 +524,30 @@ export async function agentTxn(
   const audit = options.audit ?? AuditJournal.inMemory();
 
   for (const adapter of uniqueAdapters(adapters)) {
-    if (isTransactionalAdapter(adapter)) (adapter as TransactionalResourceAdapter).begin();
+    if (isTransactionalAdapter(adapter)) await (adapter as TransactionalResourceAdapter).begin();
   }
 
-  const ctx = new TxnContext(adapters, policy, audit, { clientId: options.clientId ?? null });
-
-  return activeTxn.run(ctx, async () => {
-    try {
-      await fn(ctx);
-      if (!ctx.finished) await ctx.commit();
-    } catch (e) {
-      if (!ctx.finished) ctx.rollback();
-      throw e;
-    }
-    return ctx;
+  const ctx = new TxnContext(adapters, policy, audit, {
+    clientId: options.clientId ?? null,
+    isolation: options.isolation,
   });
+
+  // #8: register with the in-process arbitration substrate so Serialize waiters
+  // in concurrent agentTxns can see us as a peer. Unregistered in finally —
+  // the single seam that covers commit, rollback, gate-block, and unwind alike.
+  ISOLATION_REGISTRY.register(ctx);
+  try {
+    return await activeTxn.run(ctx, async () => {
+      try {
+        await fn(ctx);
+        if (!ctx.finished) await ctx.commit();
+      } catch (e) {
+        if (!ctx.finished) await ctx.rollback();
+        throw e;
+      }
+      return ctx;
+    });
+  } finally {
+    ISOLATION_REGISTRY.unregister(ctx);
+  }
 }

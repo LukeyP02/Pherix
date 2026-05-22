@@ -99,6 +99,14 @@ export class AuditJournal {
     this.db.close();
   }
 
+  /** The underlying connection, for siblings in the same durability domain
+   *  (e.g. the longitudinal EnvelopeStore's totals table lives in this same
+   *  SQLite file — one host, one DB). The deliberate seam Python exposes as
+   *  `audit._conn`; not for foreign consumers. */
+  get connection(): Database.Database {
+    return this.db;
+  }
+
   // --- transactions ---
 
   recordTransaction(
