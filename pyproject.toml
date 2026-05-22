@@ -19,6 +19,25 @@ test = ["pytest", "hypothesis"]
 # model-blind / air-gapped runs.
 dogfood = ["anthropic", "openai"]
 
+# Per-backend adapter drivers. The kernel is dependency-free: every adapter
+# lazy-imports its driver inside its own __init__/methods, so `import pherix`
+# needs none of these. A driver is pulled only to *instantiate* the matching
+# adapter — `pip install pherix[postgres]` etc. The compensator catalog and the
+# REST/MQ harnesses are client-agnostic (duck-typed) and need no extra at all.
+postgres = ["psycopg[binary]"]
+mysql = ["pymysql"]
+mongodb = ["pymongo"]
+s3 = ["boto3"]
+redis = ["redis"]
+# Convenience meta-extra pulling every reversible-backend driver at once.
+all-adapters = ["psycopg[binary]", "pymysql", "pymongo", "boto3", "redis"]
+
+# Test doubles that let the adapter round-trips run fully offline (no live
+# server): moto fakes S3, fakeredis fakes Redis, mongomock fakes Mongo CRUD.
+# Postgres round-trips need a reachable server (PHERIX_TEST_PG_DSN); MySQL/Mongo
+# server-backed tests skip cleanly when absent.
+test-adapters = ["psycopg[binary]", "pymysql", "pymongo", "boto3", "moto", "redis", "fakeredis", "mongomock"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
