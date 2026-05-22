@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pherix dogfood — the four demos & how to show the value</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161922; --panel2:#1c212c; --line:#2a2f3a; --ink:#e7ebf0;
+    --muted:#9aa4b2; --dim:#5c6573; --accent:#6ea8fe;
+    --ok:#46c98b; --okbg:#102a1f; --bad:#f0656a; --badbg:#2c1216; --warn:#e0a83e; --undo:#b48bf0;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
+  }
+  @media (prefers-color-scheme:light){
+    :root{--bg:#f6f7f9;--panel:#fff;--panel2:#eef1f5;--line:#dde1e8;--ink:#11151c;--muted:#5a6473;--dim:#8a93a2;--okbg:#e3f5ec;--badbg:#fbe2e3}
+  }
+  *{box-sizing:border-box} html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.62;font-size:16px}
+  .wrap{display:grid;grid-template-columns:248px 1fr;max-width:1160px;margin:0 auto}
+  nav{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;padding:26px 16px;border-right:1px solid var(--line);background:var(--panel)}
+  nav .brand{font-weight:800;font-size:1.1rem} nav .brand span{color:var(--accent)}
+  nav .t{font-size:.72rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin:20px 0 6px}
+  nav a{display:block;color:var(--ink);text-decoration:none;padding:5px 10px;border-radius:7px;font-size:.9rem}
+  nav a:hover{background:var(--panel2)}
+  main{padding:34px 42px 120px;min-width:0}
+  h1{font-size:1.95rem;margin:.1em 0 .1em;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:1.04rem;margin-bottom:24px}
+  h2{font-size:1.34rem;margin:48px 0 8px;padding-top:10px;border-top:1px solid var(--line)}
+  h3{font-size:1.06rem;margin:20px 0 6px}
+  p{margin:.55em 0} a{color:var(--accent)}
+  code{font-family:var(--mono);background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:.86em}
+  .note{border:1px solid var(--line);border-left:4px solid var(--accent);background:var(--panel);padding:13px 17px;border-radius:9px;margin:18px 0}
+  .note.warn{border-left-color:var(--warn)} .note b{color:var(--ink)}
+  .cmd{background:#0b0d12;border:1px solid var(--line);border-radius:9px;margin:12px 0;padding:13px 16px;overflow-x:auto}
+  .cmd code{background:none;padding:0;color:#d6e2f5;font-size:.84rem;line-height:1.7;display:block;white-space:pre}
+  .cmd .c{color:#6b7686}
+  /* before/after */
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+  .ba .col{border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--panel)}
+  .ba .hd{padding:9px 14px;font-weight:700;font-size:.82rem;letter-spacing:.04em;text-transform:uppercase}
+  .ba .before .hd{background:var(--badbg);color:var(--bad);border-bottom:1px solid var(--line)}
+  .ba .after .hd{background:var(--okbg);color:var(--ok);border-bottom:1px solid var(--line)}
+  .ba .bd{padding:12px 15px;font-size:.92rem}
+  .ba .bd .s{font-family:var(--mono);font-size:.8rem;color:var(--muted);display:block;margin-top:8px}
+  .ba ul{margin:.3em 0;padding-left:18px} .ba li{margin:.25em 0}
+  .proof{background:var(--panel2);border-radius:9px;padding:11px 15px;margin:12px 0;font-size:.9rem}
+  .proof b{color:var(--ink)} .proof .q{font-family:var(--mono);font-size:.82rem;color:var(--accent)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:.72rem;font-weight:700;padding:1px 8px;border-radius:999px;border:1px solid transparent;vertical-align:middle}
+  .p-ok{color:var(--ok);background:var(--okbg);border-color:var(--ok)} .p-bad{color:var(--bad);background:var(--badbg);border-color:var(--bad)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:.9rem}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+  details{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:2px 16px;margin:12px 0}
+  summary{cursor:pointer;font-weight:600;padding:9px 0}
+  ol{padding-left:20px} li{margin:.3em 0}
+  .demohdr{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .demohdr .n{font-family:var(--mono);color:var(--accent);font-weight:700}
+  @media(max-width:820px){.wrap{grid-template-columns:1fr}nav{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}main{padding:24px 20px 80px}.ba{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <div class="brand">Pher<span>i</span>x</div>
+  <div class="t">Dogfood demos</div>
+  <a href="#thesis">The thesis</a>
+  <a href="#method">How to record</a>
+  <div class="t">The four demos</div>
+  <a href="#d1">1 · Atomic unwind</a>
+  <a href="#d2">2 · Attributed audit</a>
+  <a href="#d3">3 · Coding red-team</a>
+  <a href="#d4">4 · Air-gapped (local)</a>
+  <div class="t">Reference</div>
+  <a href="#baseline">The "before" we still need</a>
+  <a href="#commands">Commands</a>
+</nav>
+<main>
+  <h1>The four demos &amp; how to show the value</h1>
+  <div class="sub">Pherix governs the <em>side-effects</em> of agent tool calls. The demos prove that by putting a real agent in front of a real backend and showing what Pherix does when the agent goes wrong.</div>
+
+  <h2 id="thesis">The thesis — film the side-effects, not the agent</h2>
+  <p>An agent is just a tool-call loop; there's nothing to watch in the loop itself. The <b>value lives in the consequences</b> — the database row, the deleted secret, the push to main, the corrupted ledger. So the camera points at the <em>resource</em>, not the model.</p>
+  <p>And the clearest way to show value is a <b>before / after</b> on the <em>same agent, same goal, two worlds</em>:</p>
+  <table>
+    <tr><th>World</th><th>What it shows</th></tr>
+    <tr><td><span class="pill p-bad">BEFORE — ungoverned</span></td><td>The agent's tool calls fire directly, the way they do today. The harm just happens.</td></tr>
+    <tr><td><span class="pill p-ok">AFTER — inside Pherix</span></td><td>The same calls, wrapped. The harm is unwound, gated, or denied — the end state is clean.</td></tr>
+  </table>
+  <p>The climax of every demo is not the agent talking — it's a <b>queryable end-state</b>: the same <code>SELECT</code> / <code>cat</code> / <code>git log</code> run in both worlds, returning damage on the left and clean on the right. That's undeniable, not a vibe.</p>
+
+  <h2 id="method">How to record — the method</h2>
+  <ol>
+    <li><b>Two panes, same command.</b> Left = ungoverned (the <code>--no-pherix</code> baseline). Right = governed (the real demo). Run the agent in both, then run the <em>same proof query</em> in both.</li>
+    <li><b>End on the proof, not the chatter.</b> Trim the LLM's deliberation; the shot that matters is the end-state diff (NULLs vs none, secret gone vs intact, books off vs balanced).</li>
+    <li><b>The inspector is your B-roll.</b> Each governed run writes <code>reports/&lt;scenario&gt;.audit.db</code>; open it (<code>python -m pherix.inspector --db …</code>) to show the rollback / gate / denial rendered and colour-coded — the journal as receipts.</li>
+    <li><b>Demo 4 is the exception</b> — it's not damage-vs-contained, it's cloud-vs-local (see below). Run it twice and show <em>identical</em> containment.</li>
+  </ol>
+  <div class="note warn"><b>One thing we still need to build</b> to film the "before" for demos 1–3: a <code>--no-pherix</code> baseline that runs the same agent with effects firing directly (no journal, no gate, no rollback). It's a small, in-scope addition — see <a href="#baseline">below</a>. The "after" already exists (it's the demo).</div>
+
+  <!-- DEMO 1 -->
+  <h2 id="d1"><span class="demohdr"><span class="n">DEMO 1</span> Atomic unwind — DevOps on real Postgres</span></h2>
+  <p><b>Setup:</b> an agent ships <code>v2</code> of the accounts service. A healthy v2 reads a <code>feature_flag</code> for every account — so a careless agent that adds the column but skips the backfill leaves existing rows <code>NULL</code>, and v2 chokes the moment it reads them.</p>
+  <div class="ba">
+    <div class="col before"><div class="hd">Before — ungoverned</div><div class="bd">
+      The deploy fires. The post-deploy smoke check fails — but <b>v2 is already live</b>, reading NULL flags. Prod is broken; the DB is left half-migrated.
+      <span class="s">deploy history: [deploy]  ·  rows NULL: 2</span>
+    </div></div>
+    <div class="col after"><div class="hd">After — Pherix</div><div class="bd">
+      The smoke check trips <b>at commit</b>. The engine unwinds: the deploy is compensated, the migration rolled back via a real Postgres <code>SAVEPOINT</code>, the config restored. Nothing went live.
+      <span class="s">deploy history: [deploy, rollback]  ·  column: gone</span>
+    </div></div>
+  </div>
+  <div class="proof"><b>Proof shot:</b> <span class="q">SELECT count(*) FROM accounts WHERE feature_flag IS NULL;</span> — before: <span class="pill p-bad">2 broken rows, live</span> · after: <span class="pill p-ok">column doesn't exist — fully reverted</span>.</div>
+
+  <!-- DEMO 2 -->
+  <h2 id="d2"><span class="demohdr"><span class="n">DEMO 2</span> Attributed audit — two agents, one ledger</span></h2>
+  <p><b>Setup:</b> a ledger with a genuine imbalance. Two agents reconcile it <em>concurrently</em>, each under its own <code>client_id</code>.</p>
+  <div class="ba">
+    <div class="col before"><div class="hd">Before — ungoverned</div><div class="bd">
+      Both agents correct the same entry. The second write silently clobbers the first — a lost update. The books are still wrong, and there's no record of who changed what.
+      <span class="s">balance: ≠ 0  ·  attribution: none</span>
+    </div></div>
+    <div class="col after"><div class="hd">After — Pherix</div><div class="bd">
+      The second agent's <b>stale read is detected at commit</b> and its transaction aborts. The first correction stands; every adjustment is attributed by <code>client_id</code> in the journal and on the row.
+      <span class="s">balance: 0  ·  attribution: per agent</span>
+    </div></div>
+  </div>
+  <div class="proof"><b>Proof shot:</b> the corrected trial balance (before: <span class="pill p-bad">off</span> · after: <span class="pill p-ok">balanced</span>) + the per-<code>client_id</code> compliance view showing who booked what.</div>
+
+  <!-- DEMO 3 -->
+  <h2 id="d3"><span class="demohdr"><span class="n">DEMO 3</span> Coding red-team — an overreaching agent</span></h2>
+  <p><b>Setup:</b> an agent told to "slim the repo and ship it" — the realistic threat of an over-eager automation, not a cartoon villain.</p>
+  <div class="ba">
+    <div class="col before"><div class="hd">Before — ungoverned</div><div class="bd">
+      It deletes <code>.env</code> and the config, runs <code>rm -rf</code>, and pushes to <code>main</code>. The secret is gone, files are deleted, the branch is published. Real damage.
+      <span class="s">.env: deleted  ·  origin/main: pushed</span>
+    </div></div>
+    <div class="col after"><div class="hd">After — Pherix</div><div class="bd">
+      Every out-of-bounds reach is <b>denied at the policy boundary</b> (journalled nothing); the irreversible git/shell are <b>held at the commit gate</b> (never fire). Only in-<code>src</code> edits could ever apply, and they roll back.
+      <span class="s">.env: intact  ·  origin/main: untouched</span>
+    </div></div>
+  </div>
+  <div class="proof"><b>Proof shot:</b> <span class="q">cat .env</span> (before: gone · after: intact) and <span class="q">git log origin/main</span> (before: the agent's push · after: nothing). The repo is exactly as it started.</div>
+
+  <!-- DEMO 4 -->
+  <h2 id="d4"><span class="demohdr"><span class="n">DEMO 4</span> Air-gapped — the same red-team on a local model</span></h2>
+  <p><b>This one is different.</b> It isn't damage-vs-contained — it's <b>cloud-vs-local</b>. The same red-team, run once on cloud Claude and once on a local model (Ollama) with <em>wifi off</em>.</p>
+  <div class="ba">
+    <div class="col after" style="grid-column:1 / -1"><div class="hd" style="background:var(--okbg);color:var(--ok)">The point it proves</div><div class="bd">
+      The destructive attempts are governed <b>identically</b> whether the model is cloud Claude or a local model on an offline box — because Pherix sits <em>below</em> the model and never calls it. Same engine, same policy, same audit, no network. The journal stays on the box.
+      <span class="s">→ a configuration no cloud vendor can serve: local agent, local model, air-gapped, fully governed.</span>
+    </div></div>
+  </div>
+  <div class="proof"><b>Proof shot:</b> the two runs side by side — cloud and local-offline — landing on the <em>same</em> verdict and the <em>same</em> contained journal. The contrast is the deployment, not the outcome.</div>
+
+  <!-- BASELINE -->
+  <h2 id="baseline">The "before" we still need to build</h2>
+  <p>The "after" of demos 1–3 is the demo we already have. The "before" — the ungoverned damage — needs a <b><code>--no-pherix</code> baseline mode</b>: the same agent and the same tools, but dispatched <em>outside</em> the transaction so effects fire live, with no journal, gate, or rollback. Then:</p>
+  <ul>
+    <li><span class="pill p-bad">BEFORE</span> = the baseline run → capture the damage (and the proof query returning the broken state).</li>
+    <li><span class="pill p-ok">AFTER</span> = the governed run → capture the containment (and the proof query returning clean).</li>
+  </ul>
+  <p>It's small, honest, and reusable as a test ("ungoverned corrupts; governed doesn't"). It's the missing piece that makes the before/after land.</p>
+
+  <!-- COMMANDS -->
+  <h2 id="commands">Commands</h2>
+  <p>Setup (the DevOps demo needs a real Postgres; the rest need a key or <code>--local</code>):</p>
+  <div class="cmd"><code>pip install -e '.[dogfood,postgres]'
+<span class="c"># DevOps demo only — a real Postgres:</span>
+createdb pherix_dogfood
+export PHERIX_PG_DSN=postgresql://localhost/pherix_dogfood</code></div>
+  <p>The four runs (these are the <b>after</b> — the governed demos):</p>
+  <div class="cmd"><code>python -m examples.dogfood.devops              <span class="c"># 1 · atomic unwind (Postgres)</span>
+python -m examples.dogfood.audit               <span class="c"># 2 · attributed audit</span>
+python -m examples.dogfood.coding redteam      <span class="c"># 3 · coding red-team</span>
+python -m examples.dogfood.coding redteam --local \
+    --base-url http://localhost:11434/v1 --model qwen2.5-coder:7b  <span class="c"># 4 · air-gapped</span></code></div>
+  <p>Batch evidence + the inspector journal + the clip-source JSON:</p>
+  <div class="cmd"><code>python -m examples.dogfood.capture coding --runs 4 --out reports/ --emit-demo
+python -m pherix.inspector --db reports/coding.audit.db   <span class="c"># open http://127.0.0.1:8765</span></code></div>
+  <details>
+    <summary>Where the detail lives</summary>
+    <p>Full run-and-film runbook: <code>docs/operator/demos.md</code>. The air-gapped OpenClaw protocol: <code>docs/operator/airgapped-capstone.md</code>. The evidence + clip-source shape: <code>examples/dogfood/capture.py</code>. Honest framing on mechanism-tests vs real-agent runs: <code>examples/dogfood/README.md</code>.</p>
+  </details>
+</main>
+</div>
+</body>
+</html>
