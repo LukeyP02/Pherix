@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pherix · inspector</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="app">
+  <header>
+    <span class="brand">pherix<span class="dot">·</span>inspector<small>governance console</small></span>
+    <div class="stats" id="stats">—</div>
+    <span class="live-toggle" id="liveToggle" title="Poll the journal so a live run animates">
+      <span class="live-dot"></span><span id="liveLabel">live: off</span>
+    </span>
+  </header>
+
+  <div class="cols">
+    <div class="list-col">
+      <div class="filters">
+        <select id="fState" title="transaction state">
+          <option value="">state: any</option>
+          <option>OPEN</option><option>STAGED</option><option>COMMITTED</option>
+          <option>ROLLED_BACK</option><option>PARTIAL</option><option>STUCK</option>
+        </select>
+        <select id="fClient" title="client_id (gateway attribution)">
+          <option value="">client: any</option>
+        </select>
+        <select id="fTool" title="contains tool">
+          <option value="">tool: any</option>
+        </select>
+        <label title="hide dry-runs (the compliance view)">
+          <input type="checkbox" id="fNoDry" /> hide dry-run
+        </label>
+      </div>
+      <div class="txn-list" id="txnList"><div class="empty">loading…</div></div>
+      <div class="legend">
+        <span class="t-ok">● committed</span>
+        <span class="t-pending">● in-flight</span>
+        <span class="t-blocked">● gated</span>
+        <span class="t-undone">● rolled back</span>
+        <span class="t-error">● stuck / failed</span>
+      </div>
+    </div>
+
+    <div class="detail-col" id="detail">
+      <div class="empty">select a transaction to see its effect timeline</div>
+    </div>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

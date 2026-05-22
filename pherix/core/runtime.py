@@ -35,11 +35,17 @@ from pherix.core.isolation import (
     _RetrySignal,
     check_conflicts,
 )
+from pherix.core.envelope import (
+    flush_increments,
+    is_durable_cap,
+    pending_increments,
+)
 from pherix.core.policy import (
     Policy,
     PolicyContext,
     PolicyVerdict,
     PolicyViolation,
+    sql_reader,
 )
 from pherix.core.tools import REGISTRY, active_effect, active_txn
 from pherix.core.transaction import Transaction, TransactionStateError, TxnState
@@ -92,6 +98,37 @@ def _unique(adapters: dict[str, Any]) -> list[Any]:
     return out
 
 
+def _verdict_rows(verdicts: list[Any]) -> list[dict]:
+    """Normalise :class:`~pherix.core.policy.PolicyVerdict` objects into the
+    plain dicts :meth:`AuditJournal.record_verdicts` persists.
+
+    ``kind`` is derived from the rule object: ``None`` is the allow/deny
+    tool-name list, a cap (its class name carries ``Cap``) is ``'cap'``,
+    everything else is a ``'rule'``. Keeps the audit layer free of any
+    policy-type import — the runtime owns the translation.
+    """
+    rows: list[dict] = []
+    for v in verdicts:
+        rule = getattr(v, "rule", None)
+        if rule is None:
+            kind = "allowlist"
+        elif "Cap" in type(rule).__name__:
+            kind = "cap"
+        else:
+            kind = "rule"
+        rows.append(
+            {
+                "effect_index": v.effect_index,
+                "phase": v.where,
+                "allow": v.allow,
+                "kind": kind,
+                "rule_name": v.rule_name,
+                "reason": v.reason,
+            }
+        )
+    return rows
+
+
 class TxnContext:
     """The active-transaction object stored in the ``active_txn`` ContextVar.
 
@@ -127,8 +164,18 @@ class TxnContext:
         # reference + per-cap running totals across every stage-time
         # evaluate() call. The same ctx is reused for the commit-time
         # evaluate_journal walk (which resets caps and re-folds).
+        # #7 (engine-hardening): thread a read mediator over the adapter map
+        # into the context so world-state-aware rules can call
+        # ``ctx.read(resource, key)``. The mediator is a closure over
+        # ``adapters`` — cheap to build, issues no query until a rule actually
+        # reads. The same ``_policy_ctx`` is reused across the stage-time and
+        # commit-time walks, so a rule that reads live state at both moments
+        # sees the world as it stood at each — that divergence is the TOCTOU
+        # protection the twice-evaluated bracket exists for.
         self._policy_ctx = PolicyContext(
-            journal=self.txn.effects, where="stage"
+            journal=self.txn.effects,
+            where="stage",
+            reader=sql_reader(adapters),
         )
         # Slice 7: dry-run mode flips policy evaluation from raise-mode
         # (``evaluate``) to capture-mode (``try_evaluate``) at stage-time,
@@ -387,6 +434,16 @@ class TxnContext:
                 adapter.commit()
         self.txn.transition(TxnState.COMMITTED)
         self.audit.update_transaction_state(self.txn.txn_id, TxnState.COMMITTED.name)
+        # #10 (engine-hardening): consume the longitudinal budget. Durable
+        # caps fold their per-txn contribution into the cross-run total ONLY
+        # here, on the successful-commit path — never in rollback,
+        # _partial_unwind, _dry_run_finalise, or the gate/policy unwind
+        # branches. A rolled-back, gated, or denied txn must consume no
+        # budget. Each EnvelopeIncrement carries its own store, so a policy
+        # mixing caps bound to different stores flushes correctly.
+        durable = [c for c in self._policy.caps if is_durable_cap(c)]
+        if durable:
+            flush_increments(pending_increments(durable, self.txn.effects))
         self._finished = True
 
     # --- Slice 7: dry-run finalise ----------------------------------------
@@ -430,6 +487,18 @@ class TxnContext:
             is_clean=all(v.allow for v in all_verdicts),
             state_diff=self._compute_state_diff(),
         )
+
+        # Persist the captured verdicts so the inspector can render the
+        # per-rule stage/commit decisions (incl. any world-state divergence).
+        # Best-effort: the verdict record annotates the journal; a failure to
+        # write it must never change the dry-run's outcome (the effect
+        # statuses are the source of truth). Append-only, like everything else.
+        try:
+            self.audit.record_verdicts(
+                self.txn.txn_id, _verdict_rows(all_verdicts)
+            )
+        except Exception:
+            pass
 
         # Unwind: identical mechanics to a normal rollback. Reversibles
         # restore from snapshots (APPLIED → COMPENSATED); irreversibles

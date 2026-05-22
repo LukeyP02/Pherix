@@ -338,13 +338,21 @@ def test_rule_fires_at_both_stage_and_commit_time(conn):
     assert evaluations.count("commit") == 2
 
 
-# --- Slice 6.5 placeholder seam --------------------------------------------
+# --- #7: world-state read seam (pre-runtime-wiring state) ------------------
 
 
-def test_ctx_read_placeholder_raises_when_rule_uses_it(conn):
-    """A rule that reaches for world-state-aware reads must hit the
-    Slice 6.5 seam — Slice 6 ships the hook only."""
+def test_runtime_binds_a_reader_so_rules_read_live_state(conn):
+    """#7 end-to-end: the runtime threads ``sql_reader(adapters)`` into the
+    PolicyContext it constructs, so a rule calling ``ctx.read`` inside an
+    agent_txn reads live adapter state rather than hitting "no reader bound".
+
+    (Pre-wiring this test asserted the RuntimeError placeholder; the
+    orchestrator's runtime integration flipped it to the bound-reader path.
+    The TOCTOU divergence itself is pinned at the policy layer in
+    tests/test_world_state_policy.py.)"""
+    conn.execute("INSERT INTO users (id, name, tier) VALUES (1, 'alice', 'gold')")
     policy = Policy.allow_all()
+    seen: list[object] = []
 
     @tool(resource="sql")
     def add_user(conn, name):
@@ -354,14 +362,17 @@ def test_ctx_read_placeholder_raises_when_rule_uses_it(conn):
         )
 
     @policy.rule
-    def needs_world_state(effect, ctx):
-        # Rule body asks for a live read; Slice 6 doesn't ship that yet.
-        ctx.read("sql", "users:1")
+    def reads_live_tier(effect, ctx):
+        # 4-tuple key form: (table, pk_column, pk_value, value_column).
+        seen.append(ctx.read("sql", ("users", "id", 1, "tier")))
         return Allow()
 
-    with pytest.raises(NotImplementedError, match="Slice 6.5"):
-        with agent_txn({"sql": SQLiteAdapter(conn)}, policy=policy):
-            add_user(name="alice")
+    with agent_txn({"sql": SQLiteAdapter(conn)}, policy=policy):
+        add_user(name="bob")
+
+    # The rule fired (stage-time + commit-time walks) and the bound reader
+    # returned the live value both times — proof the mediator is wired.
+    assert seen and all(v == "gold" for v in seen)
 
 
 # --- backwards compat ------------------------------------------------------

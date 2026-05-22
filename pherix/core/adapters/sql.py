@@ -15,7 +15,9 @@ a function-local import to keep module-load ordering free of cycles.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import time
 from typing import Any, Callable
 
 from pherix.core.adapters.base import SnapshotHandle
@@ -33,6 +35,52 @@ CREATE TABLE IF NOT EXISTS _pherix_versions (
     PRIMARY KEY (resource, key_json)
 )
 """
+
+# #8 (single-host tier): cross-process Serialize coordination side-table.
+# An in-flight transaction publishes its WRITE INTENTS — the (resource, key)
+# pairs it plans to write — into this table the moment the write is recorded.
+# A Serialize commit in another process consults this table and WAITS while a
+# conflicting live intent exists, then proceeds once the intent clears (the
+# other txn committed/rolled back and removed its rows).
+#
+# Storage: a sibling SQLite file derived from the main DB path
+# (``<db>.pherix-intents``), NOT the main DB itself. Reason — SQLite is a
+# single-writer store: the main connection holds the write lock for the whole
+# duration of an open txn (from its first write to COMMIT), so a SECOND
+# connection trying to publish an intent into the *same* file would block on
+# "database is locked" until the txn ends, defeating the entire point (the
+# intent must be visible WHILE the txn is in flight). A sibling file shares
+# the same single-host, cross-process scope — every process pointed at one
+# on-disk DB derives the same intent-file path — without contending for the
+# main DB's write lock. The intent connection is autocommit, so a published
+# intent is durable and visible to other processes immediately, BEFORE this
+# txn commits. Detection via _pherix_versions still only sees COMMITTED bumps;
+# intents are precisely the in-flight write plan a Serialize waiter blocks on.
+#
+# Liveness / staleness story (honest): a process that dies mid-txn cannot run
+# its own cleanup, so its intent rows would otherwise wedge a waiter forever.
+# Each row carries a monotonic-ish wall-clock ``ts``; a waiter treats any
+# intent older than ``_INTENT_STALENESS_SECONDS`` as belonging to a dead
+# writer and ignores it (falling through to the committed-state diff, i.e.
+# degrading to Abort — the same honest fallback as today). The cutoff is
+# generous relative to a healthy txn but bounded so a crashed process cannot
+# block forever. ``owner`` (pid + monotonic-creation token) is recorded for
+# diagnostics and to scope cleanup to this process's own rows.
+_INTENTS_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS _pherix_intents (
+    txn_id   TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    key_json TEXT NOT NULL,
+    ts       REAL NOT NULL,
+    owner    TEXT NOT NULL,
+    PRIMARY KEY (txn_id, resource, key_json)
+)
+"""
+
+# A live intent older than this (wall-clock seconds) is treated as abandoned
+# by a dead process and ignored by waiters. Generous vs. a healthy txn,
+# bounded so a crash cannot wedge a waiter forever.
+_INTENT_STALENESS_SECONDS = 60.0
 
 # Seam used by the module-level :func:`execute_isolated` helper to find the
 # :class:`SQLiteAdapter` bound to a given connection. We cannot attach
@@ -88,6 +136,29 @@ class SQLiteAdapter:
             if db_path
             else None
         )
+        # #8: a per-adapter owner token (pid + object identity) scoping the
+        # intent rows this adapter publishes. Lets cleanup target only our own
+        # rows and gives a dead-process diagnostic. id(self) disambiguates two
+        # adapters in one process; the pid disambiguates across processes.
+        self._owner = f"{os.getpid()}:{id(self)}"
+        # #8: the cross-process Serialize intent ledger lives in a sibling
+        # SQLite file (see _INTENTS_TABLE_DDL comment for the single-writer
+        # rationale), on its OWN autocommit connection so a publish is durable
+        # and visible to other processes BEFORE this txn commits — and so it
+        # never contends for the main DB's write lock. In-memory DBs
+        # (db_path is None) are single-process by definition: no intent
+        # connection, and the cross-process layer is skipped.
+        self._intent_conn: sqlite3.Connection | None = None
+        if db_path is not None:
+            self._intent_conn = sqlite3.connect(
+                db_path + ".pherix-intents", isolation_level=None
+            )
+            # WAL keeps concurrent readers from blocking the autocommit writer
+            # across processes; busy_timeout bounds the brief window where two
+            # processes publish/clear at once.
+            self._intent_conn.execute("PRAGMA journal_mode=WAL")
+            self._intent_conn.execute("PRAGMA busy_timeout=5000")
+            self._intent_conn.execute(_INTENTS_TABLE_DDL)
 
     @staticmethod
     def _derive_db_path(conn: sqlite3.Connection) -> str | None:
@@ -207,6 +278,85 @@ class SQLiteAdapter:
         )
         row = cur.fetchone()
         return int(row[0])
+
+    # --- cross-process Serialize coordination (#8, single-host tier) --------
+
+    def supports_cross_process_intents(self) -> bool:
+        """True iff this adapter is backed by a shareable on-disk DB.
+
+        In-memory adapters (no intent connection) cannot coordinate across
+        processes — there is nothing to share — so the registry skips them
+        and the in-process Event path remains the only coordination.
+        """
+        return self._intent_conn is not None
+
+    def publish_intent(self, txn_id: str, key: tuple) -> None:
+        """Publish a write INTENT for ``(self.name, key)`` under ``txn_id``.
+
+        Written through the autocommit sibling-file intent connection so it
+        is durable and visible to other processes immediately — before this
+        txn commits. Idempotent: re-publishing the same (txn, resource, key)
+        refreshes the timestamp (the row is still live) rather than erroring.
+        """
+        if self._intent_conn is None:
+            return
+        self._intent_conn.execute(
+            "INSERT INTO _pherix_intents (txn_id, resource, key_json, ts, owner) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(txn_id, resource, key_json) DO UPDATE SET ts = excluded.ts",
+            (txn_id, self.name, self._encode_key(key), time.time(), self._owner),
+        )
+
+    def clear_intents(self, txn_id: str) -> None:
+        """Remove every write intent published under ``txn_id``.
+
+        Called when the txn finalises (commit or rollback) so a waiter blocked
+        on this intent wakes and proceeds. Runs on the autocommit sibling-file
+        intent connection so the clear is committed immediately and seen
+        cross-process.
+        """
+        if self._intent_conn is None:
+            return
+        self._intent_conn.execute(
+            "DELETE FROM _pherix_intents WHERE txn_id = ?", (txn_id,)
+        )
+
+    def conflicting_intents(
+        self, my_txn_id: str, my_keys: set[tuple]
+    ) -> set[str]:
+        """Txn-ids of OTHER live writers whose intents hit any of ``my_keys``.
+
+        ``my_keys`` is a set of ``(resource, key_tuple)`` pairs this txn reads.
+        Returns the set of foreign ``txn_id`` values with a live, non-stale
+        intent on one of those keys — the txns a Serialize commit must wait
+        on. Intents older than :data:`_INTENT_STALENESS_SECONDS` are treated
+        as abandoned by a dead process and excluded (degrade to Abort, the
+        honest fallback).
+
+        Only keys whose resource is ``self.name`` participate — a SQL adapter
+        cannot speak for a filesystem key.
+        """
+        if self._intent_conn is None:
+            return set()
+        wanted = {
+            self._encode_key(k) for (r, k) in my_keys if r == self.name
+        }
+        if not wanted:
+            return set()
+        cutoff = time.time() - _INTENT_STALENESS_SECONDS
+        rows = self._intent_conn.execute(
+            "SELECT txn_id, key_json, ts FROM _pherix_intents WHERE resource = ?",
+            (self.name,),
+        ).fetchall()
+        blockers: set[str] = set()
+        for txn_id, key_json, ts in rows:
+            if txn_id == my_txn_id:
+                continue
+            if ts < cutoff:
+                continue  # stale: assume the writer's process died
+            if key_json in wanted:
+                blockers.add(txn_id)
+        return blockers
 
     # --- state diff (Slice 8 — StateDiffable) ------------------------------
 
@@ -353,4 +503,13 @@ def execute_isolated(
         # picks the freshest via iteration order.
         v_after = adapter.write_version(key_t)
         effect.write_keys.append(("sql", key_t, v_after))
+        # #8 (single-host tier): publish a cross-process write INTENT the
+        # moment the write is recorded, through the adapter's autocommit meta
+        # connection. This makes the in-flight write plan visible to a
+        # Serialize commit in another process BEFORE this txn commits — the
+        # committed-state diff (via _pherix_versions) only sees committed
+        # bumps, which is too late for the waiter to block on. Cleared when
+        # the txn finalises (registry calls adapter.clear_intents on
+        # unregister). No-op for in-memory adapters (single-process).
+        adapter.publish_intent(effect.txn_id, key_t)
     return cursor
