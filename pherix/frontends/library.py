@@ -27,7 +27,10 @@ from pherix.core.adapters.base import (
     TransactionalResourceAdapter,
     VersionedResourceAdapter,
 )
+from pherix.core.adapters.dynamodb import DynamoDBAdapter
+from pherix.core.adapters.elasticsearch import ElasticsearchAdapter
 from pherix.core.adapters.filesystem import FilesystemAdapter
+from pherix.core.adapters.gcs import GCSAdapter
 from pherix.core.adapters.http import HTTPAdapter, IrreversibleAdapterError
 from pherix.core.adapters.memory import MemoryAdapter, MemoryHandle
 from pherix.core.adapters.messagequeue import (
@@ -189,6 +192,9 @@ __all__ = [
     "MongoAdapter",
     "S3Adapter",
     "RedisAdapter",
+    "DynamoDBAdapter",
+    "GCSAdapter",
+    "ElasticsearchAdapter",
     # adapter-compensator-base: irreversible transports (staged/compensated lane)
     "RESTAdapter",
     "rest_tool",

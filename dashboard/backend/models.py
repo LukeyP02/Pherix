@@ -155,9 +155,86 @@ class IngestBatch(BaseModel):
     transactions: list[IngestTransaction] = Field(default_factory=list)
     effects: list[IngestEffect] = Field(default_factory=list)
     verdicts: list[IngestVerdict] = Field(default_factory=list)
+    encrypted: bool = Field(
+        default=False,
+        description="True when effect args/result are ciphertext under the "
+        "customer's key — the control plane stores them but cannot read them.",
+    )
 
 
 class IngestResult(BaseModel):
     accepted: int
     skipped: int = Field(..., description="Rows already present (idempotent re-ship).")
     cursor: int = Field(..., description="Org high-water seq after this batch.")
+
+
+# -- control-plane v2: governed memory over the wire -------------------------
+
+
+class MemoryWrite(BaseModel):
+    key: str
+    value: str = Field(..., description="Opaque value; the customer encrypts before sending if sensitive.")
+
+
+class MemoryValue(BaseModel):
+    key: str
+    value: str
+    version: str = Field(..., description="sha256 of the value — content-addressed, detects concurrent rewrites.")
+
+
+class MemoryRef(BaseModel):
+    namespace: str
+    key: str
+    version: str
+
+
+class MemoryKey(BaseModel):
+    key: str
+    version: str
+
+
+# -- control-plane v2: cross-host arbiter ------------------------------------
+
+
+class LockRequest(BaseModel):
+    resource: str = Field(..., description="Resource class the keys belong to (e.g. 'sql').")
+    keys: list[str] = Field(..., description="Keys to lock, all-or-nothing.")
+    holder: str = Field(..., description="Opaque holder id (txn_id or agent+txn) released as a unit.")
+    ttl: float = Field(default=60.0, description="Seconds before a dead holder's lock is reclaimable.")
+
+
+class LockConflict(BaseModel):
+    key: str
+    holder: str
+
+
+class LockResult(BaseModel):
+    acquired: bool
+    conflicts: list[LockConflict] = Field(default_factory=list)
+
+
+class ReleaseResult(BaseModel):
+    released: int
+
+
+class BudgetSpend(BaseModel):
+    amount: float = Field(..., description="How much to spend against the budget.")
+    cap: float | None = Field(
+        default=None,
+        description="Ceiling; required on first use of a budget_key, optional after.",
+    )
+
+
+class BudgetState(BaseModel):
+    allowed: bool
+    spent: float
+    cap: float
+    remaining: float
+
+
+# -- control-plane v2: minimal metering --------------------------------------
+
+
+class UsageReport(BaseModel):
+    org_id: str
+    usage: dict[str, int] = Field(default_factory=dict, description="metric -> count. Record only; no pricing.")

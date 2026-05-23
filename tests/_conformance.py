@@ -582,6 +582,143 @@ def _my_version_write(adapter, world, key, value):
     adapter.write_version(key)
 
 
+# --- DynamoDB (skips without moto + boto3) ----------------------------------
+#
+# moto fakes DynamoDB in-process via boto3, exactly as it fakes S3 — so the full
+# round-trip law runs offline. One string-partition-key table; the conformance
+# value lives in attribute ``v`` and dump reads {pk: v}.
+
+_DDB_TABLE = "pherix-conf-table"
+
+
+@contextlib.contextmanager
+def _dynamodb_world():
+    pytest.importorskip("moto")
+    boto3 = pytest.importorskip("boto3")
+    from moto import mock_aws
+
+    from pherix.core.adapters.dynamodb import DynamoDBAdapter
+
+    with mock_aws():
+        client = boto3.client("dynamodb", region_name="us-east-1")
+        client.create_table(
+            TableName=_DDB_TABLE,
+            KeySchema=[{"AttributeName": "pk", "KeyType": "HASH"}],
+            AttributeDefinitions=[{"AttributeName": "pk", "AttributeType": "S"}],
+            BillingMode="PAY_PER_REQUEST",
+        )
+        yield DynamoDBAdapter(client, _DDB_TABLE), client
+
+
+def _ddb_dump(client) -> dict:
+    out = {}
+    resp = client.scan(TableName=_DDB_TABLE)
+    for item in resp.get("Items", []):
+        out[item["pk"]["S"]] = item["v"]["S"]
+    return out
+
+
+def _ddb_seed(client, key, value):
+    client.put_item(
+        TableName=_DDB_TABLE, Item={"pk": {"S": key}, "v": {"S": str(value)}}
+    )
+
+
+def _ddb_tool_for(mutation):
+    if mutation in (INSERT, OVERWRITE):
+        def tool(client, key, value):
+            client.put_item(
+                TableName=_DDB_TABLE,
+                Item={"pk": {"S": key}, "v": {"S": str(value)}},
+            )
+        return tool
+
+    def tool(client, key, value):
+        client.delete_item(TableName=_DDB_TABLE, Key={"pk": {"S": key}})
+    return tool
+
+
+# --- Google Cloud Storage (runs offline against the in-repo fake) -----------
+#
+# GCS has no third-party in-process fake, so the conformance world is the
+# faithful double in tests/_fakes.py — modelled on the client surface the
+# adapter touches. Same keyed shape as S3: one bucket, blobs by name, bytes.
+
+_GCS_BUCKET = "pherix-conf-bucket"
+
+
+@contextlib.contextmanager
+def _gcs_world():
+    from pherix.core.adapters.gcs import GCSAdapter
+
+    from tests._fakes import FakeGCSClient
+
+    client = FakeGCSClient()
+    yield GCSAdapter(client, _GCS_BUCKET), client
+
+
+def _gcs_dump(client) -> dict:
+    return {b.name: b.download_as_bytes() for b in client.list_blobs(_GCS_BUCKET)}
+
+
+def _gcs_seed(client, key, value):
+    client.bucket(_GCS_BUCKET).blob(key).upload_from_string(str(value))
+
+
+def _gcs_tool_for(mutation):
+    if mutation in (INSERT, OVERWRITE):
+        def tool(client, key, value):
+            client.bucket(_GCS_BUCKET).blob(key).upload_from_string(str(value))
+        return tool
+
+    def tool(client, key, value):
+        client.bucket(_GCS_BUCKET).blob(key).delete()
+    return tool
+
+
+# --- Elasticsearch (runs offline against the in-repo fake) ------------------
+#
+# ES has no third-party in-process fake, so the conformance world is the
+# faithful double in tests/_fakes.py. Documents addressed by id within one
+# index; the value lives in field ``v`` and dump reads {id: source}.
+
+_ES_INDEX = "pherix-conf-index"
+
+
+@contextlib.contextmanager
+def _es_world():
+    from pherix.core.adapters.elasticsearch import ElasticsearchAdapter
+
+    from tests._fakes import FakeESClient
+
+    client = FakeESClient()
+    yield ElasticsearchAdapter(client, _ES_INDEX), client
+
+
+def _es_dump(client) -> dict:
+    resp = client.search(index=_ES_INDEX, query={"match_all": {}})
+    return {hit["_id"]: hit["_source"] for hit in resp["hits"]["hits"]}
+
+
+def _es_seed(client, key, value):
+    client.index(
+        index=_ES_INDEX, id=key, document={"v": str(value)}, refresh=True
+    )
+
+
+def _es_tool_for(mutation):
+    if mutation in (INSERT, OVERWRITE):
+        def tool(client, key, value):
+            client.index(
+                index=_ES_INDEX, id=key, document={"v": str(value)}, refresh=True
+            )
+        return tool
+
+    def tool(client, key, value):
+        client.delete(index=_ES_INDEX, id=key, refresh=True)
+    return tool
+
+
 # --- HTTP (always runs — irreversible) --------------------------------------
 #
 # The irreversibility law: supports_rollback() is False, snapshot/restore both
@@ -647,6 +784,33 @@ _KEYED_REVERSIBLE = [
         tool_for=_s3_tool_for,
         args_for=_kv_args,
         dump=_s3_dump,
+    ),
+    AdapterCase(
+        name="dynamodb",
+        supports_rollback=True,
+        factory=_dynamodb_world,
+        seed=_ddb_seed,
+        tool_for=_ddb_tool_for,
+        args_for=_kv_args,
+        dump=_ddb_dump,
+    ),
+    AdapterCase(
+        name="gcs",
+        supports_rollback=True,
+        factory=_gcs_world,
+        seed=_gcs_seed,
+        tool_for=_gcs_tool_for,
+        args_for=_kv_args,
+        dump=_gcs_dump,
+    ),
+    AdapterCase(
+        name="elasticsearch",
+        supports_rollback=True,
+        factory=_es_world,
+        seed=_es_seed,
+        tool_for=_es_tool_for,
+        args_for=_kv_args,
+        dump=_es_dump,
     ),
 ]
 

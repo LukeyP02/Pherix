@@ -33,6 +33,7 @@ def ingest(body: IngestBatch, request: Request, org_id: str = OrgDep) -> IngestR
         [t.model_dump() for t in body.transactions],
         [e.model_dump() for e in body.effects],
         [v.model_dump() for v in body.verdicts],
+        encrypted=body.encrypted,
     )
     return IngestResult(**result)
 
