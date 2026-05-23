@@ -101,16 +101,24 @@ def build_tools() -> list[Callable[..., Any]]:
     @tool(resource="sql")
     def list_refund_requests(conn) -> str:
         """List every pending refund request: order_id, customer, description,
-        amount_charged, and the requested refund amount."""
+        amount_charged, the requested refund amount, and already_refunded (the
+        total already refunded for that order — a non-zero value means a refund
+        was issued in a prior batch)."""
         rows = execute_isolated(
             conn,
             "SELECT o.id, o.customer, o.description, o.amount_charged, "
-            "       rr.requested_amount "
+            "       rr.requested_amount, "
+            "       COALESCE((SELECT SUM(f.amount) FROM refunds f "
+            "                 WHERE f.order_id = o.id), 0) AS already_refunded "
             "FROM orders o "
             "JOIN refund_requests rr ON rr.order_id = o.id "
             "WHERE o.status = 'refund_requested' "
             "ORDER BY o.id",
-            reads=[("orders", "refund_requested"), ("refund_requests", "all")],
+            reads=[
+                ("orders", "refund_requested"),
+                ("refund_requests", "all"),
+                ("refunds", "all"),
+            ],
         ).fetchall()
         return json.dumps(
             [
@@ -120,6 +128,7 @@ def build_tools() -> list[Callable[..., Any]]:
                     "description": r[2],
                     "amount_charged": r[3],
                     "requested_amount": r[4],
+                    "already_refunded": r[5],
                 }
                 for r in rows
             ]
