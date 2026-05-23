@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adapters — Pherix</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Pher<span>ix</span></div>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="quickstart.html">Quickstart</a>
+    <a href="four-axes.html">Four axes</a>
+    <a href="python-api.html">Python API</a>
+    <a href="typescript-api.html">TypeScript API</a>
+    <a href="adapters.html" class="active">Adapters</a>
+    <a href="compensators.html">Compensators</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <h1>Adapters</h1>
+  <p class="lede">An adapter is a triple <code>(snapshot, apply, restore)</code> over a
+  class of resource — the seam that makes a backend transactable. The backend does
+  the undo; Pherix orchestrates the fold.</p>
+
+  <h2>The catalog</h2>
+  <p>The kernel has zero third-party dependencies. Each backend driver is an
+  <strong>optional extra</strong>, lazy-imported only when you construct that
+  adapter — so <code>import pherix</code> works with nothing installed.</p>
+
+  <table>
+    <tr><th>Adapter</th><th>Constructor</th><th>Undo mechanism</th><th>Extra</th></tr>
+    <tr><td>SQLite</td><td><code>SQLiteAdapter(conn)</code></td><td>savepoint</td><td>built-in</td></tr>
+    <tr><td>PostgreSQL</td><td><code>PostgresAdapter(conn)</code></td><td>savepoint</td><td><code>pherix[postgres]</code></td></tr>
+    <tr><td>MySQL</td><td><code>MySQLAdapter(conn)</code></td><td>savepoint</td><td><code>pherix[mysql]</code></td></tr>
+    <tr><td>Filesystem</td><td><code>FilesystemAdapter(root)</code></td><td>content backup</td><td>built-in</td></tr>
+    <tr><td>MongoDB</td><td><code>MongoAdapter(db)</code></td><td>document before-image</td><td><code>pherix[mongodb]</code></td></tr>
+    <tr><td>Redis</td><td><code>RedisAdapter(client)</code></td><td>key before-image (DUMP/RESTORE)</td><td><code>pherix[redis]</code></td></tr>
+    <tr><td>Amazon S3</td><td><code>S3Adapter(client, bucket)</code></td><td>object before-image</td><td><code>pherix[s3]</code></td></tr>
+    <tr><td>DynamoDB</td><td><code>DynamoDBAdapter(client, table, key_attr="pk")</code></td><td>item before-image</td><td><code>pherix[dynamodb]</code></td></tr>
+    <tr><td>Google Cloud Storage</td><td><code>GCSAdapter(client, bucket)</code></td><td>blob before-image</td><td><code>pherix[gcs]</code></td></tr>
+    <tr><td>Elasticsearch / OpenSearch</td><td><code>ElasticsearchAdapter(client, index)</code></td><td>document before-image</td><td><code>pherix[elasticsearch]</code></td></tr>
+    <tr><td>HTTP</td><td><code>HTTPAdapter()</code></td><td><strong>none</strong> — irreversible</td><td>built-in</td></tr>
+    <tr><td>REST / GraphQL</td><td><code>RESTAdapter(...)</code></td><td><strong>none</strong> — irreversible</td><td>built-in</td></tr>
+  </table>
+
+  <div class="note"><strong>Reversible vs. irreversible.</strong> The first group can
+  be snapshotted, so a rollback restores exact state. HTTP/REST cannot — they take
+  the staged/gated lane and rely on <a href="compensators.html">compensators</a> for
+  semantic undo. Pherix is honest about what it cannot revert rather than pretending.</div>
+
+  <h2>Example: bind two resources</h2>
+  <pre><code><span class="tok-kw">from</span> pherix <span class="tok-kw">import</span> SQLiteAdapter, S3Adapter, agent_txn
+
+adapters = {
+    <span class="tok-str">"sql"</span>: SQLiteAdapter(conn),
+    <span class="tok-str">"s3"</span>:  S3Adapter(boto3_client, bucket=<span class="tok-str">"my-bucket"</span>),
+}
+<span class="tok-kw">with</span> agent_txn(adapters) <span class="tok-kw">as</span> txn:
+    write_row(...)        <span class="tok-com"># resource="sql"  -> SQLiteAdapter</span>
+    put_object(...)       <span class="tok-com"># resource="s3"   -> S3Adapter</span>
+    <span class="tok-com"># a rollback restores BOTH: the SQL savepoint and the S3 object before-image</span></code></pre>
+
+  <h2>The before-image pattern</h2>
+  <p>Stores without a per-write savepoint (Redis, S3, Mongo, DynamoDB, GCS,
+  Elasticsearch) are made reversible the same way: <code>snapshot</code> captures the
+  prior state of each touched key, and <code>restore</code> rewrites it — re-create if
+  it existed, delete if it did not. A tool declares the keys it touches via
+  <code>args["key"]</code> (single) or <code>args["keys"]</code> (a list).</p>
+
+  <h2>Writing your own adapter</h2>
+  <p>Implement the protocol — four members — and your resource is transactable:</p>
+  <pre><code><span class="tok-kw">class</span> MyAdapter:
+    name = <span class="tok-str">"myresource"</span>
+
+    <span class="tok-kw">def</span> supports_rollback(self) -> bool:
+        <span class="tok-kw">return</span> True                       <span class="tok-com"># honesty flag; False routes to the staged lane</span>
+
+    <span class="tok-kw">def</span> snapshot(self, effect):           <span class="tok-com"># capture the before-state</span>
+        ...
+
+    <span class="tok-kw">def</span> apply(self, effect, tool_fn):     <span class="tok-com"># execute the effect (inject the handle)</span>
+        <span class="tok-kw">return</span> tool_fn(self._handle, **effect.args)
+
+    <span class="tok-kw">def</span> restore(self, handle):            <span class="tok-com"># revert to the captured before-state</span>
+        ...</code></pre>
+  <p>If your store can also version keys, add <code>read_version</code>/<code>write_version</code>
+  and it joins commit-time <a href="four-axes.html">isolation</a> too.</p>
+</main>
+
+<footer>Pherix documentation · works offline · <code>python -m http.server</code> from the repo root</footer>
+</body>
+</html>
