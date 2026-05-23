@@ -40,7 +40,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from pherix.core.adapters.base import SnapshotHandle
+from pherix.core.adapters.base import SavepointAdapter
 from pherix.core.effects import Effect
 
 # The single durable store table. ``namespace`` scopes one agent's memory from
@@ -145,71 +145,46 @@ class MemoryHandle:
         self._effect.write_keys.append(("memory", (key,), version_after))
 
 
-class MemoryAdapter:
-    """``ResourceAdapter`` over a durable, namespaced key/value memory store."""
+class MemoryAdapter(SavepointAdapter):
+    """``ResourceAdapter`` over a durable, namespaced key/value memory store.
+
+    The SQLite-savepoint lane (``snapshot`` / ``restore`` / ``begin`` /
+    ``commit`` / ``rollback`` / ``supports_rollback`` / ``_savepoint_name``)
+    and the ``conn`` accessor are inherited verbatim from
+    :class:`~pherix.core.adapters.base.SavepointAdapter`; only the
+    ``mem_sp`` savepoint prefix, the memory-vocabulary ``apply`` and the
+    content-addressed versioning are memory-specific.
+
+    The inherited ``conn`` accessor is exposed so the existing ``sql_reader``
+    mediator can serve ``ctx.read("memory", ...)`` world-state rules through the
+    unchanged runtime — the policy axis (incl. #7) covers memory with no new
+    wiring. Honesty caveat (committed-only vs read-your-writes): ``conn`` is the
+    main connection, which sits inside the txn's ``BEGIN`` while it is open, so a
+    commit-time world-state read of a key THIS txn has already written sees its
+    own uncommitted value (read-your-writes), not committed-only state. That is
+    correct for predicates over keys the txn does not write (a lock marker, a
+    sibling record); a rule whose predicate reads the very key it writes will not
+    observe a commit-time divergence from stage-time. The SQL adapter's
+    ``meta_conn`` (committed-only reads for cross-process TOCTOU) is deliberately
+    not replicated here — the memory base is single-process; a design partner
+    needing committed-only memory reads pulls that in, exactly as #8 was pulled
+    for SQL.
+    """
 
     name = "memory"
+    _SAVEPOINT_PREFIX = "mem_sp"
 
     def __init__(self, conn: sqlite3.Connection, *, namespace: str = "default"):
-        self._conn = conn
+        super().__init__(conn)  # sets self._conn; savepoint lane is in the base
         self._namespace = namespace
         # Idempotent DDL — re-binding the adapter to the same file is safe.
         self._conn.execute(_MEMORY_TABLE_DDL)
 
     @property
-    def conn(self) -> sqlite3.Connection:
-        # Exposed so the existing ``sql_reader`` mediator can serve
-        # ``ctx.read("memory", ...)`` world-state rules through the unchanged
-        # runtime — the policy axis (incl. #7) covers memory with no new wiring.
-        #
-        # Honesty caveat (committed-only vs read-your-writes): this is the main
-        # connection, which sits inside the txn's ``BEGIN`` while it is open. So
-        # a commit-time world-state read of a key THIS txn has already written
-        # sees its own uncommitted value (read-your-writes), not committed-only
-        # state. That is correct for predicates over keys the txn does not write
-        # (a lock marker, a sibling record); a rule whose predicate reads the
-        # very key it writes will not observe a commit-time divergence from
-        # stage-time. The SQL adapter's ``meta_conn`` (committed-only reads for
-        # cross-process TOCTOU) is deliberately not replicated here — the memory
-        # base is single-process; a design partner needing committed-only memory
-        # reads pulls that in, exactly as #8 was pulled for SQL.
-        return self._conn
-
-    @property
     def namespace(self) -> str:
         return self._namespace
 
-    def supports_rollback(self) -> bool:
-        return True
-
-    # --- transaction-scope lifecycle (TransactionalResourceAdapter) ---------
-
-    def begin(self) -> None:
-        self._conn.execute("BEGIN")
-
-    def commit(self) -> None:
-        self._conn.execute("COMMIT")
-
-    def rollback(self) -> None:
-        self._conn.execute("ROLLBACK")
-
-    # --- per-effect snapshot / apply / restore ------------------------------
-
-    @staticmethod
-    def _savepoint_name(index: int) -> str:
-        # ``index`` is a runtime-assigned integer, never user input, so building
-        # the identifier by interpolation is safe (SQLite cannot parameterise
-        # identifiers regardless).
-        return f"mem_sp_{int(index)}"
-
-    def snapshot(self, effect: Effect) -> SnapshotHandle:
-        sp = self._savepoint_name(effect.index)
-        self._conn.execute(f"SAVEPOINT {sp}")
-        return SnapshotHandle(
-            resource=self.name,
-            effect_index=effect.index,
-            payload={"savepoint": sp},
-        )
+    # --- per-effect apply ---------------------------------------------------
 
     def apply(self, effect: Effect, tool_fn: Callable[..., Any]) -> Any:
         # D2: the txn-owned handle is injected as the tool's first arg; the
@@ -223,10 +198,6 @@ class MemoryAdapter:
             adapter=self,
         )
         return tool_fn(handle, **effect.args)
-
-    def restore(self, handle: SnapshotHandle) -> None:
-        sp = handle.payload["savepoint"]
-        self._conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
 
     # --- versioning (content-addressed, like the filesystem adapter) --------
 
