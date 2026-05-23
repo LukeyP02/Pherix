@@ -16,7 +16,16 @@ import os
 from fastapi import FastAPI
 
 from dashboard.backend.db import Store
-from dashboard.backend.routers import agents, ingest, orgs, policies, search
+from dashboard.backend.routers import (
+    agents,
+    arbiter,
+    ingest,
+    memory,
+    metering,
+    orgs,
+    policies,
+    search,
+)
 
 
 def create_app(store: Store, admin_key: str) -> FastAPI:
@@ -24,8 +33,10 @@ def create_app(store: Store, admin_key: str) -> FastAPI:
         title="Pherix Control Plane",
         description=(
             "Multi-tenant commercial layer: orgs/users/keys, the agent registry, "
-            "versioned policy distribution, opt-in journal ingest, and cross-host "
-            "audit search. Consumes the substrate; never reaches into the engine."
+            "versioned policy distribution, opt-in journal ingest, cross-host "
+            "audit search, governed-memory-as-a-service, the cross-host arbiter "
+            "(distributed locks + hard budgets), and minimal usage metering. "
+            "Consumes the substrate; never reaches into the engine."
         ),
         version="0.1.0",
         docs_url="/api/docs",
@@ -39,6 +50,9 @@ def create_app(store: Store, admin_key: str) -> FastAPI:
     app.include_router(policies.router, prefix="/api/v1", tags=["policy"])
     app.include_router(ingest.router, prefix="/api/v1", tags=["journal"])
     app.include_router(search.router, prefix="/api/v1", tags=["audit"])
+    app.include_router(memory.router, prefix="/api/v1", tags=["memory"])
+    app.include_router(arbiter.router, prefix="/api/v1", tags=["arbiter"])
+    app.include_router(metering.router, prefix="/api/v1", tags=["metering"])
 
     @app.get("/api/health", tags=["meta"])
     def health() -> dict[str, str]:
