@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The four axes — Pherix</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Pher<span>ix</span></div>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="quickstart.html">Quickstart</a>
+    <a href="four-axes.html" class="active">Four axes</a>
+    <a href="python-api.html">Python API</a>
+    <a href="typescript-api.html">TypeScript API</a>
+    <a href="adapters.html">Adapters</a>
+    <a href="compensators.html">Compensators</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <h1>The four axes</h1>
+  <p class="lede">To make an action transactional you must answer four questions.
+  Pherix is exactly those four answers, built on one shared journal — and there is
+  no fifth.</p>
+
+  <table>
+    <tr><th>Axis</th><th>The question</th><th>What fills it</th></tr>
+    <tr><td><strong>Interception</strong></td><td>How do actions reach us?</td><td>The Python library, the TypeScript SDK, the MCP gateway.</td></tr>
+    <tr><td><strong>Policy</strong></td><td>What do we allow?</td><td>Allow/deny, caps, the human gate, world-state rules.</td></tr>
+    <tr><td><strong>Adapters</strong></td><td>How do we undo what <em>can</em> be undone?</td><td>Per-resource <code>snapshot / apply / restore</code>.</td></tr>
+    <tr><td><strong>Compensators</strong></td><td>How do we undo what <em>can't</em>?</td><td>The staged/gated lane + vetted semantic inverses.</td></tr>
+  </table>
+
+  <h2>1. Interception</h2>
+  <p>Pherix wraps your tool-call layer so effects flow through the journal. You
+  decorate tools with <code>@tool</code> and run your agent inside
+  <code>agent_txn</code>; the agent code is unchanged and unaware. The same core is
+  driven by three front-ends — the Python library, the TypeScript SDK, and an MCP
+  gateway for other-language agents.</p>
+
+  <h2>2. Policy</h2>
+  <p>A policy decides what an agent is allowed to do. Rules can allow or deny by
+  tool and arguments, cap aggregates (e.g. "no more than $100 charged per
+  transaction"), and require a human to approve sensitive effects. Crucially,
+  policy is evaluated <strong>twice</strong>:</p>
+  <ul>
+    <li>at <strong>stage-time</strong>, to fail fast; and</li>
+    <li>again at <strong>commit-time</strong>, because the world may have changed
+    between the two — the safety property that closes time-of-check/time-of-use
+    gaps.</li>
+  </ul>
+  <pre><code><span class="tok-kw">from</span> pherix <span class="tok-kw">import</span> Policy, Allow, Deny, Cap
+
+policy = Policy(rules=[
+    Deny(tool=<span class="tok-str">"charge_card"</span>, when=<span class="tok-kw">lambda</span> a: a[<span class="tok-str">"cents"</span>] > 50_000),
+    Cap.sum(tool=<span class="tok-str">"charge_card"</span>, arg=<span class="tok-str">"cents"</span>, limit=100_000),
+])
+<span class="tok-kw">with</span> agent_txn(adapters, policy=policy) <span class="tok-kw">as</span> txn:
+    ...</code></pre>
+  <p>See the <a href="python-api.html">Python API</a> for the exact rule surface.</p>
+
+  <h2>3. Adapters — undoing the reversible</h2>
+  <p>An adapter is a triple <code>(snapshot, apply, restore)</code> over a class of
+  resource. <strong>The backend does the undo</strong>: the SQL adapter issues a
+  real <code>SAVEPOINT</code> and rolls back to it; the filesystem adapter keeps a
+  content-hash backup of touched paths; object stores capture the before-image of
+  each touched key. Restore is exact and needs no knowledge of what the action
+  <em>meant</em>. <a href="adapters.html">Browse the adapters →</a></p>
+
+  <h2>4. Compensators — undoing the irreversible</h2>
+  <p>Some effects can't be snapshotted — you can't un-send an email or un-charge a
+  card by reverting state. Pherix is honest about this. An irreversible effect is
+  <strong>staged</strong>, not run live, and fires only at commit:</p>
+  <ul>
+    <li>If a <strong>compensator</strong> is registered (a semantic inverse —
+    charge→refund, invite→revoke), the effect auto-commits and the compensator is
+    used on rollback.</li>
+    <li>If none is registered, commit <strong>gates</strong>: it blocks until an
+    explicit <code>approve_irreversible()</code> — a human, or a higher-trust policy.</li>
+  </ul>
+  <p>A rollback <em>before</em> commit means the irreversible effect simply never
+  happened — that is the whole point. <a href="compensators.html">See the
+  compensator catalog →</a></p>
+
+  <div class="note"><strong>Adapters and compensators are two different undo
+  mechanisms.</strong> Adapter restore is <em>state rollback</em> (snapshot, then
+  revert — exact). A compensator is a <em>semantic inverse</em> (run an opposite
+  action — approximate, needs the meaning). The boundary is whether the resource
+  can be snapshotted.</div>
+
+  <h2>Everything else is a consequence</h2>
+  <p>The four axes ride on one append-only effect journal — and the rest falls out
+  of traversing it:</p>
+  <table>
+    <tr><th>Capability</th><th>Journal operation</th></tr>
+    <tr><td>Commit</td><td>fold <strong>forward</strong>, apply each effect</td></tr>
+    <tr><td>Rollback</td><td>fold <strong>backward</strong>, restore / compensate each</td></tr>
+    <tr><td>Dry-run</td><td>fold forward against a snapshot, then discard</td></tr>
+    <tr><td>Isolation</td><td>diff this transaction's read/write keys against the journal</td></tr>
+    <tr><td>Audit</td><td>read the journal — it <em>is</em> the log</td></tr>
+  </table>
+  <pre><code><span class="tok-kw">from</span> pherix <span class="tok-kw">import</span> dry_run
+
+<span class="tok-kw">with</span> dry_run(adapters) <span class="tok-kw">as</span> ctx:        <span class="tok-com"># fold forward against a snapshot…</span>
+    plan_some_changes()
+<span class="tok-com"># …then the snapshot is discarded — nothing was committed. Inspect ctx for the plan.</span></code></pre>
+</main>
+
+<footer>Pherix documentation · works offline · <code>python -m http.server</code> from the repo root</footer>
+</body>
+</html>
