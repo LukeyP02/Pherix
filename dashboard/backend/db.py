@@ -120,9 +120,10 @@ CREATE TABLE IF NOT EXISTS ingest_effects (
     resource    TEXT NOT NULL,
     reversible  INTEGER NOT NULL,
     status      TEXT NOT NULL,
-    args        TEXT,                    -- JSON, PII redacted client-side before ingest
-    result      TEXT,
+    args        TEXT,                    -- payload: PII-redacted then ENCRYPTED client-side
+    result      TEXT,                    -- payload: ENCRYPTED client-side (ciphertext token)
     ts          TEXT,
+    enc         INTEGER NOT NULL DEFAULT 0,  -- 1 = args/result are ciphertext we cannot read
     seq         INTEGER NOT NULL,
     ingested_at TEXT NOT NULL,
     PRIMARY KEY (org_id, agent_id, txn_id, idx)
@@ -463,10 +464,17 @@ class Store:
         transactions: list[dict],
         effects: list[dict],
         verdicts: list[dict],
+        encrypted: bool = False,
     ) -> dict:
         """Append a batch of journal rows. Idempotent: re-shipping a row whose
         primary key already exists is silently skipped (``INSERT OR IGNORE`` —
         the one SQLite idiom to port to ``ON CONFLICT DO NOTHING`` on Postgres).
+
+        ``encrypted`` records that this batch's effect payloads (``args`` /
+        ``result``) arrived as ciphertext the control plane cannot read — stored
+        as-is under the customer's key. The cleartext metadata
+        (tool/resource/status/ts) is untouched, which is what the metering +
+        shape views run on.
 
         Returns accepted/skipped counts and the org's new high-water seq.
         """
@@ -495,13 +503,13 @@ class Store:
                 cur = conn.execute(
                     "INSERT OR IGNORE INTO ingest_effects "
                     "(org_id, agent_id, txn_id, idx, effect_id, tool, resource, "
-                    "reversible, status, args, result, ts, seq, ingested_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "reversible, status, args, result, ts, enc, seq, ingested_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         org_id, agent_id, e["txn_id"], e["idx"], e["effect_id"],
                         e["tool"], e["resource"], int(bool(e.get("reversible", False))),
                         e["status"], e.get("args"), e.get("result"), e.get("ts"),
-                        seq, now,
+                        int(bool(encrypted)), seq, now,
                     ),
                 )
                 accepted += cur.rowcount
