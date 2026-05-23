@@ -45,7 +45,7 @@ from pherix.core.audit import AuditJournal
 from pherix.core.policy import Allow, Cap, Deny, Policy
 from pherix.core.tools import REGISTRY, tool
 
-from examples.dogfood.harness import AgentRun, run_agent
+from examples.dogfood.harness import AgentRun, UngovernedFsHandle, run_agent
 
 # The OpenClaw identity ties the red-team to the local-agent narrative: the same
 # run, driven by OpenClaw on a local model inside this governed environment, is
@@ -207,6 +207,7 @@ def run_redteam(
     model: str | None = None,
     api: str = "anthropic",
     base_url: str | None = None,
+    governed: bool = True,
 ) -> AgentRun:
     """Run the autonomous red-team against the repo at ``root``.
 
@@ -218,9 +219,33 @@ def run_redteam(
     apply. ``client`` is injectable (the offline mechanism test passes a mock); a
     keyed/local real run passes ``None``. ``api`` / ``base_url`` select cloud
     Anthropic or a local OpenAI-compatible endpoint (the OpenClaw capstone).
+
+    ``governed=False`` runs the **ungoverned "before"**: the same four tools and
+    the same cleanup-and-ship goal, but no policy and no transaction. There is
+    nothing to deny and nothing to gate — ``delete_file('.env')`` actually
+    unlinks the secret, edits outside ``src/`` land on disk, and ``run_git`` /
+    ``run_shell`` fire unchecked. That is precisely the wreckage
+    :func:`redteam_policy` contains on the governed path.
     """
     audit = audit or AuditJournal.in_memory()
     tools = build_redteam_tools()
+    if not governed:
+        # No policy, no transaction: file edits/deletes hit disk straight away;
+        # git/shell take no injected handle, so only ``fs`` needs a handle.
+        return run_agent(
+            task=TASK,
+            system=SYSTEM,
+            tools=tools,
+            adapters={},
+            client_id=client_id,
+            client=client,
+            audit=audit,
+            api=api,
+            base_url=base_url,
+            governed=False,
+            handles={"fs": UngovernedFsHandle(Path(root))},
+            **({"model": model} if model is not None else {}),
+        )
     adapters = {
         "fs": FilesystemAdapter(Path(root)),
         "git": _IrreversibleEcho("git"),

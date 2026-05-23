@@ -74,17 +74,25 @@ class AgentRun:
     caller-declared domain one (see ``run_agent``'s ``commit_refusals``) — if
     the transaction could not commit. The run still returns rather than raising,
     so the caller can inspect what happened.
+
+    ``governed`` is ``True`` for the normal (Pherix-in-the-path) run and
+    ``False`` for the *ungoverned* "before" run (``run_agent(governed=False)``):
+    there is no transaction, so ``txn_id`` / ``final_state`` are ``None``, the
+    ``journal`` is empty (the whole point — nothing is journalled), and the
+    ``audit`` handle stays empty. The run is judged by querying the **real
+    resources** the effects hit, not the journal.
     """
 
     transcript: list[dict]
     journal: list
     audit: AuditJournal
-    txn_id: str
-    final_state: TxnState
+    txn_id: str | None
+    final_state: TxnState | None
     dry_run_result: Any = None
     error: Exception | None = None
     stop_reason: str | None = None
     turns: int = 0
+    governed: bool = True
 
 
 def run_agent(
@@ -105,6 +113,8 @@ def run_agent(
     audit: AuditJournal | None = None,
     api: str = "anthropic",
     base_url: str | None = None,
+    governed: bool = True,
+    handles: dict[str, Any] | None = None,
 ) -> AgentRun:
     """Run a real agent on ``task`` with Pherix wrapping its tool calls.
 
@@ -134,6 +144,23 @@ def run_agent(
     commit-time (e.g. a staged smoke-test that fails inside the fire loop) is a
     first-class ``_partial_unwind`` path — capturing it lets the caller inspect
     the unwound ``AgentRun`` rather than wrap the call in try/except.
+
+    ``governed`` (default ``True``) is the *world* the run lives in. The default
+    is the normal Pherix-in-the-path run described above. ``governed=False`` is
+    the **ungoverned "before"**: the same model loop, the same backend seam, the
+    same tools — but **no** ``agent_txn``, so no policy, no journal, no snapshot,
+    no gate. Each call fires straight at the real resource and *persists*. This
+    needs ``handles`` because the ``@tool`` wrapper, called outside ``agent_txn``,
+    is a transparent passthrough that does **not** inject the resource handle
+    (see ``pherix/core/tools.py``): the ungoverned path therefore dispatches each
+    call itself as ``spec.fn(handles[resource], **args)`` for handle-injecting
+    tools (e.g. ``sql`` → the live connection, ``fs`` → an
+    :class:`UngovernedFsHandle`) and ``spec.fn(**args)`` otherwise (e.g.
+    ``http`` / ``git`` / ``shell``). ``handles`` maps ``resource -> handle`` and
+    is required when ``governed=False``. The returned :class:`AgentRun` has no
+    transaction (``txn_id`` / ``final_state`` are ``None``, ``journal`` empty) —
+    the "before" is judged by querying the real resources, not the journal. The
+    governed branch below is untouched, so its behaviour stays byte-identical.
     """
     if mode not in ("commit", "dry_run"):
         raise ValueError(f"mode must be 'commit' or 'dry_run', got {mode!r}")
@@ -141,6 +168,12 @@ def run_agent(
         raise ValueError(
             "isolation has no meaning in dry_run mode (a dry-run never commits, "
             "so it never competes for a conflict)"
+        )
+    if not governed and handles is None:
+        raise ValueError(
+            "ungoverned runs (governed=False) need handles={resource: handle} so "
+            "the loop can inject the resource handle the @tool wrapper would have "
+            "injected inside agent_txn (e.g. {'sql': conn, 'fs': UngovernedFsHandle(root)})"
         )
 
     backend = _backend_for(api)
@@ -154,7 +187,7 @@ def run_agent(
 
     state: dict[str, Any] = {"stop": None, "turns": 0}
 
-    def _loop() -> None:
+    def _loop(ungoverned_handles: dict[str, Any] | None = None) -> None:
         for _ in range(max_turns):
             state["turns"] += 1
             resp = backend.create(
@@ -171,10 +204,34 @@ def run_agent(
             if not calls:
                 return
             results = [
-                _Outcome(call, *_invoke_tool(call.name, call.args, tool_map))
+                _Outcome(
+                    call,
+                    *_invoke_tool(
+                        call.name, call.args, tool_map, handles=ungoverned_handles
+                    ),
+                )
                 for call in calls
             ]
             messages.extend(backend.result_messages(results))
+
+    # The ungoverned "before": no transaction at all. The same model loop runs,
+    # but each call fires straight at the real resource via ``handles`` and
+    # persists — there is nothing to commit, roll back, or journal. We return an
+    # AgentRun with no transaction so the caller judges it by the resource state.
+    if not governed:
+        _loop(ungoverned_handles=handles)
+        return AgentRun(
+            transcript=messages,
+            journal=[],
+            audit=audit,
+            txn_id=None,
+            final_state=None,
+            dry_run_result=None,
+            error=None,
+            stop_reason=state["stop"],
+            turns=state["turns"],
+            governed=False,
+        )
 
     dry_result = None
     error: Exception | None = None
@@ -236,9 +293,12 @@ class _Outcome:
 
 
 def _invoke_tool(
-    name: str | None, args: dict, tool_map: dict[str, Callable[..., Any]]
+    name: str | None,
+    args: dict,
+    tool_map: dict[str, Callable[..., Any]],
+    handles: dict[str, Any] | None = None,
 ) -> tuple[str, bool]:
-    """Call one tool through Pherix; return ``(content, is_error)``.
+    """Call one tool; return ``(content, is_error)``.
 
     This is the single dispatch point both backends funnel through — identical
     regardless of which model API produced the call, which is exactly why a
@@ -247,17 +307,80 @@ def _invoke_tool(
     the denied call left nothing in the journal. Any other tool exception is
     likewise reported back rather than crashing the loop, so a single bad call
     doesn't abort the whole run.
+
+    ``handles`` distinguishes the two worlds. ``None`` → **governed**: the call
+    goes through the ``@tool`` wrapper, which (inside ``agent_txn``) journals,
+    snapshots, policy-checks and audits it. A dict → **ungoverned "before"**:
+    we bypass the wrapper (outside ``agent_txn`` it would passthrough *without*
+    injecting the handle) and call the underlying ``spec.fn`` directly, injecting
+    ``handles[resource]`` for handle-taking tools — the effect fires straight at
+    the real resource and persists, with no journal and no policy.
     """
     wrapper = tool_map.get(name)
     if wrapper is None:
         return (f"unknown tool {name!r}", True)
     try:
-        out = wrapper(**args)
+        if handles is None:
+            out = wrapper(**args)
+        else:
+            out = _invoke_ungoverned(wrapper.tool_spec, args, handles)
     except PolicyViolation as exc:
         return (f"DENIED by policy: {exc}", True)
     except Exception as exc:  # noqa: BLE001 - report tool faults to the model
         return (f"tool error: {type(exc).__name__}: {exc}", True)
     return (_render_output(out), False)
+
+
+def _invoke_ungoverned(spec: Any, args: dict, handles: dict[str, Any]) -> Any:
+    """Dispatch one call in the ungoverned world — fire straight at the resource.
+
+    Mirrors what the runtime does on the governed path *except* the transaction:
+    a handle-injecting tool gets ``handles[resource]`` as its first argument (the
+    live connection / filesystem handle), an injection-free tool (http / git /
+    shell) is called with its declared args alone. No policy, no snapshot, no
+    journal — the effect happens and stays.
+    """
+    if spec.injects_handle:
+        return spec.fn(handles[spec.resource], **args)
+    return spec.fn(**args)
+
+
+class UngovernedFsHandle:
+    """The "before"-world filesystem handle: writes/deletes hit disk immediately.
+
+    The governed :class:`pherix.core.adapters.filesystem.FsHandle` exposes the
+    same ``write`` / ``delete`` / ``read`` surface but takes a copy-on-write
+    backup of every first touch so the adapter can ``restore`` it on rollback —
+    that backup is what makes a filesystem effect reversible. This handle is
+    deliberately that *minus* the safety net: it resolves paths under ``root``
+    (so a relative ``.env`` lands inside the scratch tree, not on the real
+    machine) and then writes or unlinks straight away. There is no backup and
+    nothing to restore — which is exactly the point of the ungoverned demo: the
+    secret really is gone, the clobbered file really is clobbered.
+    """
+
+    def __init__(self, root: Path | str):
+        self._root = Path(root).resolve()
+
+    def _resolve(self, rel_path: str) -> Path:
+        candidate = Path(rel_path)
+        if candidate.is_absolute():
+            raise ValueError(f"path {rel_path!r} is outside root {self._root}")
+        target = (self._root / candidate).resolve()
+        if not target.is_relative_to(self._root):
+            raise ValueError(f"path {rel_path!r} is outside root {self._root}")
+        return target
+
+    def write(self, rel_path: str, data: bytes) -> None:
+        target = self._resolve(rel_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+
+    def delete(self, rel_path: str) -> None:
+        self._resolve(rel_path).unlink()
+
+    def read(self, rel_path: str) -> bytes:
+        return self._resolve(rel_path).read_bytes()
 
 
 def _render_output(out: Any) -> str:
