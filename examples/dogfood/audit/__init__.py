@@ -68,7 +68,9 @@ from typing import Any, Callable
 
 from pherix.core.adapters.sql import SQLiteAdapter, execute_isolated
 from pherix.core.audit import AuditJournal
-from pherix.core.tools import tool
+from pherix.core.isolation import IsolationConflict
+from pherix.core.runtime import agent_txn
+from pherix.core.tools import REGISTRY, tool
 
 from examples.dogfood.harness import AgentRun, run_agent
 from examples.dogfood.infra import ScratchDB
@@ -277,6 +279,200 @@ def ledger_balance(ledger_db: ScratchDB) -> int:
         return entries_total + adj_total
     finally:
         conn.close()
+
+
+# --- the before/after: a contended entry, with isolation on vs off ----------
+#
+# The two-agent demo above runs DISJOINT entry subsets, so its common path is
+# clean parallel work and the isolation payoff only shows under a genuine race.
+# The before/after pair makes that payoff filmable and deterministic: put TWO
+# reconcilers on the SAME entry, then compare the world with Pherix's isolation
+# to the world without it. One -50 correction is needed; un-isolated, both
+# agents book it (neither saw the other's write) and the entry over-corrects —
+# the lost update. Isolated, the second committer's stale read is aborted, so
+# exactly one correction lands.
+
+# The single entry both reconcilers contend on: receivable, seeded at 550,
+# expected 500 — exactly one -50 correction is needed.
+CONTENDED_ENTRY = 2
+
+
+def entry_effective_amount(ledger_db: ScratchDB, entry_id: int) -> int:
+    """An entry's amount after its adjustments — ``entries.amount + Σ adjustments.delta``.
+
+    A correctly-reconciled entry equals its :data:`EXPECTED_AMOUNTS` value.
+    Over-correcting it — two agents each booking the same -50 because neither saw
+    the other's write — pushes it past expected, which is the visible signature
+    of the lost update. Read through a fresh connection (a long-lived one can
+    hold a stale WAL read snapshot — see :func:`ledger_balance`).
+    """
+    conn = ledger_db.connect()
+    try:
+        base = conn.execute(
+            "SELECT amount FROM entries WHERE id = ?", (entry_id,)
+        ).fetchone()[0]
+        adj = conn.execute(
+            "SELECT COALESCE(SUM(delta), 0) FROM adjustments WHERE entry_id = ?",
+            (entry_id,),
+        ).fetchone()[0]
+        return base + adj
+    finally:
+        conn.close()
+
+
+@dataclass
+class ContendedOutcome:
+    """The result of one contended reconciliation — enough to judge either world.
+
+    ``adjustments`` is every adjustment row on the contended entry as
+    ``(entry_id, delta, client_id)``; ``effective_amount`` is the entry after
+    those adjustments; ``conflict`` is whether the isolation engine aborted a
+    stale reader (only meaningful when ``governed``). ``corrupted`` is the
+    headline the demo films: the entry was pushed off its expected value.
+    """
+
+    governed: bool
+    effective_amount: int
+    expected_amount: int
+    adjustments: list[tuple]
+    conflict: bool
+
+    @property
+    def corrupted(self) -> bool:
+        return self.effective_amount != self.expected_amount
+
+
+def _contended_adjustments(ledger_db: ScratchDB, entry_id: int) -> list[tuple]:
+    conn = ledger_db.connect()
+    try:
+        return conn.execute(
+            "SELECT entry_id, delta, client_id FROM adjustments "
+            "WHERE entry_id = ? ORDER BY id",
+            (entry_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def run_contended_reconciliation(
+    *,
+    db: ScratchDB,
+    audit_path: str,
+    governed: bool,
+    entry_id: int = CONTENDED_ENTRY,
+) -> ContendedOutcome:
+    """Two reconcilers race on ONE entry; ``governed`` decides whether it corrupts.
+
+    Both auditors read ``entry_id`` (seeded 550) and each independently concludes
+    it is overstated by 50, so each books a -50 correction. Exactly one is needed.
+
+    ``governed=True`` is the deterministic Slice-4 conflict shape (the same one
+    ``test_reviewer_and_corrector_on_same_entry_isolated_no_corruption`` proves):
+    A reads the entry inside its transaction — the reviewer, about to book the
+    same -50; while A is still open B books the -50 against the entry and commits,
+    bumping the ``("entries", N)`` version; A reaches the end of its block and its
+    commit-time diff sees its read went stale → ``Abort`` raises
+    ``IsolationConflict`` and A unwinds, so A's redundant correction is never
+    written. Net: B's single -50, the entry corrected to expected, attributed.
+
+    (A is read-only here on purpose: two genuine *writers* on one SQLite file
+    serialize at the SQLite write-lock layer — A's write against a snapshot B
+    has since moved would raise ``database is locked`` *before* Pherix could
+    arbitrate — so the deterministic in-process shape makes A the reviewer whose
+    stale read is aborted. The before world below, being un-isolated autocommit,
+    has no held transaction, so both writers genuinely land.)
+
+    ``governed=False`` is the **before**: no transaction, no isolation. A reads
+    (stale), B books -50, then A books -50 too — based on its now-stale read, A
+    never saw B's correction — and both land. Net: two -50, the entry
+    over-corrected to 450. That is the lost update the isolated path prevents.
+
+    Single-threaded and deterministic in both worlds (the interleave is explicit,
+    not a thread race), so it is safe to assert on in CI.
+    """
+    # The governed path drives the registered @tool wrappers (record_tool_call
+    # looks the spec up in the process-global REGISTRY); the autouse test fixture
+    # clears it, so re-register the specs if missing — same guard run_audit_batch
+    # uses. The ungoverned path calls spec.fn directly and needs no registry.
+    if governed:
+        for wrapper in AUDIT_TOOLS:
+            if wrapper.tool_spec.name not in REGISTRY:
+                REGISTRY.register(wrapper.tool_spec)
+
+    expected = EXPECTED_AMOUNTS[entry_id]
+    reason = f"entry {entry_id} overstated by 50"
+    conflict = False
+
+    if governed:
+        conn_a = db.connect()
+        conn_b = db.connect()
+        conn_a.execute("PRAGMA busy_timeout = 5000")
+        conn_b.execute("PRAGMA busy_timeout = 5000")
+        audit = AuditJournal(audit_path)
+        try:
+            ad_a = SQLiteAdapter(conn_a)
+            ad_b = SQLiteAdapter(conn_b)
+            a_token = _ACTIVE_CLIENT.set(CLIENT_A)
+            try:
+                with agent_txn({"sql": ad_a}, audit=audit, client_id=CLIENT_A):
+                    # A is the reviewer: it reads the entry intending to book the
+                    # same -50, recording the read version.
+                    query_ledger(entry_id=entry_id)
+                    # While A is open, B (the corrector) books the -50 against the
+                    # entry and commits — bumping the ("entries", N) version.
+                    b_token = _ACTIVE_CLIENT.set(CLIENT_B)
+                    try:
+                        with agent_txn(
+                            {"sql": ad_b}, audit=audit, client_id=CLIENT_B
+                        ):
+                            post_adjustment(
+                                entry_id=entry_id, delta=-50, reason=reason
+                            )
+                    finally:
+                        _ACTIVE_CLIENT.reset(b_token)
+                    # A reaches end-of-block; the commit-time diff sees A's read
+                    # of the entry went stale → Abort → A unwinds, so A's
+                    # redundant correction is never written.
+            except IsolationConflict:
+                conflict = True
+            finally:
+                _ACTIVE_CLIENT.reset(a_token)
+        finally:
+            audit.close()
+            conn_a.close()
+            conn_b.close()
+    else:
+        # No transaction, no isolation: both writes hit the ledger directly. We
+        # dispatch spec.fn ourselves with the live connection — exactly what the
+        # ungoverned harness path does — because the @tool wrapper outside
+        # agent_txn would passthrough without injecting the connection.
+        q_fn = query_ledger.tool_spec.fn
+        p_fn = post_adjustment.tool_spec.fn
+        conn_a = db.connect()
+        conn_b = db.connect()
+        conn_a.execute("PRAGMA busy_timeout = 5000")
+        conn_b.execute("PRAGMA busy_timeout = 5000")
+        a_token = _ACTIVE_CLIENT.set(CLIENT_A)
+        try:
+            q_fn(conn_a, entry_id=entry_id)  # A's stale read
+            b_token = _ACTIVE_CLIENT.set(CLIENT_B)
+            try:
+                p_fn(conn_b, entry_id=entry_id, delta=-50, reason=reason)  # B
+            finally:
+                _ACTIVE_CLIENT.reset(b_token)
+            p_fn(conn_a, entry_id=entry_id, delta=-50, reason=reason)  # A (stale)
+        finally:
+            _ACTIVE_CLIENT.reset(a_token)
+            conn_a.close()
+            conn_b.close()
+
+    return ContendedOutcome(
+        governed=governed,
+        effective_amount=entry_effective_amount(db, entry_id),
+        expected_amount=expected,
+        adjustments=_contended_adjustments(db, entry_id),
+        conflict=conflict,
+    )
 
 
 # --- running one agent (thread body) ---------------------------------------

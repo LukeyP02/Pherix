@@ -62,7 +62,7 @@ from pherix.core.audit import AuditJournal
 from pherix.core.policy import Policy
 from pherix.core.tools import tool
 
-from examples.dogfood.harness import AgentRun, run_agent
+from examples.dogfood.harness import AgentRun, UngovernedFsHandle, run_agent
 
 # The scratch schema the release runs against: an accounts table with two
 # existing rows. Existing rows are exactly what makes the backfill trap genuine
@@ -393,6 +393,7 @@ def run_release(
     api: str = "anthropic",
     base_url: str | None = None,
     backend: str = "sqlite",
+    governed: bool = True,
 ) -> AgentRun:
     """Run the v2 release through a real (or mocked) agent.
 
@@ -416,13 +417,39 @@ def run_release(
     (and a local ``model``) to run the *same* release, with the *same* genuine
     outcome and unwind, against a local open-source model: the model-blindness
     proof.
+
+    ``governed=False`` runs the **ungoverned "before"**: the same five tools and
+    the same goal, but no transaction. ``deploy`` fires the moment the agent
+    calls it and stays live; ``add_column`` ALTERs the live schema and persists;
+    a skipped backfill leaves existing rows NULL; and when ``smoke_test`` reads
+    that real post-deploy state and raises, nothing unwinds — the failure is
+    just fed back to the agent while the broken release stays shipped. That is
+    the damage the governed path's commit-time unwind prevents.
     """
     audit = audit or AuditJournal.in_memory()
     dialect = dialect_for(backend)
+    tools = build_tools(target, db_conn=conn, fs_root=fs_root, dialect=dialect)
+    if not governed:
+        # No adapters, no transaction: each call fires straight at the live
+        # connection / filesystem. http tools (deploy / smoke_test) take no
+        # injected handle, so only sql + fs need entries here.
+        return run_agent(
+            task=task or TASK,
+            system=system or SYSTEM,
+            tools=tools,
+            adapters={},
+            client_id=client_id,
+            client=client,
+            audit=audit,
+            api=api,
+            base_url=base_url,
+            governed=False,
+            handles={"sql": conn, "fs": UngovernedFsHandle(fs_root)},
+            **({"model": model} if model is not None else {}),
+        )
     sql_adapter = (
         PostgresAdapter(conn) if backend == "postgres" else SQLiteAdapter(conn)
     )
-    tools = build_tools(target, db_conn=conn, fs_root=fs_root, dialect=dialect)
     adapters = {
         "sql": sql_adapter,
         "fs": FilesystemAdapter(fs_root),
