@@ -155,6 +155,11 @@ class IngestBatch(BaseModel):
     transactions: list[IngestTransaction] = Field(default_factory=list)
     effects: list[IngestEffect] = Field(default_factory=list)
     verdicts: list[IngestVerdict] = Field(default_factory=list)
+    encrypted: bool = Field(
+        default=False,
+        description="True when effect args/result are ciphertext under the "
+        "customer's key — the control plane stores them but cannot read them.",
+    )
 
 
 class IngestResult(BaseModel):

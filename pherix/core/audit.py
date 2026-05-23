@@ -84,10 +84,21 @@ class AuditJournal:
     """
 
     def __init__(self, path: str):
+        self._path = path
         self._conn = sqlite3.connect(path)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
+
+    @property
+    def path(self) -> str:
+        """The journal's DB path (``":memory:"`` for an in-memory journal).
+
+        The ship layer reads this to open its own thread-confined connection for
+        background shipping — an in-memory journal has no shareable path, so
+        backgrounding it is rejected at the call site.
+        """
+        return self._path
 
     @classmethod
     def in_memory(cls) -> "AuditJournal":
@@ -265,3 +276,73 @@ class AuditJournal:
             (txn_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # --- shipping (forward-read the journal past a cursor) ------------------
+
+    # The three journalled tables, in dependency order (a txn row before its
+    # effects, effects before their verdicts) so a control plane that validates
+    # foreign keys never sees an orphan.
+    _SHIPPABLE_TABLES = ("transactions", "effects", "verdicts")
+
+    def export_since(self, cursor: dict | None) -> tuple[dict, dict]:
+        """Read journal rows newer than ``cursor`` for shipping to the control plane.
+
+        Shipping is just the journal read **forward** past a high-water mark —
+        the same fold the rest of the engine is built on, here truncated to "give
+        me what I have not sent yet". ``cursor`` is a ``{table: last_rowid}`` map;
+        the returned ``new_cursor`` advances each table to the largest rowid read.
+        SQLite's implicit ``rowid`` is a monotonic append counter per table, so
+        ``rowid > last`` is exactly "rows appended since I last looked".
+
+        Append-only + idempotent ingest means a coarse cursor is safe: if a ship
+        succeeds but the cursor advance is lost (a crash between the two), the
+        rows simply re-ship and the control plane skips them on primary key.
+
+        Returns ``(rows_by_table, new_cursor)``. Each row is a plain dict
+        including its ``rowid``; payload encryption/redaction is the shipper's
+        job, not the journal's — the journal hands over cleartext rows and the
+        ship layer is the trust boundary.
+        """
+        cursor = cursor or {}
+        rows_by_table: dict[str, list[dict]] = {}
+        new_cursor = dict(cursor)
+        for table in self._SHIPPABLE_TABLES:
+            after = int(cursor.get(table, 0))
+            rows = self._conn.execute(
+                f"SELECT rowid AS rowid, * FROM {table} "
+                f"WHERE rowid > ? ORDER BY rowid",
+                (after,),
+            ).fetchall()
+            rows_by_table[table] = [dict(r) for r in rows]
+            if rows:
+                new_cursor[table] = int(rows[-1]["rowid"])
+        return rows_by_table, new_cursor
+
+    _SHIP_CURSOR_DDL = (
+        "CREATE TABLE IF NOT EXISTS _pherix_ship_cursor ("
+        "table_name TEXT PRIMARY KEY, last_rowid INTEGER NOT NULL)"
+    )
+
+    def get_ship_cursor(self) -> dict:
+        """The durable ``{table: last_rowid}`` high-water the shipper has sent.
+
+        Persisted in the journal DB so a process restart resumes where it left
+        off rather than re-shipping the whole journal. Empty on first use.
+        """
+        self._conn.execute(self._SHIP_CURSOR_DDL)
+        rows = self._conn.execute(
+            "SELECT table_name, last_rowid FROM _pherix_ship_cursor"
+        ).fetchall()
+        return {r["table_name"]: int(r["last_rowid"]) for r in rows}
+
+    def set_ship_cursor(self, cursor: dict) -> None:
+        """Advance the durable ship cursor (idempotent UPSERT per table)."""
+        self._conn.execute(self._SHIP_CURSOR_DDL)
+        for table, rowid in cursor.items():
+            self._conn.execute(
+                "INSERT INTO _pherix_ship_cursor (table_name, last_rowid) "
+                "VALUES (?, ?) ON CONFLICT(table_name) DO UPDATE SET "
+                "last_rowid = excluded.last_rowid",
+                (table, int(rowid)),
+            )
+        self._conn.commit()

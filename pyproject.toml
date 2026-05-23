@@ -39,6 +39,11 @@ elasticsearch = ["elasticsearch"]
 # Convenience meta-extra pulling every reversible-backend driver at once.
 all-adapters = ["psycopg[binary]", "pymysql", "pymongo", "boto3", "redis", "google-cloud-storage", "elasticsearch"]
 
+# The journal-sync ship side: AES-256-GCM payload encryption (cryptography) and
+# the default HTTP transport to the control-plane ingest endpoint (requests). The
+# kernel never imports these; a non-syncing agent needs neither.
+sync = ["cryptography", "requests"]
+
 # Test doubles that let the adapter round-trips run fully offline (no live
 # server): moto fakes S3 + DynamoDB, fakeredis fakes Redis, mongomock fakes
 # Mongo CRUD. GCS and Elasticsearch have no third-party in-process fake, so the
