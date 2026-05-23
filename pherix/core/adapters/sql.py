@@ -20,7 +20,7 @@ import sqlite3
 import time
 from typing import Any, Callable
 
-from pherix.core.adapters.base import SnapshotHandle
+from pherix.core.adapters.base import SavepointAdapter
 from pherix.core.effects import Effect
 
 # Side-table holding monotonic version counters per (resource, key).
@@ -99,11 +99,13 @@ def _adapter_for(conn: sqlite3.Connection) -> "SQLiteAdapter | None":
     return _CONN_ADAPTERS.get(id(conn))
 
 
-class SQLiteAdapter:
+class SQLiteAdapter(SavepointAdapter):
     name = "sql"
 
     def __init__(self, conn: sqlite3.Connection):
-        self._conn = conn
+        super().__init__(conn)  # sets self._conn; the savepoint lane lives in
+        # SavepointAdapter (snapshot / restore / begin / commit / rollback /
+        # supports_rollback / _savepoint_name). Everything below is SQL-specific.
         # Slice 4: create the version side-table eagerly so the first
         # read_version on an unknown key returns 0 (not a missing-table
         # error). DDL is idempotent so re-binding the adapter is safe.
@@ -174,50 +176,17 @@ class SQLiteAdapter:
                 return file or None
         return None
 
-    @property
-    def conn(self) -> sqlite3.Connection:
-        return self._conn
+    # ``conn`` property, ``supports_rollback``, the begin/commit/rollback
+    # lifecycle, ``_savepoint_name``, ``snapshot`` and ``restore`` all live in
+    # :class:`~pherix.core.adapters.base.SavepointAdapter` — the SQLite
+    # savepoint lane shared verbatim with the memory adapter.
 
-    def supports_rollback(self) -> bool:
-        return True
-
-    # --- transaction-scope lifecycle (driven by the runtime, D3) ---
-
-    def begin(self) -> None:
-        self._conn.execute("BEGIN")
-
-    def commit(self) -> None:
-        self._conn.execute("COMMIT")
-
-    def rollback(self) -> None:
-        self._conn.execute("ROLLBACK")
-
-    # --- per-effect snapshot / apply / restore ---
-
-    @staticmethod
-    def _savepoint_name(index: int) -> str:
-        # SQLite cannot parameterise identifiers. `index` is an internal,
-        # runtime-assigned integer (never user input), so building the
-        # savepoint name by interpolation is safe by construction.
-        return f"sp_{int(index)}"
-
-    def snapshot(self, effect: Effect) -> SnapshotHandle:
-        sp = self._savepoint_name(effect.index)
-        self._conn.execute(f"SAVEPOINT {sp}")
-        return SnapshotHandle(
-            resource=self.name,
-            effect_index=effect.index,
-            payload={"savepoint": sp},
-        )
+    # --- per-effect apply ---------------------------------------------------
 
     def apply(self, effect: Effect, tool_fn: Callable[..., Any]) -> Any:
         # D2: the txn-owned connection is injected as the tool's first arg;
         # the @tool wrapper hides it from the agent's call-site.
         return tool_fn(self._conn, **effect.args)
-
-    def restore(self, handle: SnapshotHandle) -> None:
-        sp = handle.payload["savepoint"]
-        self._conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
 
     # --- versioning (Slice 4 — VersionedResourceAdapter) -------------------
 

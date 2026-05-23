@@ -8,6 +8,7 @@ hands it to ``apply`` as ``tool_fn``.
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol, runtime_checkable
 
@@ -157,3 +158,78 @@ class VersionedResourceAdapter(ResourceAdapter, Protocol):
         the sha256 of the on-disk content *after* the write.
         """
         ...
+
+
+class SavepointAdapter:
+    """Shared base for adapters whose per-effect undo is a SQLite ``SAVEPOINT``.
+
+    Both :class:`~pherix.core.adapters.sql.SQLiteAdapter` and
+    :class:`~pherix.core.adapters.memory.MemoryAdapter` back rollback on a real
+    SQLite savepoint: ``snapshot`` issues ``SAVEPOINT``, ``restore`` runs
+    ``ROLLBACK TO SAVEPOINT``, and the transaction bracket is a plain
+    ``BEGIN`` / ``COMMIT`` / ``ROLLBACK``. The database does the undo, so the
+    reversible lane is correct by construction — this base holds that shared
+    machinery exactly once. The connection must be opened in autocommit mode
+    (``isolation_level=None``) so the adapter — not sqlite3's implicit
+    machinery — owns every BEGIN / SAVEPOINT / COMMIT / ROLLBACK.
+
+    Subclasses set :attr:`name` and :attr:`_SAVEPOINT_PREFIX`, and supply their
+    own ``apply`` (how the journalled tool is invoked) and versioning — the two
+    places SQL and memory genuinely differ. Postgres/MySQL deliberately do
+    **not** inherit this: their drivers execute through a ``cursor()`` context
+    manager — a different shape — so they keep their own savepoint methods
+    rather than forcing a driver-execution abstraction into this base. That is
+    the convergence test applied honestly: dedupe what is identical, do not
+    over-generalise what is not.
+    """
+
+    name: str = ""
+    # Distinguishes savepoint identifiers per resource class so two adapters
+    # sharing one connection cannot collide on a savepoint name. The SQL family
+    # uses ``sp``; memory uses ``mem_sp``.
+    _SAVEPOINT_PREFIX: str = "sp"
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        return self._conn
+
+    def supports_rollback(self) -> bool:
+        return True
+
+    # --- transaction-scope lifecycle (TransactionalResourceAdapter) ---------
+
+    def begin(self) -> None:
+        self._conn.execute("BEGIN")
+
+    def commit(self) -> None:
+        self._conn.execute("COMMIT")
+
+    def rollback(self) -> None:
+        self._conn.execute("ROLLBACK")
+
+    # --- per-effect snapshot / restore --------------------------------------
+
+    @classmethod
+    def _savepoint_name(cls, index: int) -> str:
+        # SQLite cannot parameterise identifiers; ``index`` is a runtime-assigned
+        # integer (never user input), so interpolation is safe by construction.
+        # A classmethod (not staticmethod) so the per-class prefix is read off
+        # ``cls`` while staying callable on the class itself, e.g.
+        # ``SQLiteAdapter._savepoint_name(5) == "sp_5"``.
+        return f"{cls._SAVEPOINT_PREFIX}_{int(index)}"
+
+    def snapshot(self, effect: Effect) -> SnapshotHandle:
+        sp = self._savepoint_name(effect.index)
+        self._conn.execute(f"SAVEPOINT {sp}")
+        return SnapshotHandle(
+            resource=self.name,
+            effect_index=effect.index,
+            payload={"savepoint": sp},
+        )
+
+    def restore(self, handle: SnapshotHandle) -> None:
+        sp = handle.payload["savepoint"]
+        self._conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
