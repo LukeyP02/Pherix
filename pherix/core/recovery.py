@@ -178,6 +178,17 @@ def _set_txn_state(conn: sqlite3.Connection, txn_id: str, state: str) -> None:
     conn.commit()
 
 
+class CorruptJournalError(ValueError):
+    """The durable journal is corrupted past safe interpretation — a row is
+    missing columns, carries an unknown status, or has non-JSON args.
+
+    Recovery fails **loud** with this (a ``ValueError`` subclass) rather than
+    crashing with a cryptic ``IndexError``: a corrupt journal must be an honest,
+    investigate-now signal, never a silently-wrong recovery. Found by the
+    byteflip fuzz suite (``tests/test_fuzz_journal.py``).
+    """
+
+
 def _effect_from_row(row: sqlite3.Row) -> Effect:
     """Rehydrate an :class:`Effect` from a durable journal row.
 
@@ -188,17 +199,29 @@ def _effect_from_row(row: sqlite3.Row) -> Effect:
     the live unwind resolves it). The snapshot is *not* rehydrated into a live
     handle either — a SAVEPOINT does not survive the crash, so there is nothing
     for it to restore against (see the module docstring).
+
+    A corrupted/truncated journal can present a row **missing columns** —
+    ``sqlite3.Row`` raises a cryptic ``IndexError`` on the absent key — which we
+    surface as a typed :class:`CorruptJournalError` (loud, not a crash). An
+    unknown status (``KeyError``) or non-JSON args (``JSONDecodeError`` ⊂
+    ``ValueError``) are *already* loud, typed failures, so they propagate as-is
+    (callers / fuzz oracles assert those exact types).
     """
-    return Effect(
-        txn_id=row["txn_id"],
-        index=row["idx"],
-        tool=row["tool"],
-        args=json.loads(row["args"]),
-        resource=row["resource"],
-        reversible=bool(row["reversible"]),
-        effect_id=row["effect_id"],
-        status=EffectStatus[row["status"]],
-    )
+    try:
+        return Effect(
+            txn_id=row["txn_id"],
+            index=row["idx"],
+            tool=row["tool"],
+            args=json.loads(row["args"]),
+            resource=row["resource"],
+            reversible=bool(row["reversible"]),
+            effect_id=row["effect_id"],
+            status=EffectStatus[row["status"]],
+        )
+    except IndexError as exc:
+        raise CorruptJournalError(
+            f"corrupt journal effect row (missing column): {exc}"
+        ) from exc
 
 
 def _find_mid_flight(conn: sqlite3.Connection) -> list[sqlite3.Row]:
