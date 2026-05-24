@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -55,6 +56,55 @@ DEFAULT_MODEL = "claude-sonnet-4-6"
 # Commit-time engine refusals: surfaced on AgentRun.error rather than crashing
 # the caller. Stage-time denials are handled inline (fed back to the model).
 _COMMIT_REFUSALS = (GateBlocked, IsolationConflict, PolicyViolation)
+
+# --- rate-limit / overload backoff -----------------------------------------
+#
+# A real batch run makes many model calls; a transient 429 (rate limit) or 529
+# (overload) must not kill the run (the last batch crashed on exactly this).
+# We detect it backend-agnostically — by exception *type name* (the Anthropic
+# and OpenAI SDKs both raise ``RateLimitError``; Anthropic adds
+# ``OverloadedError``) or by an HTTP ``status_code`` of 429/529 — so neither SDK
+# is imported here. A mock client never raises these, so the offline suite is
+# unaffected unless a test deliberately injects one.
+_BACKOFF_TYPE_NAMES = frozenset({"RateLimitError", "OverloadedError"})
+_BACKOFF_STATUS = frozenset({429, 529})
+_MAX_RETRIES = 5
+_BASE_DELAY = 1.0  # seconds; doubles each attempt (1, 2, 4, …), capped
+
+
+def _is_rate_limit(exc: BaseException) -> bool:
+    """True if ``exc`` is a transient rate-limit / overload worth retrying.
+
+    Type-name + status-code matching keeps this backend-agnostic: it recognises
+    the Anthropic and OpenAI SDK errors without importing either, and ignores
+    every other exception (a real bug must still surface, not be retried).
+    """
+    if type(exc).__name__ in _BACKOFF_TYPE_NAMES:
+        return True
+    return getattr(exc, "status_code", None) in _BACKOFF_STATUS
+
+
+def _create_with_backoff(
+    make_call: Callable[[], Any],
+    *,
+    max_retries: int = _MAX_RETRIES,
+    base_delay: float = _BASE_DELAY,
+) -> Any:
+    """Call ``make_call`` (one model request), retrying transient overloads.
+
+    Exponential backoff (``base_delay * 2**attempt``, capped at 30s) on a
+    rate-limit / overload; any other exception propagates immediately, and a
+    rate-limit that survives ``max_retries`` re-raises (we tried, and stopping
+    is better than spinning forever). ``time.sleep`` is module-level so a test
+    can patch it to make the backoff path instant.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return make_call()
+        except Exception as exc:  # noqa: BLE001 - re-raised below unless retryable
+            if not _is_rate_limit(exc) or attempt == max_retries:
+                raise
+            time.sleep(min(base_delay * (2**attempt), 30.0))
 
 
 @dataclass
@@ -190,13 +240,15 @@ def run_agent(
     def _loop(ungoverned_handles: dict[str, Any] | None = None) -> None:
         for _ in range(max_turns):
             state["turns"] += 1
-            resp = backend.create(
-                client,
-                model=model,
-                max_tokens=max_tokens,
-                system=system,
-                tool_defs=tool_defs,
-                messages=messages,
+            resp = _create_with_backoff(
+                lambda: backend.create(
+                    client,
+                    model=model,
+                    max_tokens=max_tokens,
+                    system=system,
+                    tool_defs=tool_defs,
+                    messages=messages,
+                )
             )
             state["stop"] = backend.stop_reason(resp)
             messages.extend(backend.assistant_messages(resp))

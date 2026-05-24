@@ -1,0 +1,68 @@
+# ============================================================================
+#  sims.txt — the tail-risk simulation suite. One command, full evidence.
+#
+#     bash sims.txt                  # 20 runs/arm per scenario (default)
+#     RUNS=100 bash sims.txt         # 100 runs/arm — the headline statistic
+#     RUNS=100 MODEL=claude-haiku-4-5 bash sims.txt     # a cheaper model
+#     RUNS=100 OPENAI=1 bash sims.txt                   # cross-model (GPT)
+#
+#  For EACH domain scenario it runs a real agent N times ungoverned and N times
+#  governed, judges every run by the SAME independent harm oracle, and prints:
+#
+#     WITHOUT Pherix : x%  (the NATURAL disaster rate — what the agent does on
+#                           its own; the rare 1-in-N catastrophic mistake)
+#     WITH Pherix    : y%  (the residual; escapes are reported, not hidden)
+#
+#  The value is the tail: most runs are fine, but the rare disaster — an
+#  over-limit payout, an unbalanced ledger, an unbounded UPDATE — is the one that
+#  costs millions in insurance / finance / healthcare, and Pherix stops it.
+#
+#  THE UNBIASED CONTRACT (enforced per scenario, see sims/scenario.py):
+#    1. neutral prompt — the job, never the crime   2. realistic, not rigged data
+#    3. harm oracle independent of the policy        4. matched arms (one bit differs)
+#    5. every run counted, escapes reported.
+#
+#  Full per-run JSON for traceability lands in reports/sims-suite/<timestamp>/.
+#  Needs ANTHROPIC_API_KEY (or OPENAI_API_KEY with OPENAI=1) in .env at the root.
+# ============================================================================
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
+
+RUNS="${RUNS:-20}"
+TS="$(date +%Y%m%d-%H%M%S)"
+OUT="reports/sims-suite/$TS"
+mkdir -p "$OUT"
+LOG="$OUT/full.log.txt"
+
+# --- key availability -------------------------------------------------------
+if [ "${OPENAI:-0}" = 1 ]; then
+  { [ -n "${OPENAI_API_KEY:-}" ] || grep -q '^OPENAI_API_KEY=sk' .env 2>/dev/null; } \
+    || { echo "✗  OPENAI=1 but no real OPENAI_API_KEY in .env"; exit 1; }
+  FLAGS="--openai"
+else
+  # Default = the MIXED FLEET: each scenario runs on its own backend (most are
+  # Claude; payments + cloud are GPT). So we need the Anthropic key, and warn
+  # loudly if the OpenAI key is missing — the GPT scenarios would otherwise fail
+  # mid-run with a key error.
+  { [ -n "${ANTHROPIC_API_KEY:-}" ] || grep -q '^ANTHROPIC_API_KEY=sk' .env 2>/dev/null; } \
+    || { echo "✗  no ANTHROPIC_API_KEY in .env (or set OPENAI=1 for an all-GPT sweep)"; exit 1; }
+  { [ -n "${OPENAI_API_KEY:-}" ] || grep -q '^OPENAI_API_KEY=sk' .env 2>/dev/null; } \
+    || echo "⚠  no OPENAI_API_KEY in .env — the GPT scenarios (payments, cloud) will fail; the Claude scenarios still run."
+  FLAGS=""
+fi
+[ -n "${MODEL:-}" ] && FLAGS="$FLAGS --model $MODEL"
+
+pip install -q -e '.[dogfood]' >/dev/null 2>&1 || true
+
+echo "Pherix tail-risk sims — $RUNS runs/arm — $TS" | tee "$LOG"
+echo "full per-run JSON: $OUT/" | tee -a "$LOG"
+echo "================================================================" | tee -a "$LOG"
+
+# The suite runner prints every scenario's headline + the grand total. We tee
+# the whole thing to the log and write per-run JSON via --out for traceability.
+python -m examples.dogfood.sims all --runs "$RUNS" --out "$OUT" $FLAGS 2>&1 | tee -a "$LOG"
+
+echo | tee -a "$LOG"
+echo "================================================================" | tee -a "$LOG"
+echo "DONE.  Skim:  cat $LOG" | tee -a "$LOG"
+echo "Per-run proof (every harmed run's resource state): $OUT/*_sim.json" | tee -a "$LOG"
