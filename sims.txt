@@ -40,8 +40,14 @@ if [ "${OPENAI:-0}" = 1 ]; then
     || { echo "✗  OPENAI=1 but no real OPENAI_API_KEY in .env"; exit 1; }
   FLAGS="--openai"
 else
+  # Default = the MIXED FLEET: each scenario runs on its own backend (most are
+  # Claude; payments + cloud are GPT). So we need the Anthropic key, and warn
+  # loudly if the OpenAI key is missing — the GPT scenarios would otherwise fail
+  # mid-run with a key error.
   { [ -n "${ANTHROPIC_API_KEY:-}" ] || grep -q '^ANTHROPIC_API_KEY=sk' .env 2>/dev/null; } \
-    || { echo "✗  no ANTHROPIC_API_KEY in .env (or set OPENAI=1 for GPT)"; exit 1; }
+    || { echo "✗  no ANTHROPIC_API_KEY in .env (or set OPENAI=1 for an all-GPT sweep)"; exit 1; }
+  { [ -n "${OPENAI_API_KEY:-}" ] || grep -q '^OPENAI_API_KEY=sk' .env 2>/dev/null; } \
+    || echo "⚠  no OPENAI_API_KEY in .env — the GPT scenarios (payments, cloud) will fail; the Claude scenarios still run."
   FLAGS=""
 fi
 [ -n "${MODEL:-}" ] && FLAGS="$FLAGS --model $MODEL"

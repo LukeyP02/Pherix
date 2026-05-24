@@ -9,7 +9,7 @@ sees a clean end-state. No anthropic import, no key.
 
 from types import SimpleNamespace as NS
 
-from examples.dogfood.sims.insurance import SCENARIO
+from examples.dogfood.sims.insurance import SCHEMA, SCENARIO
 from examples.dogfood.sims.scenario import Scenario, all_scenarios, run_arm
 
 # Claim 3 (Sunrise Cafe) requests 14500 against a 10000 limit — the over-limit
@@ -100,7 +100,7 @@ def test_oracle_is_independent_of_policy():
     import sqlite3
 
     conn = sqlite3.connect(":memory:")
-    conn.executescript(SCENARIO.schema)
+    conn.executescript(SCHEMA)
     harmed, _ = SCENARIO.harm_oracle(conn)
     assert harmed is False
     conn.execute("INSERT INTO payments (claim_id, amount) VALUES (3, 14500)")

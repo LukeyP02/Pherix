@@ -41,42 +41,85 @@ from __future__ import annotations
 import importlib
 import json
 import pkgutil
+from contextlib import AbstractContextManager
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
-from pherix.core.adapters.sql import SQLiteAdapter
 from pherix.core.audit import AuditJournal
 from pherix.core.policy import Policy
 from pherix.core.tools import REGISTRY
 
 from examples.dogfood.capture import count_gated_calls, verdict_for
 from examples.dogfood.harness import run_agent
-from examples.dogfood.infra import scratch_sqlite
 
 HarmOracle = Callable[[Any], "tuple[bool, dict]"]
+
+
+@dataclass
+class ResourceBundle:
+    """One run's freshly-provisioned resource(s), wired for both arms.
+
+    A scenario's ``setup()`` context manager stands up its *real* backend(s) — a
+    scratch SQLite file, a throwaway git repo, an in-memory store — and yields
+    this bundle, then tears everything down on exit. The runner picks the field
+    it needs per arm:
+
+      * ``adapters`` (``resource -> ResourceAdapter``) is the **governed** arm's
+        wiring: each adapter snapshots/applies/restores its class of resource
+        through Pherix. A scenario may bind more than one (e.g. ``git`` + ``fs``).
+      * ``handles`` (``resource -> handle``) is the **ungoverned "before"** arm's
+        wiring: the harness fires each call straight at the handle so the effect
+        persists with no journal and no policy (rule 4). The shape matches what
+        the ``@tool`` wrapper would inject inside ``agent_txn`` — a live SQLite
+        connection for ``sql``, a :class:`pherix.core.adapters.git.GitHandle` for
+        ``git``, an ``UngovernedFsHandle`` for ``fs``, ``None`` for an
+        injection-free tool.
+      * ``probe`` is the live object ``build_policy`` and ``harm_oracle`` read to
+        consult / judge the system of record — a ``conn`` for a SQL scenario, a
+        repo root :class:`~pathlib.Path` for git+fs, the store for memory. The
+        *same* probe feeds both, so the oracle judges the identical end-state in
+        both arms (rule 3).
+
+    Both arms wrap the **same** underlying resource the ``probe`` reads — the
+    adapter and the handle are two views onto one fresh backend, so the oracle's
+    post-run read is honest for whichever arm ran.
+    """
+
+    adapters: dict[str, Any]
+    handles: dict[str, Any]
+    probe: Any
 
 
 @dataclass
 class Scenario:
     """One domain scenario — the four axes pointed at a single realistic task.
 
-    ``schema`` is the SQL DDL + seed (rule 2: it carries the edge cases).
-    ``system`` / ``task`` are the neutral prompt (rule 1). ``build_tools`` returns
-    the agent's domain tools (``@tool``-decorated, registered fresh on each call —
-    so the runner can ``REGISTRY.clear()`` between runs). ``build_policy(conn)``
-    returns the operator's guardrails, closed over the live connection so a rule
-    can consult the system of record (world-state checks). ``harm_oracle(conn)``
-    is the independent end-state judge (rule 3): ``(harmed, proof)``.
+    ``setup`` is a zero-arg callable returning a context manager that provisions
+    a *fresh* real resource per run and yields a :class:`ResourceBundle` (rule 2:
+    its seed carries the edge cases). ``system`` / ``task`` are the neutral prompt
+    (rule 1). ``build_tools`` returns the agent's domain tools (``@tool``-
+    decorated, registered fresh on each call — so the runner can
+    ``REGISTRY.clear()`` between runs). ``build_policy(probe)`` returns the
+    operator's guardrails, closed over the live resource so a rule can consult the
+    system of record (world-state checks). ``harm_oracle(probe)`` is the
+    independent end-state judge (rule 3): ``(harmed, proof)``.
+
+    ``provider`` (``"anthropic"`` | ``"openai"``) and ``model`` name the backend
+    this scenario runs on, so a mixed fleet (some Claude, some GPT) runs in one
+    pass — the runner threads them into ``run_agent`` unless an explicit override
+    is passed. ``model=None`` lets the harness pick its per-backend default.
     """
 
     name: str
     query: str  # plain-English description of what the harm oracle checks
-    schema: str
+    setup: Callable[[], AbstractContextManager[ResourceBundle]]
     system: str
     task: str
     build_tools: Callable[[], list[Callable[..., Any]]]
     build_policy: Callable[[Any], Policy]
     harm_oracle: HarmOracle
+    provider: str = "anthropic"
+    model: str | None = None
 
 
 # --- per-run / per-arm / per-scenario results ------------------------------
@@ -158,33 +201,62 @@ class ScenarioResult:
 # --- the runner -------------------------------------------------------------
 
 
+def _resolve_backend(
+    scn: Scenario,
+    *,
+    api: str | None,
+    base_url: str | None,
+    model: str | None,
+) -> tuple[str, str | None, str | None]:
+    """Pick the (api, base_url, model) for a run: explicit override else scenario.
+
+    A scenario names its own backend (``scn.provider`` / ``scn.model``) so a
+    mixed Claude+GPT fleet runs in one pass. An explicit override (the CLI's
+    ``--openai`` / ``--model``) still wins when supplied. Cloud GPT needs the
+    OpenAI base URL; the Anthropic path takes none.
+    """
+    resolved_api = api or scn.provider
+    resolved_model = model if model is not None else scn.model
+    if base_url is not None:
+        resolved_base = base_url
+    elif resolved_api == "openai":
+        resolved_base = "https://api.openai.com/v1"
+    else:
+        resolved_base = None
+    return resolved_api, resolved_base, resolved_model
+
+
 def run_arm(
     scn: Scenario,
     *,
     governed: bool,
     runs: int,
     model: str | None = None,
-    api: str = "anthropic",
+    api: str | None = None,
     base_url: str | None = None,
     client_factory: Callable[[int], Any] | None = None,
     audit_path: str | None = None,
 ) -> ArmSummary:
     """Run one arm of a scenario ``runs`` times and judge each by the oracle.
 
-    Each run gets a *fresh* scratch SQLite DB seeded from ``scn.schema`` and a
-    fresh tool registry. The governed arm wraps the connection in a
-    :class:`SQLiteAdapter` and installs ``scn.build_policy(conn)``; the ungoverned
-    arm passes no adapter/policy and hands the raw connection in via ``handles``
-    so each call fires straight at the DB and persists (rule 4). After the run
-    resolves, ``scn.harm_oracle(conn)`` reads the real end-state — the *same*
-    query in both arms (rule 3).
+    Each run calls ``scn.setup()`` for a *fresh* real resource (a scratch DB, a
+    throwaway repo, an in-memory store) and a fresh tool registry. The governed
+    arm wires ``bundle.adapters`` and installs ``scn.build_policy(bundle.probe)``;
+    the ungoverned arm passes no adapter/policy and hands ``bundle.handles`` in so
+    each call fires straight at the resource and persists (rule 4). After the run
+    resolves, ``scn.harm_oracle(bundle.probe)`` reads the real end-state — the
+    *same* judge in both arms (rule 3). The backend (api / model) is the
+    scenario's own unless overridden.
     """
+    res_api, res_base, res_model = _resolve_backend(
+        scn, api=api, base_url=base_url, model=model
+    )
     outcomes: list[RunOutcome] = []
     for i in range(runs):
         REGISTRY.clear()
         client = client_factory(i) if client_factory else None
         audit = AuditJournal(audit_path) if audit_path else AuditJournal.in_memory()
-        with scratch_sqlite(scn.schema) as db:
+        with scn.setup() as bundle:
             tools = scn.build_tools()
             common = dict(
                 task=scn.task,
@@ -193,24 +265,24 @@ def run_arm(
                 client_id=f"{scn.name}-{'gov' if governed else 'ung'}-{i}",
                 client=client,
                 audit=audit,
-                api=api,
-                base_url=base_url,
-                **({"model": model} if model is not None else {}),
+                api=res_api,
+                base_url=res_base,
+                **({"model": res_model} if res_model is not None else {}),
             )
             if governed:
                 run = run_agent(
-                    adapters={"sql": SQLiteAdapter(db.conn)},
-                    policy=scn.build_policy(db.conn),
+                    adapters=bundle.adapters,
+                    policy=scn.build_policy(bundle.probe),
                     **common,
                 )
             else:
                 run = run_agent(
                     adapters={},
                     governed=False,
-                    handles={"sql": db.conn},
+                    handles=bundle.handles,
                     **common,
                 )
-            harmed, proof = scn.harm_oracle(db.conn)
+            harmed, proof = scn.harm_oracle(bundle.probe)
             outcomes.append(
                 RunOutcome(
                     governed=governed,
@@ -243,11 +315,15 @@ def run_scenario(
     *,
     runs: int,
     model: str | None = None,
-    api: str = "anthropic",
+    api: str | None = None,
     base_url: str | None = None,
     client_factory: Callable[[int], Any] | None = None,
 ) -> ScenarioResult:
-    """Run both arms of ``scn`` at ``runs`` each — the matched before/after."""
+    """Run both arms of ``scn`` at ``runs`` each — the matched before/after.
+
+    ``api`` / ``model`` default to the scenario's own backend (so a mixed fleet
+    runs in one pass); an explicit value overrides for cross-model sweeps.
+    """
     ungoverned = run_arm(
         scn,
         governed=False,

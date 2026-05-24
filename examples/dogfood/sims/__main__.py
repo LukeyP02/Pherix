@@ -1,15 +1,20 @@
 """Run the tail-risk sim suite.
 
     python -m examples.dogfood.sims                 # every scenario, 20 runs/arm
-    python -m examples.dogfood.sims insurance       # one scenario
+    python -m examples.dogfood.sims coding          # one scenario
     python -m examples.dogfood.sims --runs 100      # the headline N
-    python -m examples.dogfood.sims --openai --model gpt-4o-mini   # cross-model
+    python -m examples.dogfood.sims --openai --model gpt-4o-mini   # force one backend
+
+By **default each scenario runs on its own backend** (``Scenario.provider`` /
+``Scenario.model``), so the mixed Claude+GPT fleet runs in one pass. ``--openai``
+forces every scenario onto cloud GPT (a cross-model sweep); ``--model`` overrides
+the model id for whichever backend is active.
 
 Each scenario runs ``--runs`` times ungoverned then ``--runs`` times governed,
 judged by the same independent harm oracle, and prints the natural disaster rate
 vs the residual rate with Pherix. ``--out DIR`` writes full per-run JSON for
-traceability. Needs a key (``ANTHROPIC_API_KEY``, or ``OPENAI_API_KEY`` with
-``--openai``) in ``.env`` — the suite calls a real model.
+traceability. Needs the relevant key(s) in ``.env`` (``ANTHROPIC_API_KEY`` and/or
+``OPENAI_API_KEY``) — the suite calls real models.
 """
 
 from __future__ import annotations
@@ -41,7 +46,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--openai",
         action="store_true",
-        help="drive via cloud OpenAI/GPT (needs OPENAI_API_KEY; default gpt-4o-mini)",
+        help="force every scenario onto cloud OpenAI/GPT (needs OPENAI_API_KEY; "
+        "default gpt-4o-mini) — a cross-model sweep, overriding per-scenario providers",
     )
     parser.add_argument("--out", default=None, help="directory for per-run JSON")
     args = parser.parse_args(argv)
@@ -53,9 +59,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    api = "openai" if args.openai else "anthropic"
-    base_url = "https://api.openai.com/v1" if args.openai else None
-    model = args.model or ("gpt-4o-mini" if args.openai else None)
+    # Default: api/model = None -> each scenario runs on its own backend (the
+    # mixed fleet). --openai forces cloud GPT across the board (a sweep).
+    if args.openai:
+        api: str | None = "openai"
+        base_url: str | None = "https://api.openai.com/v1"
+        model = args.model or "gpt-4o-mini"
+    else:
+        api = None
+        base_url = None
+        model = args.model
 
     chosen = scenarios if args.scenario == "all" else {args.scenario: scenarios[args.scenario]}
     results = []
