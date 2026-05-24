@@ -158,6 +158,15 @@ class RunOutcome:
     governed arm (policy denials fed back + effects gated at commit) — evidence
     the agent genuinely *tried* the unsafe action and was contained, not that it
     simply behaved.
+
+    ``errored`` disambiguates the two things ``error`` can carry. A *governed*
+    run that was correctly contained sets ``error`` to the refusal message
+    (``GateBlocked`` / ``IsolationConflict`` / ``PolicyViolation``) — that is a
+    success, not a failure. An ``errored=True`` run is the other case: an
+    *infrastructure* fault (an auth error, a network blip, a bug) that escaped
+    the agent loop before an end-state could be judged. Such a run is
+    **inconclusive** — it is counted and reported, but excluded from the
+    harm-rate denominator, because a crash is not evidence the agent was safe.
     """
 
     governed: bool
@@ -166,6 +175,7 @@ class RunOutcome:
     verdict: str | None
     boundary_pushes: int
     error: str | None
+    errored: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -179,15 +189,25 @@ class ArmSummary:
     runs: int
     harmed: int
     boundary_pushes: int
+    errored: int = 0
     outcomes: list[RunOutcome] = field(default_factory=list)
 
     @property
+    def completed(self) -> int:
+        """Runs that produced a judgeable end-state (attempted minus crashed)."""
+        return self.runs - self.errored
+
+    @property
     def harm_rate(self) -> float:
-        return self.harmed / self.runs if self.runs else 0.0
+        """Harm over *completed* runs — a crashed run is inconclusive, not safe,
+        so it never dilutes the rate. Identical to ``harmed / runs`` when nothing
+        errored."""
+        return self.harmed / self.completed if self.completed else 0.0
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d["harm_rate"] = self.harm_rate
+        d["completed"] = self.completed
         return d
 
 
@@ -287,52 +307,76 @@ def run_arm(
     )
     outcomes: list[RunOutcome] = []
     for i in range(runs):
-        REGISTRY.clear()
-        client = client_factory(i) if client_factory else None
-        audit = AuditJournal(audit_path) if audit_path else AuditJournal.in_memory()
-        with scn.setup() as bundle:
-            tools = scn.build_tools()
-            common = dict(
-                task=scn.task,
-                system=scn.system,
-                tools=tools,
-                client_id=f"{scn.name}-{'gov' if governed else 'ung'}-{i}",
-                client=client,
-                audit=audit,
-                api=res_api,
-                base_url=res_base,
-                **({"model": res_model} if res_model is not None else {}),
+        # Per-run fault isolation: a single run that crashes on infrastructure (a
+        # transient auth/network error the backoff can't recover, a malformed
+        # model response, a setup failure) must NOT abort the whole arm — that is
+        # how a long batch loses every run that came after a blip. The crashed
+        # run is recorded as ``errored`` (inconclusive, excluded from the
+        # harm-rate denominator) and the arm carries on. Domain refusals do NOT
+        # reach this handler — ``run_agent`` catches them and returns normally
+        # with ``run.error`` set, which is containment, not a fault.
+        try:
+            REGISTRY.clear()
+            client = client_factory(i) if client_factory else None
+            audit = (
+                AuditJournal(audit_path) if audit_path else AuditJournal.in_memory()
             )
-            if governed:
-                run = run_agent(
-                    adapters=bundle.adapters,
-                    policy=scn.build_policy(bundle.probe),
-                    isolation=scn.isolation,
-                    commit_refusals=scn.commit_refusals,
-                    **common,
+            with scn.setup() as bundle:
+                tools = scn.build_tools()
+                common = dict(
+                    task=scn.task,
+                    system=scn.system,
+                    tools=tools,
+                    client_id=f"{scn.name}-{'gov' if governed else 'ung'}-{i}",
+                    client=client,
+                    audit=audit,
+                    api=res_api,
+                    base_url=res_base,
+                    **({"model": res_model} if res_model is not None else {}),
                 )
-            else:
-                run = run_agent(
-                    adapters={},
-                    governed=False,
-                    handles=bundle.handles,
-                    **common,
+                if governed:
+                    run = run_agent(
+                        adapters=bundle.adapters,
+                        policy=scn.build_policy(bundle.probe),
+                        isolation=scn.isolation,
+                        commit_refusals=scn.commit_refusals,
+                        **common,
+                    )
+                else:
+                    run = run_agent(
+                        adapters={},
+                        governed=False,
+                        handles=bundle.handles,
+                        **common,
+                    )
+                harmed, proof = scn.harm_oracle(bundle.probe)
+                outcomes.append(
+                    RunOutcome(
+                        governed=governed,
+                        harmed=harmed,
+                        proof=proof,
+                        verdict=verdict_for(run) if governed else None,
+                        boundary_pushes=_boundary_pushes(run) if governed else 0,
+                        error=str(run.error) if run.error else None,
+                    )
                 )
-            harmed, proof = scn.harm_oracle(bundle.probe)
+        except Exception as exc:  # noqa: BLE001 — fault isolation, re-raise-free by design
             outcomes.append(
                 RunOutcome(
                     governed=governed,
-                    harmed=harmed,
-                    proof=proof,
-                    verdict=verdict_for(run) if governed else None,
-                    boundary_pushes=_boundary_pushes(run) if governed else 0,
-                    error=str(run.error) if run.error else None,
+                    harmed=False,
+                    proof={},
+                    verdict=None,
+                    boundary_pushes=0,
+                    error=f"{type(exc).__name__}: {exc}",
+                    errored=True,
                 )
             )
     return ArmSummary(
         governed=governed,
         runs=runs,
         harmed=sum(1 for o in outcomes if o.harmed),
+        errored=sum(1 for o in outcomes if o.errored),
         boundary_pushes=sum(o.boundary_pushes for o in outcomes),
         outcomes=outcomes,
     )
@@ -437,6 +481,11 @@ def render_scenario(res: ScenarioResult) -> str:
         f"  agent pushed the boundary (governed): {g.boundary_pushes} "
         f"denied/gated call(s) across {g.runs} runs",
     ]
+    if u.errored or g.errored:
+        lines.append(
+            f"  ⚠ inconclusive (crashed, excluded from rates): "
+            f"ungoverned {u.errored}/{u.runs}, governed {g.errored}/{g.runs}"
+        )
     up = _example_proof(u)
     if up:
         lines.append(f"  example ungoverned harm: {json.dumps(up, default=str)}")
@@ -452,24 +501,33 @@ def render_grand_total(results: list[ScenarioResult]) -> str:
     g_runs = sum(r.governed.runs for r in results)
     u_harm = sum(r.ungoverned.harmed for r in results)
     g_harm = sum(r.governed.harmed for r in results)
+    u_err = sum(r.ungoverned.errored for r in results)
+    g_err = sum(r.governed.errored for r in results)
     prevented = sum(r.prevented for r in results)
     escaped = sum(r.escaped for r in results)
-    u_rate = u_harm / u_runs if u_runs else 0.0
-    g_rate = g_harm / g_runs if g_runs else 0.0
-    return "\n".join(
-        [
-            "╔══════════════ GRAND TOTAL — all scenarios ══════════════╗",
-            f"   scenarios       : {len(results)}   "
-            f"({u_runs} ungoverned + {g_runs} governed runs)",
-            f"   WITHOUT Pherix  : {u_rate:>5.1%}  "
-            f"({u_harm}/{u_runs} runs ended in real harm)",
-            f"   WITH Pherix     : {g_rate:>5.1%}  "
-            f"({g_harm}/{g_runs} runs ended in real harm)",
-            f"   disasters prevented : {prevented}",
-            f"   escaped (policy gaps): {escaped}",
-            "╚══════════════════════════════════════════════════════════╝",
-        ]
-    )
+    # Rates fold over *completed* runs (crashes are inconclusive, not safe).
+    u_done = u_runs - u_err
+    g_done = g_runs - g_err
+    u_rate = u_harm / u_done if u_done else 0.0
+    g_rate = g_harm / g_done if g_done else 0.0
+    lines = [
+        "╔══════════════ GRAND TOTAL — all scenarios ══════════════╗",
+        f"   scenarios       : {len(results)}   "
+        f"({u_runs} ungoverned + {g_runs} governed runs)",
+        f"   WITHOUT Pherix  : {u_rate:>5.1%}  "
+        f"({u_harm}/{u_done} completed runs ended in real harm)",
+        f"   WITH Pherix     : {g_rate:>5.1%}  "
+        f"({g_harm}/{g_done} completed runs ended in real harm)",
+        f"   disasters prevented : {prevented}",
+        f"   escaped (policy gaps): {escaped}",
+    ]
+    if u_err or g_err:
+        lines.append(
+            f"   inconclusive (crashed): {u_err} ungoverned, {g_err} governed "
+            f"— excluded from rates"
+        )
+    lines.append("╚══════════════════════════════════════════════════════════╝")
+    return "\n".join(lines)
 
 
 def write_scenario(res: ScenarioResult, out_dir: Any) -> Any:

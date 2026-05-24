@@ -72,8 +72,20 @@ def main(argv: list[str] | None = None) -> int:
 
     chosen = scenarios if args.scenario == "all" else {args.scenario: scenarios[args.scenario]}
     results = []
+    failed: list[tuple[str, str]] = []
     for name, scn in chosen.items():
-        res = run_scenario(scn, runs=args.runs, model=model, api=api, base_url=base_url)
+        # Per-scenario fault isolation: run_arm already isolates each *run*, but a
+        # failure in setup() or in a scenario's own run_arm_override (the
+        # concurrent scenario) could still escape. Catch it here so one bad
+        # scenario neither aborts the suite nor discards the scenarios already
+        # done — their per-run JSON is written below, before the next scenario.
+        try:
+            res = run_scenario(scn, runs=args.runs, model=model, api=api, base_url=base_url)
+        except Exception as exc:  # noqa: BLE001 — isolate, log, continue
+            msg = f"{type(exc).__name__}: {exc}"
+            print(f"  ✗ scenario {name!r} failed entirely — skipped: {msg}", file=sys.stderr)
+            failed.append((name, msg))
+            continue
         print(render_scenario(res))
         if args.out:
             write_scenario(res, args.out)
@@ -81,6 +93,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if len(results) > 1:
         print(render_grand_total(results))
+    if failed:
+        print("\nSCENARIOS THAT FAILED ENTIRELY (re-run just these):", file=sys.stderr)
+        for name, msg in failed:
+            print(f"  ✗ {name}: {msg}", file=sys.stderr)
     return 0
 
 
