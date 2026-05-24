@@ -133,6 +133,16 @@ class Scenario:
     # Both default to "off", so every existing scenario is unaffected.
     isolation: Any = None
     commit_refusals: tuple[type, ...] = ()
+    # A scenario whose harm only exists under genuine concurrency (a lost update
+    # between two agents) cannot be expressed by the single-agent loop below.
+    # Rather than special-case the engine, the framework offers this seam: a
+    # scenario may supply its own arm runner with the signature
+    # ``(scn, *, governed, runs, client_factory, audit_path) -> ArmSummary``.
+    # When set, :func:`run_arm` delegates to it wholesale; the default (None)
+    # runs the standard single-agent two-arm loop. This generalises the
+    # substrate (a scenario can own its execution shape) without adding a
+    # per-feature branch to the runner.
+    run_arm_override: Callable[..., "ArmSummary"] | None = None
 
 
 # --- per-run / per-arm / per-scenario results ------------------------------
@@ -261,6 +271,17 @@ def run_arm(
     *same* judge in both arms (rule 3). The backend (api / model) is the
     scenario's own unless overridden.
     """
+    if scn.run_arm_override is not None:
+        # A scenario whose harm only exists under concurrency owns its execution
+        # shape (e.g. two real agents racing one ledger). Delegate wholesale.
+        return scn.run_arm_override(
+            scn,
+            governed=governed,
+            runs=runs,
+            client_factory=client_factory,
+            audit_path=audit_path,
+        )
+
     res_api, res_base, res_model = _resolve_backend(
         scn, api=api, base_url=base_url, model=model
     )
