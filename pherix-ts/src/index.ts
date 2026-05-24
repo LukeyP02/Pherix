@@ -51,20 +51,8 @@ export { Transaction, TxnState, TransactionStateError, newTxnId } from "./transa
 export { tool, REGISTRY, ToolRegistry, activeTxn, activeEffect } from "./tools.js";
 export type { ToolSpec, ToolOptions, ToolWrapper, RecordingContext } from "./tools.js";
 
-// Adapters
-export { isTransactionalAdapter, isStateDiffable } from "./adapters/base.js";
-export type {
-  ResourceAdapter,
-  TransactionalResourceAdapter,
-  StateDiffable,
-  ToolFn,
-} from "./adapters/base.js";
-export { SqliteAdapter } from "./adapters/sql.js";
-export type { SqliteDatabase } from "./adapters/sql.js";
-export { HttpAdapter, IrreversibleAdapterError } from "./adapters/http.js";
-export { FilesystemAdapter, FsHandle } from "./adapters/fs.js";
-export { PostgresAdapter } from "./adapters/postgres.js";
-export type { PgClient, PgResult } from "./adapters/postgres.js";
+// Adapters — the whole axis comes through the barrel
+export * from "./adapters/index.js";
 
 // Policy
 export {
@@ -132,9 +120,6 @@ export {
   REGISTRY as ISOLATION_REGISTRY,
 } from "./isolation.js";
 export type { Conflict, IsolationPolicy } from "./isolation.js";
-
-// Isolated SQL execution — records read/write keys for the conflict diff
-export { executeIsolated } from "./adapters/sql.js";
 
 // Compensator catalog — vetted semantic left-inverses
 export * from "./compensators/index.js";
