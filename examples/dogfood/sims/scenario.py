@@ -120,6 +120,19 @@ class Scenario:
     harm_oracle: HarmOracle
     provider: str = "anthropic"
     model: str | None = None
+    # Commit-time machinery the governed arm threads into ``run_agent``:
+    #
+    #   * ``isolation`` — the MVCC resolution policy (``Abort`` / ``Retry`` /
+    #     ``Serialize``) for a scenario where the agent's txn can race another
+    #     writer. ``None`` (the default) means no isolation work.
+    #   * ``commit_refusals`` — *domain* exception types a tool may raise at
+    #     commit-time (e.g. a staged smoke-test that fails inside the fire loop)
+    #     that should land on ``AgentRun.error`` like the engine's own refusals,
+    #     rather than crashing the runner.
+    #
+    # Both default to "off", so every existing scenario is unaffected.
+    isolation: Any = None
+    commit_refusals: tuple[type, ...] = ()
 
 
 # --- per-run / per-arm / per-scenario results ------------------------------
@@ -273,6 +286,8 @@ def run_arm(
                 run = run_agent(
                     adapters=bundle.adapters,
                     policy=scn.build_policy(bundle.probe),
+                    isolation=scn.isolation,
+                    commit_refusals=scn.commit_refusals,
                     **common,
                 )
             else:
