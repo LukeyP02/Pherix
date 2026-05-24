@@ -239,20 +239,31 @@ agents without a per-language SDK.
 dry-run, the MCP gateway, plus the engine-hardening pass that made the moat claims
 true: crash-consistent recovery (`core/recovery.py`), cross-process isolation
 (single-host), world-state policy (`PolicyContext.read`), the longitudinal envelope
-(`core/envelope.py`). **433 tests, fully offline.**
+(`core/envelope.py`). **1011 Python tests + 210 TypeScript, fully offline.**
 
-**Now — flesh each axis to its base, in two languages** (active worktrees):
+**Each axis is now at base in *both* languages** — the "flesh each axis to its base,
+in two languages" push has landed:
 
-- **Adapters** (`adapter-compensator-base`): SQLite/filesystem/HTTP are built; add
-  **Postgres** (non-negotiable — SQLite alone reads as a toy), MySQL, MongoDB, S3.
-  Backend drivers are optional extras, imported lazily; the kernel stays
-  dependency-free.
-- **Compensators** (same worktree): a vetted, tested catalog of common semantic
-  inverses (charge→refund, invite→revoke, provision→delete), each tested as a true
-  left-inverse including the partial-failure path.
-- **Interception** (`typescript-sdk`): bring the library surface to TypeScript at
-  semantic parity with Python.
-- **Policy**: expressiveness + starter templates (the base is built).
+- **Adapters** — *done.* Python carries 16 adapters (SQLite, Postgres, MySQL,
+  MongoDB, Redis, S3, GCS, DynamoDB, Elasticsearch, filesystem, HTTP, REST, MQ, git,
+  memory, …); TypeScript mirrors **14** at semantic + field-name parity (`pherix-ts/src/adapters/`).
+  Backend drivers stay optional, lazily imported; the kernel is dependency-free.
+- **Compensators** — *done.* Vetted left-inverse catalog at module parity in both
+  languages (`{identity,payments,provisioning,saas}`), each tested through the
+  partial-failure path.
+- **Interception** — *TypeScript SDK at parity.* `tests/test_sdk_parity.py` drives the
+  same scenario through both engines and asserts **structurally identical journals**
+  (13 scenarios) — the proof the two SDKs are one system. The substrate passed the
+  convergent-generalisation test: 10 new TS adapters fit `ResourceAdapter` *unchanged*,
+  so the engine LOC is flat while coverage is up.
+- **Policy**: starter templates built; expressiveness is the remaining edge.
+
+**Two open adapter-axis follow-ups** (surfaced by the parity suite, deliberately
+scoped out of the engine pass): `sql.py`'s `execute_isolated` returns a live
+`sqlite3.Cursor` that isn't journal-serialisable (a latent Python correctness bug —
+materialise via `.fetchall()` for readers); and TS `SqliteAdapter.readsCommittedOnly()`
+hardcodes `false`, so on-disk cross-process isolation parity awaits the TS
+meta-connection path. Parity is proven for `:memory:` today.
 
 Build to the **base** (the common things any buyer assumes work); let the design
 partner bring the **edge** cases. Test each axis *hard* — golden / failure / crash /
