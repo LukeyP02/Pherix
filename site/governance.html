@@ -11,10 +11,19 @@
     --green: #5ad17f; --amber: #e0b341; --red: #e0614e; --accent: #6ea8fe;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  html { margin: 0; padding: 0; background: var(--bg); }
+  body { margin: 0; padding: 0; background: transparent; color: var(--ink); }
   body {
     font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
     font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  /* dotted field — matches the rest of the site */
+  body::before {
+    content: ""; position: fixed; inset: -60px; z-index: -1; pointer-events: none;
+    background-image: radial-gradient(rgba(150,162,186,0.30) 1.1px, transparent 1.6px);
+    background-size: 30px 30px;
+    -webkit-mask-image: radial-gradient(90% 70% at 50% 16%, #000, transparent 88%);
+            mask-image: radial-gradient(90% 70% at 50% 16%, #000, transparent 88%);
   }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -27,6 +36,13 @@
   nav .brand { font-weight: 700; letter-spacing: 0.04em; }
   nav .brand .dot { color: var(--green); }
   nav .links a { color: var(--ink-2); margin-left: 1.3rem; font-size: 0.82rem; }
+  nav .links a.console {
+    background: var(--green); color: #08130c; padding: 0.4rem 0.9rem;
+    border-radius: 7px; font-weight: 700;
+    box-shadow: 0 6px 18px -8px rgba(90,209,127,0.6);
+    transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
+  }
+  nav .links a.console:hover { text-decoration: none; transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 10px 24px -8px rgba(90,209,127,0.75); }
 
   header.hero { padding: 2.4rem 0 1.4rem; }
   .tag { color: var(--green); font-size: 0.74rem; letter-spacing: 0.08em;
@@ -126,8 +142,10 @@
   <nav>
     <span class="brand">pherix<span class="dot">.</span></span>
     <span class="links">
-      <a href="index.html">home</a>
-      <a href="index.html#start">get started</a>
+      <a href="how-it-works.html">how it works</a>
+      <a href="demos.html">demos</a>
+      <a href="get-started.html">get started</a>
+      <a class="console" href="console.html">Console →</a>
     </span>
   </nav>
 
