@@ -34,6 +34,9 @@ from tests._laws import (
     refund_impl,
 )
 
+# Trust pillar: blast radius — the compensator left-inverse law.
+pytestmark = pytest.mark.blast_radius
+
 _LAW = settings(
     max_examples=200,
     deadline=None,

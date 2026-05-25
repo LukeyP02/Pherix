@@ -38,6 +38,11 @@ from pherix.core.tools import tool
 
 from tests._laws import dump_kv, fresh_kv_conn
 
+# Trust pillars: oversight (a pathological policy / cap config must fail CLOSED
+# — never let a would-be-denied effect through) and blast radius (hostile or
+# malformed input leaves the world untouched).
+pytestmark = [pytest.mark.oversight, pytest.mark.blast_radius]
+
 _FUZZ = settings(
     max_examples=300,
     deadline=None,

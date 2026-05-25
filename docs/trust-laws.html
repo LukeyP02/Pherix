@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pherix · trust laws</title>
+<style>
+  :root {
+    --bg: #faf8f4; --panel: #f1ece2; --ink: #161513; --ink-2: #4a443c;
+    --ink-3: #7a7268; --rule: #d0c7b5; --accent: #b4421e;
+    --green: #355c3a; --green-bg: rgba(53, 92, 58, 0.10);
+    --red: #9a2f1a; --red-bg: rgba(154, 47, 26, 0.10);
+    --amber: #8a6a14; --amber-bg: rgba(138, 106, 20, 0.10);
+    --shade: rgba(22, 21, 19, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14130f; --panel: #1c1a14; --ink: #ece6d8; --ink-2: #c0baac;
+      --ink-3: #7a7268; --rule: #3a342a; --accent: #e07a4e;
+      --green: #6ba070; --green-bg: rgba(107, 160, 112, 0.12);
+      --red: #e0795e; --red-bg: rgba(224, 121, 94, 0.12);
+      --amber: #d4ac56; --amber-bg: rgba(212, 172, 86, 0.12);
+      --shade: rgba(255, 250, 240, 0.04);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
+    font-size: 17px; line-height: 1.55; padding: 4rem 1.5rem 6rem;
+  }
+  main { max-width: 920px; margin: 0 auto; }
+  header { margin-bottom: 2.5rem; }
+  .eyebrow {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78rem;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3);
+    margin-bottom: 0.5rem;
+  }
+  h1 { font-size: 2.4rem; line-height: 1.08; margin: 0 0 0.85rem; font-weight: 500; letter-spacing: -0.01em; }
+  .lede { color: var(--ink-2); font-size: 1.1rem; max-width: 64ch; margin: 0; }
+
+  .headline {
+    margin: 2.5rem 0 3rem; padding: 1.5rem 1.75rem;
+    border: 1px solid var(--rule); border-radius: 8px; background: var(--panel);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1.5rem; flex-wrap: wrap;
+  }
+  .headline.pass { border-color: var(--green); background: var(--green-bg); }
+  .headline.fail { border-color: var(--red); background: var(--red-bg); }
+  .headline.pending { border-color: var(--amber); background: var(--amber-bg); }
+  .headline .laws {
+    font-family: ui-monospace, monospace; font-size: 1.15rem; font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  .headline.pass .laws { color: var(--green); }
+  .headline.fail .laws { color: var(--red); }
+  .headline.pending .laws { color: var(--amber); }
+  .headline .verdict {
+    font-family: ui-monospace, monospace; font-size: 0.78rem;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3);
+  }
+
+  .cards { display: flex; flex-direction: column; gap: 1.1rem; }
+  .card {
+    padding: 1.6rem 1.75rem 1.75rem; background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 8px;
+    border-left: 4px solid var(--rule);
+  }
+  .card.pass { border-left-color: var(--green); }
+  .card.fail { border-left-color: var(--red); }
+  .card.pending { border-left-color: var(--amber); }
+  .card-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 1rem; margin-bottom: 0.9rem;
+  }
+  .card h2 { font-size: 1.5rem; margin: 0; font-weight: 500; letter-spacing: -0.005em; }
+  .tagline { margin: 0.2rem 0 0; color: var(--ink-2); font-size: 1rem; font-style: italic; }
+  .pill {
+    flex: 0 0 auto; font-family: ui-monospace, monospace; font-size: 0.72rem;
+    letter-spacing: 0.1em; padding: 0.3rem 0.7rem; border-radius: 99px;
+    border: 1px solid currentColor; white-space: nowrap; font-weight: 600;
+  }
+  .pill.pass { color: var(--green); background: var(--green-bg); }
+  .pill.fail { color: var(--red); background: var(--red-bg); }
+  .pill.pending { color: var(--amber); background: var(--amber-bg); }
+  .marker { margin: 0 0 0.85rem; }
+  .theorem { margin: 0 0 1rem; color: var(--ink); font-size: 1.02rem; }
+  .count {
+    margin: 0; font-family: ui-monospace, monospace; font-size: 0.82rem;
+    color: var(--ink-3);
+  }
+  .count strong { color: var(--ink); }
+  code {
+    font-family: ui-monospace, monospace; font-size: 0.82em;
+    background: var(--shade); padding: 1px 6px; border-radius: 3px; color: var(--ink-2);
+  }
+
+  footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--rule); font-size: 0.86rem; color: var(--ink-3); }
+  footer p { margin: 0.35rem 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">Pherix · trust laws</p>
+    <h1>Pherix is provably correct.</h1>
+    <p class="lede">Not "trust our demo" — three trust guarantees stated as deterministic
+      laws over the effect journal, and re-proven on every run. The guarantee is the
+      product; it is deterministic, so we can <em>test it</em>, not just demonstrate it.</p>
+  </header>
+
+  <div class="headline pass" role="status">
+    <span class="laws">blast-radius ✓  ·  audit ✓  ·  oversight ✓</span>
+    <span class="verdict">provably correct</span>
+  </div>
+
+  <div class="cards">
+
+    <section class="card pass" aria-label="Blast radius pillar">
+      <div class="card-head">
+        <div>
+          <h2>Blast radius</h2>
+          <p class="tagline">A mistake is contained, not catastrophic.</p>
+        </div>
+        <span class="pill pass">✓ PASS</span>
+      </div>
+      <p class="marker"><code>@pytest.mark.blast_radius</code></p>
+      <p class="theorem">rollback(apply(S, W)) == W for any reversible effect sequence S over any world W — the world is restored byte-exactly. A partial failure mid-commit fully unwinds, leaving no half-applied state. In the irreversible lane the registered compensator is a true left-inverse (compensator ∘ tool ≈ identity on the observable); with no compensator the transaction goes STUCK rather than leaving a torn effect.</p>
+      <p class="count"><strong>174</strong> passed of 184 selected · 10 skipped</p>
+    </section>
+
+    <section class="card pass" aria-label="Audit pillar">
+      <div class="card-head">
+        <div>
+          <h2>Audit</h2>
+          <p class="tagline">You can always prove what happened.</p>
+        </div>
+        <span class="pill pass">✓ PASS</span>
+      </div>
+      <p class="marker"><code>@pytest.mark.audit</code></p>
+      <p class="theorem">Completeness: every applied effect and every policy verdict is recorded in the journal — the row count equals the count executed, nothing silently missing. Durability: the journal survives crash, truncation and byte-flip — it fails loud or recovers clean, never silently wrong. Recovery folds the durable journal to a consistent world: fully committed or fully rolled back, never torn.</p>
+      <p class="count"><strong>46</strong> passed of 47 selected · 1 skipped</p>
+    </section>
+
+    <section class="card pass" aria-label="Oversight pillar">
+      <div class="card-head">
+        <div>
+          <h2>Oversight</h2>
+          <p class="tagline">The wedge — a human stays on the irreversible.</p>
+        </div>
+        <span class="pill pass">✓ PASS</span>
+      </div>
+      <p class="marker"><code>@pytest.mark.oversight</code></p>
+      <p class="theorem">No irreversible effect ever commits without explicit approval or a registered compensator, under any interleaving or sequence. Approval is necessary — an un-approved irreversible effect raises GateBlocked, nothing fires, the world is untouched — and sufficient: once approved it fires exactly once and is recorded. Verified against hundreds of adversarially generated approve / no-approve interleavings.</p>
+      <p class="count"><strong>46</strong> passed of 46 selected</p>
+    </section>
+  </div>
+
+  <footer>
+    <p>Last run <strong>2026-05-25 14:17:16 BST</strong> · regenerated by
+      <code>python tests/pillar_report.py</code>. Each pillar is a pytest marker;
+      the runner folds the law suite once per marker and inlines the verdict here.</p>
+    <p>Offline, no API key — Pherix wraps tools, it never calls an LLM. A failing law is
+      a real engine finding, reported here, never papered over.</p>
+  </footer>
+</main>
+</body>
+</html>

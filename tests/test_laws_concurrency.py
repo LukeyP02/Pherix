@@ -33,6 +33,10 @@ from pherix.core.isolation import Abort, IsolationConflict, check_conflicts
 from pherix.core.runtime import agent_txn
 from pherix.core.tools import active_effect, tool
 
+# Trust pillar: blast radius — isolation/no-lost-update: concurrent txns do not
+# corrupt one another's writes (the atomicity property under concurrency).
+pytestmark = pytest.mark.blast_radius
+
 _LAW = settings(
     max_examples=300,
     deadline=None,

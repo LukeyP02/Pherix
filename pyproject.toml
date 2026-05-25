@@ -69,3 +69,8 @@ packages = ["pherix"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "blast_radius: trust pillar — a mistake is contained, not catastrophic (rollback ≈ identity, partial-failure unwind, compensator left-inverse, missing-compensator STUCK)",
+    "audit: trust pillar — you can always prove what happened (completeness of the journal, durability across crash/truncation/byte-flip, recovery folds to a consistent world)",
+    "oversight: trust pillar (the wedge) — a human stays on the irreversible (no irreversible effect commits without explicit approval or a registered compensator, under any interleaving)",
+]

@@ -38,6 +38,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import pytest
 from hypothesis import HealthCheck, settings
 from hypothesis.stateful import (
     RuleBasedStateMachine,
@@ -67,6 +68,17 @@ from tests._stateful import (
     fresh_kv_conn,
     ledger_equal,
 )
+
+# Trust pillars (all three): the stateful machine folds thousands of random
+# schedules — open / write / charge / approve / commit / rollback / crash+recover /
+# concurrent txn — through the real engine, asserting blast-radius (rollback ==
+# baseline, no lost update), audit (crash+recover lands terminal & exactly-once),
+# and oversight (an un-approved gated charge blocks the commit, never fires).
+pytestmark = [
+    pytest.mark.blast_radius,
+    pytest.mark.audit,
+    pytest.mark.oversight,
+]
 
 # A tool the policy always denies — its presence in a generated sequence lets
 # the machine assert "a denied effect never touched the real world".

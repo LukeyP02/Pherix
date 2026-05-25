@@ -24,6 +24,11 @@ from pherix.core.transaction import TxnState
 
 from tests._laws import DictAdapter, dump_kv, fresh_kv_conn, kv_programs
 
+# Trust pillar: audit — the differential facet: a program folds to an identical
+# journal / committed world across two independent adapter implementations, so
+# the recorded transcript is implementation-independent and trustworthy.
+pytestmark = pytest.mark.audit
+
 _LAW = settings(
     max_examples=200,
     deadline=None,

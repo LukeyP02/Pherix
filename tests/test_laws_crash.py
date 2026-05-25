@@ -34,6 +34,10 @@ from pherix.core.recovery import recover
 from pherix.core.tools import tool
 from pherix.core.transaction import Transaction, TxnState
 
+# Trust pillar: audit — durability: recovery folds the durable journal to a
+# consistent world after a crash at any step.
+pytestmark = pytest.mark.audit
+
 _LAW = settings(
     max_examples=200,
     deadline=None,

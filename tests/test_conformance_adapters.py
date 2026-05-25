@@ -45,6 +45,10 @@ from pherix.core.adapters.base import VersionedResourceAdapter
 from pherix.core.effects import Effect, EffectStatus
 from pherix.core.runtime import agent_txn
 
+# Trust pillar: blast radius — adapter conformance proves snapshot/apply/restore
+# behaves, the basis of "rollback ≈ identity".
+pytestmark = pytest.mark.blast_radius
+
 
 # ===========================================================================
 # Helpers shared by the laws below.

@@ -1,9 +1,15 @@
 import json
 
+import pytest
+
 from pherix.core.adapters.base import SnapshotHandle
 from pherix.core.audit import AuditJournal
 from pherix.core.effects import Effect, EffectStatus
 from pherix.core.transaction import Transaction, TxnState
+
+# Trust pillar: audit — the journal records every effect (and round-trips
+# isolation keys / verdicts) durably.
+pytestmark = pytest.mark.audit
 
 
 def make_effect(txn_id, index=0, **overrides):

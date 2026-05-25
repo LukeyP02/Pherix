@@ -26,6 +26,11 @@ from pherix.core.transaction import TxnState
 
 from tests._laws import dump_kv, fresh_kv_conn, kv_programs, seed_programs
 
+# Trust pillars: oversight (policy is the human-authored gate — a denied effect
+# is refused) and blast radius (a denial unwinds the whole txn to baseline, no
+# partial application).
+pytestmark = [pytest.mark.oversight, pytest.mark.blast_radius]
+
 _LAW = settings(
     max_examples=200,
     deadline=None,

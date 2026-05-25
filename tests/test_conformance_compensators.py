@@ -65,6 +65,10 @@ from pherix.core.runtime import GateBlocked, agent_txn
 from pherix.core.tools import tool
 from pherix.core.transaction import TxnState
 
+# Trust pillar: blast radius — a compensator is a true left-inverse, the
+# irreversible lane's analogue of snapshot-restore.
+pytestmark = pytest.mark.blast_radius
+
 
 # ===========================================================================
 # A uniform recording fake client.

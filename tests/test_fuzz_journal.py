@@ -54,6 +54,10 @@ from tests._fuzz import (
     truncate_at,
 )
 
+# Trust pillar: audit — durability under truncation / byte-flip / corruption:
+# recover fails loud or lands clean, never silently wrong.
+pytestmark = pytest.mark.audit
+
 _FUZZ = settings(
     max_examples=300,
     deadline=None,
