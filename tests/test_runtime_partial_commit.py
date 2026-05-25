@@ -21,6 +21,10 @@ from pherix.core.runtime import agent_txn
 from pherix.core.tools import tool
 from pherix.core.transaction import TxnState
 
+# Trust pillars: oversight (the gate / staged-irreversible fire path) and blast
+# radius (a mid-fire failure unwinds the whole txn, STUCK only on missing comp).
+pytestmark = [pytest.mark.oversight, pytest.mark.blast_radius]
+
 
 @pytest.fixture
 def conn():

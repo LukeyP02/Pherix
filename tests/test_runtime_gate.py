@@ -12,6 +12,10 @@ from pherix.core.runtime import GateBlocked, agent_txn
 from pherix.core.tools import tool
 from pherix.core.transaction import TxnState
 
+# Trust pillar: oversight — the commit-time gate (approval necessary AND
+# sufficient) and the twice-evaluated policy bracket.
+pytestmark = pytest.mark.oversight
+
 
 def _make_charge_and_refund():
     """Charge + its compensator; both registered as @tools (D2)."""

@@ -28,6 +28,9 @@ from pherix.core.transaction import TxnState
 
 from tests._laws import dump_kv, fresh_kv_conn, kv_programs, seed_programs
 
+# Trust pillar: blast radius — the reversible-lane rollback ≈ identity law.
+pytestmark = pytest.mark.blast_radius
+
 # The tool registry and these fixtures live for the whole test function;
 # Hypothesis re-runs the body many times against them, so the fixture must not
 # be reset per example — that is exactly what this health check guards, and

@@ -20,6 +20,10 @@ from pherix.core.runtime import agent_txn
 from pherix.core.tools import tool
 from pherix.core.transaction import TxnState
 
+# Trust pillar: blast radius — the mixed-fold unwind contains a partial failure
+# across both the reversible and irreversible lanes.
+pytestmark = pytest.mark.blast_radius
+
 
 @pytest.fixture
 def conn():

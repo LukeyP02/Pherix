@@ -15,6 +15,10 @@ from pherix.core.effects import EffectStatus, StagedResult
 from pherix.core.runtime import CompensatorNotRegistered, agent_txn
 from pherix.core.tools import tool
 
+# Trust pillar: oversight — irreversibles stage (never fire pre-commit); a
+# missing compensator is caught loudly at stage-time.
+pytestmark = pytest.mark.oversight
+
 
 def _fire_counter():
     calls: list[dict] = []

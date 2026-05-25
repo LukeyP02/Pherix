@@ -37,6 +37,11 @@ from pherix.core.transaction import Transaction, TxnState
 
 from tests._laws import dump_kv, fresh_kv_conn
 
+# Trust pillars: audit (a corrupted/truncated durable journal fails loud or
+# lands STUCK — never silently lossy) and blast radius (hostile/malformed input
+# leaves the world untouched).
+pytestmark = [pytest.mark.audit, pytest.mark.blast_radius]
+
 _LAW = settings(
     max_examples=200,
     deadline=None,

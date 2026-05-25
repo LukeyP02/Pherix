@@ -26,6 +26,10 @@ from pherix.core.runtime import agent_txn
 from pherix.core.tools import REGISTRY, tool
 from pherix.core.transaction import Transaction, TxnState
 
+# Trust pillar: audit — recovery folds the durable journal to a terminal,
+# exactly-once-consistent world.
+pytestmark = pytest.mark.audit
+
 
 # --- a fake irreversible adapter whose compensator fires count is observable --
 
