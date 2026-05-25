@@ -37,8 +37,9 @@ def _narrate(res: acts.ActResult) -> None:
 
 def main() -> int:
     print()
-    print("Pherix — watch it work, proven underneath")
-    print("a deterministic, offline, scripted walkthrough of the real engine")
+    print("Pherix — ACID for agents")
+    print("database guarantees over an agent's real-world actions:")
+    print("undo the reversible · gate the irreversible · audit everything")
     print()
 
     # One durable, temp-file journal across the governed runs, so the inspector

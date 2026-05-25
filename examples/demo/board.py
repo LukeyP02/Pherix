@@ -306,13 +306,15 @@ _TEMPLATE = """\
 <body>
 <main>
   <header>
-    <p class="eyebrow">Pherix · the demo</p>
-    <h1>Watch it work — and here's why it always works.</h1>
-    <p class="lede">Three acts, each a matched pair: the same agent action run
-      <em>without</em> Pherix and <em>with</em> it. The contrast is the whole point —
-      a contained mistake, a gated payment, a complete audit trail. Each act is the
-      vivid single case; the <a href="trust-laws.html">trust laws</a> beside it prove
-      it holds for <em>every</em> sequence, not just this one.</p>
+    <p class="eyebrow">Pherix</p>
+    <h1>ACID for agents.</h1>
+    <p class="lede"><strong>Database guarantees over an AI agent's real-world
+      actions</strong> — undo what's reversible, a human gate on what isn't, a durable
+      audit trail of everything. The three acts below are each a matched pair: the same
+      agent action run <em>without</em> Pherix and <em>with</em> it. The contrast is the
+      whole point — a contained mistake, a gated payment, a complete record. Each act is
+      the vivid single case; the <a href="trust-laws.html">trust laws</a> beside it
+      prove it holds for <em>every</em> sequence, not just this one.</p>
   </header>
 
   <div class="headline {head_cls}" role="status">
