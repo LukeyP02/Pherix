@@ -202,8 +202,7 @@
 
     <section class="band">
       <h2>The problem</h2>
-      <p class="value-lead">An agent calls a tool and the effect just <b>happens</b> — a wiped table, a wrong payment, a clobbered file. No undo, no approval, no record.</p>
-      <p class="fit">Pherix sits at the tool-call layer and makes that mistake <b>contained</b> instead of catastrophic: reversible effects roll back, irreversible ones wait for approval, and the whole run is on the record.</p>
+      <p class="value-lead">An agent calls a tool and the effect just <b>happens</b> — a wiped table, a wrong payment, a clobbered file. No undo, no approval, no record. Pherix makes that <b>contained</b>, not catastrophic.</p>
     </section>
 
     <section class="band">
@@ -212,17 +211,17 @@
         <div class="pillar undo">
           <span class="num">01</span>
           <p class="v">Undo the reversible</p>
-          <p>Database and file writes roll back through the backend's own savepoints and copy-on-write. The backend does the undo — exact, not best-effort.</p>
+          <p>DB and file writes roll back through the backend's own savepoints — exact, not best-effort.</p>
         </div>
         <div class="pillar gate">
           <span class="num">02</span>
           <p class="v">Gate the irreversible</p>
-          <p>A charge or an email can't be un-sent, so it doesn't fire until commit — and one with no safe undo waits for a human to approve it.</p>
+          <p>A charge or email can't be un-sent — so it waits for a human to approve before it fires.</p>
         </div>
         <div class="pillar audit">
           <span class="num">03</span>
           <p class="v">Audit everything</p>
-          <p>Every tool call is recorded — who did what, when, allowed or denied. The audit trail is a byproduct, always on.</p>
+          <p>Every tool call recorded — who did what, when, allowed or denied. Always on.</p>
         </div>
       </div>
     </section>
@@ -232,22 +231,22 @@
       <div class="uses">
         <div class="use">
           <h3>Ops agent</h3>
-          <p>An agent working on a production database. Let it act, and roll the whole step back the moment something looks wrong. Nothing sticks until you commit.</p>
+          <p>Acts on a production database — roll the whole step back the moment it looks wrong.</p>
         </div>
         <div class="use">
           <h3>Payments agent</h3>
-          <p>A charge waits behind the gate; a refund is its registered undo. A failed run unwinds cleanly — the money moves only when the whole step is sound.</p>
+          <p>A charge waits at the gate; a refund is its undo. A failed run unwinds clean.</p>
         </div>
         <div class="use">
           <h3>Data agent</h3>
-          <p>Bulk writes across a database, object storage, and search all run as one step. Commit them together, or roll them all back together.</p>
+          <p>Writes across a DB, object storage, and search commit as one step — or roll back together.</p>
         </div>
       </div>
     </section>
 
     <section class="band">
       <h2>How it fits</h2>
-      <p class="fit">Pherix is a <b>library</b>. You <code>pip install</code> it, wrap your agent's tool-call layer, and keep your existing agent loop and model. It doesn't run agents or call models — it makes their actions behave like a database transaction. Pre-release and self-hosted: no console, no hosted service, no pricing.</p>
+      <p class="fit">A <b>library</b> you <code>pip install</code> and wrap your agent's tool layer with — your loop and model unchanged. It doesn't run agents; it makes their actions behave like a database transaction. Self-hosted, pre-release.</p>
       <div class="cta" style="justify-content:flex-start; margin-top:1.6rem;">
         <a class="btn" href="get-started.html">Wrap your agent</a>
         <a class="btn ghost" href="docs.html">How it works</a>
