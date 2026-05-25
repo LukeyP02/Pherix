@@ -27,9 +27,24 @@ from pherix.core.adapters.base import (
     TransactionalResourceAdapter,
     VersionedResourceAdapter,
 )
+from pherix.core.adapters.dynamodb import DynamoDBAdapter
+from pherix.core.adapters.elasticsearch import ElasticsearchAdapter
 from pherix.core.adapters.filesystem import FilesystemAdapter
+from pherix.core.adapters.gcs import GCSAdapter
 from pherix.core.adapters.http import HTTPAdapter, IrreversibleAdapterError
 from pherix.core.adapters.memory import MemoryAdapter, MemoryHandle
+from pherix.core.adapters.messagequeue import (
+    Broker,
+    MQAdapter,
+    publish_tool,
+    tombstone_compensator,
+)
+from pherix.core.adapters.mongodb import MongoAdapter
+from pherix.core.adapters.mysql import MySQLAdapter
+from pherix.core.adapters.postgres import PostgresAdapter
+from pherix.core.adapters.redis import RedisAdapter
+from pherix.core.adapters.rest import RESTAdapter, graphql_tool, rest_tool
+from pherix.core.adapters.s3 import S3Adapter
 from pherix.core.adapters.sql import SQLiteAdapter
 from pherix.core.memory import (
     MemoryTools,
@@ -171,6 +186,23 @@ __all__ = [
     "register_memory_tools",
     "no_pii",
     "memory_byte_cap",
+    # adapter-compensator-base: reversible backends (snapshot/savepoint lane)
+    "PostgresAdapter",
+    "MySQLAdapter",
+    "MongoAdapter",
+    "S3Adapter",
+    "RedisAdapter",
+    "DynamoDBAdapter",
+    "GCSAdapter",
+    "ElasticsearchAdapter",
+    # adapter-compensator-base: irreversible transports (staged/compensated lane)
+    "RESTAdapter",
+    "rest_tool",
+    "graphql_tool",
+    "MQAdapter",
+    "Broker",
+    "publish_tool",
+    "tombstone_compensator",
     "AuditJournal",
     "ResourceAdapter",
     "TransactionalResourceAdapter",

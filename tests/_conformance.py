@@ -767,6 +767,51 @@ _KEYED_REVERSIBLE = [
         args_for=_kv_args,
         dump=_fs_dump,
     ),
+    AdapterCase(
+        name="redis",
+        supports_rollback=True,
+        factory=_redis_world,
+        seed=_redis_seed,
+        tool_for=_redis_tool_for,
+        args_for=_kv_args,
+        dump=_redis_dump,
+    ),
+    AdapterCase(
+        name="s3",
+        supports_rollback=True,
+        factory=_s3_world,
+        seed=_s3_seed,
+        tool_for=_s3_tool_for,
+        args_for=_kv_args,
+        dump=_s3_dump,
+    ),
+    AdapterCase(
+        name="dynamodb",
+        supports_rollback=True,
+        factory=_dynamodb_world,
+        seed=_ddb_seed,
+        tool_for=_ddb_tool_for,
+        args_for=_kv_args,
+        dump=_ddb_dump,
+    ),
+    AdapterCase(
+        name="gcs",
+        supports_rollback=True,
+        factory=_gcs_world,
+        seed=_gcs_seed,
+        tool_for=_gcs_tool_for,
+        args_for=_kv_args,
+        dump=_gcs_dump,
+    ),
+    AdapterCase(
+        name="elasticsearch",
+        supports_rollback=True,
+        factory=_es_world,
+        seed=_es_seed,
+        tool_for=_es_tool_for,
+        args_for=_kv_args,
+        dump=_es_dump,
+    ),
 ]
 
 # Mongo's tool signature + args differ (collection/doc_id), so it is its own
@@ -808,7 +853,7 @@ _MYSQL_CASE = AdapterCase(
     dump=_my_dump,
 )
 
-REVERSIBLE_CASES = list(_KEYED_REVERSIBLE)
+REVERSIBLE_CASES = _KEYED_REVERSIBLE + [_MONGO_CASE, _POSTGRES_CASE, _MYSQL_CASE]
 
 IRREVERSIBLE_CASES = [
     AdapterCase(
@@ -879,5 +924,21 @@ VERSION_CASES = [
         factory=_fs_world,
         make_key=lambda: (f"{uuid.uuid4().hex}.bin",),
         write=_fs_version_write,
+    ),
+    VersionCase(
+        name="postgres",
+        family="counter",
+        missing=0,
+        factory=_postgres_world,
+        make_key=lambda: ("kv", uuid.uuid4().hex),
+        write=_pg_version_write,
+    ),
+    VersionCase(
+        name="mysql",
+        family="counter",
+        missing=0,
+        factory=_mysql_world,
+        make_key=lambda: ("kv", uuid.uuid4().hex),
+        write=_my_version_write,
     ),
 ]
