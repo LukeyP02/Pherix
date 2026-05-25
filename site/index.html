@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pherix — ACID for agents</title>
+<style>
+:root {
+  --bg: #faf8f4; --panel: #f1ece2; --ink: #161513; --ink-2: #4a443c;
+  --ink-3: #7a7268; --rule: #d0c7b5; --accent: #b4421e; --green: #355c3a;
+  --amber: #8a6a14; --blue: #2c4a6a; --shade: rgba(22, 21, 19, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14130f; --panel: #1c1a14; --ink: #ece6d8; --ink-2: #c0baac;
+    --ink-3: #7a7268; --rule: #3a342a; --accent: #e07a4e; --green: #6ba070;
+    --amber: #d4ac56; --blue: #7ea0c8; --shade: rgba(255, 250, 240, 0.04);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+body {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
+  font-size: 17px; line-height: 1.55; padding: 2.5rem 1.5rem 6rem;
+}
+main { max-width: 920px; margin: 0 auto; }
+.eyebrow { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.5rem; }
+h1 { font-size: 2.4rem; line-height: 1.08; margin: 0 0 0.85rem; font-weight: 500; letter-spacing: -0.01em; }
+h2 { font-size: 1.5rem; font-weight: 500; letter-spacing: -0.005em; margin: 2.5rem 0 0.75rem; }
+.lede { color: var(--ink-2); font-size: 1.1rem; max-width: 62ch; margin: 0; }
+p { color: var(--ink-2); }
+a { color: var(--accent); }
+code { font-family: ui-monospace, monospace; font-size: 0.88em; background: var(--shade); padding: 1px 5px; border-radius: 3px; }
+pre { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 1.1rem 1.25rem; overflow-x: auto; font-family: ui-monospace, monospace; font-size: 0.8rem; line-height: 1.5; color: var(--ink); }
+pre code { background: none; padding: 0; font-size: inherit; }
+footer { margin-top: 4.5rem; padding-top: 2rem; border-top: 1px solid var(--rule); font-size: 0.86rem; color: var(--ink-3); }
+.site-nav { max-width: 920px; margin: 0 auto 3rem; display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 1rem; border-bottom: 1px solid var(--rule); flex-wrap: wrap; gap: 0.75rem; }
+.site-nav .brand { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: 0.04em; text-decoration: none; color: var(--ink); }
+.site-nav .links { display: flex; gap: 1.25rem; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+.site-nav .links a { text-decoration: none; color: var(--ink-3); letter-spacing: 0.04em; }
+.site-nav .links a:hover { color: var(--ink); }
+.site-nav .links a[aria-current="page"] { color: var(--accent); }
+
+/* page-specific */
+.hero { margin: 1rem 0 2.5rem; }
+.tagline { font-family: ui-monospace, monospace; font-size: 0.95rem; color: var(--ink-2); margin: 1.25rem 0 0; }
+.tagline b { color: var(--ink); font-weight: 600; }
+.breath { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1.5rem 0 0; font-family: ui-monospace, monospace; font-size: 0.82rem; }
+.breath span { background: var(--shade); border: 1px solid var(--rule); border-radius: 999px; padding: 0.3rem 0.8rem; color: var(--ink); }
+.cta-row { display: flex; flex-wrap: wrap; gap: 0.85rem; margin: 2rem 0 0; }
+.btn { display: inline-block; font-family: ui-monospace, monospace; font-size: 0.85rem; letter-spacing: 0.03em; text-decoration: none; padding: 0.7rem 1.3rem; border-radius: 6px; border: 1px solid var(--accent); }
+.btn-primary { background: var(--accent); color: var(--bg); }
+.btn-secondary { background: transparent; color: var(--accent); }
+.btn:hover { opacity: 0.88; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 1rem 0 0; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 1.1rem 1.2rem; }
+.card h3 { font-size: 1.02rem; font-weight: 600; margin: 0 0 0.4rem; color: var(--ink); }
+.card p { margin: 0; font-size: 0.95rem; }
+.kill { background: var(--panel); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; padding: 1rem 1.25rem; margin: 1.25rem 0 0; }
+.kill p { margin: 0; }
+</style>
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="index.html">Pherix</a>
+  <div class="links">
+    <a href="index.html" aria-current="page">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="docs.html">How it works</a>
+    <a href="demos.html">Demos</a>
+  </div>
+</nav>
+<main>
+  <section class="hero">
+    <div class="eyebrow">Transactional resource runtime for AI agents</div>
+    <h1>ACID for agents.</h1>
+    <p class="lede">Database-style guarantees over the real-world side-effects of your agent's
+    tool calls — the DB writes, the file writes, the API calls. For anyone shipping
+    action-taking agents to production.</p>
+    <p class="tagline"><b>If you build agents, we protect you.</b></p>
+    <div class="breath">
+      <span>undo the reversible</span>
+      <span>gate the irreversible</span>
+      <span>audit everything</span>
+    </div>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="demos.html">See the demo</a>
+      <a class="btn btn-secondary" href="get-started.html">Get started</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>The problem it kills</h2>
+    <div class="kill">
+      <p>An agent calls a tool and the effect just <em>happens</em> — irreversibly,
+      immediately, unaudited. A wiped table, a payment sent to the wrong account,
+      a file clobbered. Pherix sits at the tool-call layer and makes that mistake
+      <b>contained</b> instead of catastrophic: reversible effects roll back, irreversible
+      ones are gated behind explicit approval, and the whole run is on the record.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What you get, in one breath</h2>
+    <div class="cards">
+      <div class="card">
+        <h3>Undo the reversible</h3>
+        <p>DB and filesystem writes journal live and roll back via the backend's own
+        savepoints and copy-on-write. The backend does the undo — exact, not best-effort.</p>
+      </div>
+      <div class="card">
+        <h3>Gate the irreversible</h3>
+        <p>An un-undoable effect — a charge, an email — is staged, not fired. It only
+        happens at commit, and one without a compensator blocks until a human approves it.</p>
+      </div>
+      <div class="card">
+        <h3>Audit everything</h3>
+        <p>Every side-effecting tool call is an append-only journal entry. The journal
+        <em>is</em> the audit log — every action, its arguments, and its outcome, on the record.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Where it earns its place</h2>
+    <div class="cards">
+      <div class="card">
+        <h3>Ops / SRE agent</h3>
+        <p>An agent operating on a production database — let it act, and roll the whole
+        step back the moment something looks wrong. Nothing persists until you commit.</p>
+      </div>
+      <div class="card">
+        <h3>Payments agent</h3>
+        <p>A charge is staged behind the gate; a refund is its registered compensator.
+        A failed run unwinds cleanly — the money moves only when the whole step is sound.</p>
+      </div>
+      <div class="card">
+        <h3>Data agent</h3>
+        <p>Bulk writes across SQL, object storage, and search indexes journal as one
+        transaction — commit them together, or roll them all back as one.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How it fits</h2>
+    <p>Pherix is a <b>library</b>. You <code>pip install</code> it, wrap your agent's
+    tool-call layer, and keep your existing agent loop and model provider. It does not
+    run agents or call LLMs — it makes their actions behave like database transactions.
+    Pre-release and self-hosted; no console, no hosted service.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="get-started.html">Wrap your agent in 5 minutes</a>
+      <a class="btn btn-secondary" href="docs.html">How it works</a>
+    </div>
+  </section>
+
+  <footer>
+    Pherix — pre-release <code>0.0.0</code>. This site is static, served by
+    <code>python -m http.server</code>. Source:
+    <a href="https://github.com/LukeyP02/Pherix">github.com/LukeyP02/Pherix</a>.
+  </footer>
+</main>
+</body>
+</html>
