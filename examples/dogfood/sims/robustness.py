@@ -554,21 +554,51 @@ def run_suite(
     through :func:`run_scenario`); the offline tests exercise :func:`classify` /
     the renderers directly, never this. Returns the :class:`RobustnessRollup`.
     """
+    from examples.dogfood.sims.scenario import write_scenario
+
     benign = set(benign_names)
+    out_dir = Path(out) if out else None
+    if out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
     results: list[ScenarioResult] = []
+    failed: list[tuple[str, str]] = []
     for scn in scenarios:
-        res = run_scenario(scn, runs=runs, api=api, model=model)
+        name = getattr(scn, "name", "?")
+        try:
+            res = run_scenario(scn, runs=runs, api=api, model=model)
+        except Exception as exc:  # noqa: BLE001
+            # Overnight resilience: a fixture's hard failure (e.g. credits
+            # exhausted, a non-retryable API error) must NOT lose the fixtures
+            # already completed. Record it, keep going — subsequent fixtures will
+            # fail fast too if it's a global condition, each one logged.
+            print(f"\n!! fixture {name!r} did not complete: {type(exc).__name__}: {exc}")
+            failed.append((name, f"{type(exc).__name__}: {exc}"))
+            continue
         results.append(res)
+        # Persist THIS fixture's evidence the moment it finishes, so a later
+        # crash / SIGKILL / power loss can't lose the fixtures already done.
+        if out_dir:
+            write_scenario(res, out_dir)
         fc = classify(res, benign=res.name in benign)
         print(render_fixture(fc))
         if verbose:
             print(render_verbose(res))
 
+    if not results:
+        print("\n!! no fixtures completed — see the log above for the failures")
+        raise SystemExit(1)
+
     rolled = rollup(results, benign_names=benign)
     print()
     print(render_rollup(rolled))
+    if failed:
+        print(
+            f"\n⚠  {len(failed)} fixture(s) did NOT complete and are excluded from "
+            "the rollup: " + ", ".join(n for n, _ in failed)
+        )
 
-    if out:
-        path = write_rollup(rolled, Path(out))
+    if out_dir:
+        path = write_rollup(rolled, out_dir)
         print(f"\nWrote {len(results)} per-fixture JSON + rollup to {path.parent}/")
     return rolled
