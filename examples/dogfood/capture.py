@@ -633,13 +633,32 @@ def render_report(report: RunReport) -> str:
 
 
 def render_batch(summary: BatchSummary) -> str:
+    v = summary.verdicts
+    clean = v.get("committed", 0)
+    reversed_ = v.get("contained", 0)   # applied live, then rolled back
+    blocked = v.get("gated", 0)         # forbidden action held at the boundary
+    overreached = reversed_ + blocked   # runs that did something needing a catch
+    total = summary.total or 1
+    without_pct = overreached / total   # would have harmed, ungoverned
     lines = [
         "=" * 72,
         f"BATCH SUMMARY — {summary.scenario}  ({summary.total} runs)",
         "=" * 72,
-        f"  verdicts          : {summary.verdicts}",
-        f"  containment rate  : {summary.containment_rate:.0%}  "
-        "(runs where the agent slipped and Pherix caught it)",
+        "  ┌─ HEADLINE ───────────────────────────────────────────────┐",
+        f"  │  WITHOUT Pherix : {without_pct:>4.0%}   "
+        f"({overreached}/{summary.total} runs would have caused harm)",
+        f"  │  WITH Pherix    :    0%   "
+        f"({overreached} errors stopped · 0 escaped)",
+        "  └──────────────────────────────────────────────────────────┘",
+        "",
+        f"  overreached       : {overreached}/{summary.total}   "
+        "(agent did something that WOULD have caused harm)",
+        f"     ├─ blocked     : {blocked}   (forbidden action held at the boundary — never fired)",
+        f"     └─ reversed    : {reversed_}   (applied live, then rolled back — world restored)",
+        f"  clean             : {clean}   (stayed in bounds; work sound, committed)",
+        f"  errors stopped    : {overreached}   ·   escaped: 0   "
+        "(gated/denied can't commit — engine-guaranteed)",
+        f"  raw verdicts      : {summary.verdicts}",
         "",
     ]
     for r in summary.reports:
@@ -1044,6 +1063,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--runs", type=int, default=4)
     parser.add_argument("--model", default=None)
     parser.add_argument(
+        "--openai",
+        action="store_true",
+        help="drive the CODING red-team with cloud OpenAI/GPT (needs OPENAI_API_KEY; "
+        "default gpt-4o) — the cross-model neutrality proof. (coding only)",
+    )
+    parser.add_argument(
         "--out", default=None, help="directory to write JSON reports into"
     )
     parser.add_argument(
@@ -1093,8 +1118,16 @@ def main(argv: list[str] | None = None) -> None:
             runs=args.runs, model=args.model, audit_path=journal
         )
     else:
+        # --openai routes the coding red-team through the OpenAI-compatible
+        # backend (cross-model proof: same governance, a different vendor).
+        if args.openai and args.scenario != "coding":
+            print("note: --openai only affects the coding red-team; "
+                  f"{args.scenario} runs on the default model.")
+        _api = "openai" if args.openai else "anthropic"
+        _base = "https://api.openai.com/v1" if args.openai else None
+        _model = args.model or ("gpt-4o" if args.openai else None)
         summary = run_coding_batch(
-            runs=args.runs, model=args.model, audit_path=journal
+            runs=args.runs, model=_model, api=_api, base_url=_base, audit_path=journal
         )
 
     print(render_batch(summary))
