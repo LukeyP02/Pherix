@@ -3,117 +3,162 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pherix · demos</title>
+<title>Demos — Pherix</title>
+<meta name="description" content="Watch a governed agent run: wrap, run, and a blocked $480k wire — in 45 seconds. Then check the proof underneath." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #faf8f4; --panel: #f1ece2; --ink: #161513; --ink-2: #4a443c;
-    --ink-3: #7a7268; --rule: #d0c7b5; --accent: #b4421e; --green: #355c3a;
-    --amber: #8a6a14; --blue: #2c4a6a; --shade: rgba(22, 21, 19, 0.05);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #14130f; --panel: #1c1a14; --ink: #ece6d8; --ink-2: #c0baac;
-      --ink-3: #7a7268; --rule: #3a342a; --accent: #e07a4e; --green: #6ba070;
-      --amber: #d4ac56; --blue: #7ea0c8; --shade: rgba(255, 250, 240, 0.04);
-    }
+    --bg: #0a0b0e;
+    --panel: #121419;
+    --panel-2: #181b22;
+    --ink: #e8ebf1;
+    --ink-2: #99a2b2;
+    --ink-3: #5a6271;
+    --ink-4: #383e49;
+    --rule: #232730;
+    --green: #5ad17f;
+    --amber: #e0b341;
+    --red: #e56854;
+    --accent: #6ea8fe;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  html { scroll-behavior: smooth; margin: 0; padding: 0; background: var(--bg); }
   body {
-    font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
-    font-size: 17px; line-height: 1.55; padding: 2.5rem 1.5rem 6rem;
+    margin: 0; padding: 0; background: transparent; color: var(--ink);
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
   }
-  main { max-width: 920px; margin: 0 auto; }
-  .eyebrow { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.5rem; }
-  h1 { font-size: 2.4rem; line-height: 1.08; margin: 0 0 0.85rem; font-weight: 500; letter-spacing: -0.01em; }
-  h2 { font-size: 1.3rem; margin: 0; font-weight: 500; letter-spacing: -0.005em; }
-  .lede { color: var(--ink-2); font-size: 1.1rem; max-width: 62ch; margin: 0; }
-  p { color: var(--ink-2); }
-  a { color: var(--accent); }
-  code { font-family: ui-monospace, monospace; font-size: 0.88em; background: var(--shade); padding: 1px 5px; border-radius: 3px; }
-  footer { margin-top: 4.5rem; padding-top: 2rem; border-top: 1px solid var(--rule); font-size: 0.86rem; color: var(--ink-3); }
-  footer p { margin: 0.35rem 0; }
-  .site-nav { max-width: 920px; margin: 0 auto 3rem; display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 1rem; border-bottom: 1px solid var(--rule); flex-wrap: wrap; gap: 0.75rem; }
-  .site-nav .brand { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: 0.04em; text-decoration: none; color: var(--ink); }
-  .site-nav .links { display: flex; gap: 1.25rem; font-family: ui-monospace, monospace; font-size: 0.8rem; }
-  .site-nav .links a { text-decoration: none; color: var(--ink-3); letter-spacing: 0.04em; }
-  .site-nav .links a:hover { color: var(--ink); }
-  .site-nav .links a[aria-current="page"] { color: var(--accent); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
 
-  header { margin-bottom: 0.5rem; }
-  .grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
-    margin-top: 3rem;
+  .bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  .bg::before {
+    content: ""; position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(150,162,186,0.30) 1.1px, transparent 1.6px);
+    background-size: 30px 30px;
+    -webkit-mask-image: radial-gradient(120% 90% at 50% 14%, #000 35%, transparent 90%);
+            mask-image: radial-gradient(120% 90% at 50% 14%, #000 35%, transparent 90%);
   }
-  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
-  .card {
-    display: block;
-    padding: 1.5rem 1.5rem 1.75rem;
-    background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
-    text-decoration: none; color: inherit;
-    transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+
+  main { max-width: 940px; margin: 0 auto; padding: 0 1.5rem 4rem; }
+
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    max-width: 940px; margin: 0 auto; padding: 1.15rem 1.5rem;
   }
-  .card:hover, .card:focus-visible {
-    transform: translateY(-2px); border-color: var(--accent);
-    box-shadow: 0 6px 20px var(--shade); outline: none;
+  nav .brand { font-weight: 700; letter-spacing: 0.04em; font-size: 1.02rem; color: var(--ink); }
+  nav .brand .dot { color: var(--green); }
+  nav .links { display: flex; align-items: center; gap: 1.3rem; flex-wrap: wrap; }
+  nav .links a { color: var(--ink-2); font-size: 0.84rem; }
+  nav .links a:hover { color: var(--ink); text-decoration: none; }
+  nav .links a.here { color: var(--green); }
+
+  .tag {
+    color: var(--green); font-size: 0.74rem; letter-spacing: 0.14em;
+    margin: 1.5rem 0 0.7rem; text-transform: uppercase;
+    opacity: 0; animation: rise .6s .05s ease forwards;
   }
-  .card-head {
-    display: flex; align-items: baseline; justify-content: space-between;
-    gap: 0.5rem; margin-bottom: 0.75rem;
+  h1 {
+    font-size: clamp(1.9rem, 4.5vw, 3rem); line-height: 1.05; margin: 0;
+    font-weight: 800; letter-spacing: -0.03em;
+    opacity: 0; animation: rise .6s .12s ease forwards;
   }
-  .card h2 { font-size: 1.3rem; margin: 0; font-weight: 500; letter-spacing: -0.005em; }
-  .badge {
-    font-family: ui-monospace, monospace; font-size: 0.68rem;
-    letter-spacing: 0.12em; text-transform: uppercase;
-    padding: 0.15rem 0.55rem; border-radius: 99px; border: 1px solid currentColor;
-    white-space: nowrap;
+  h1 .dot { color: var(--green); }
+  .lede {
+    color: var(--ink-2); font-size: 1.05rem; max-width: 62ch; margin: 1.1rem 0 0;
+    opacity: 0; animation: rise .6s .2s ease forwards;
   }
-  .badge.watch { color: var(--accent); }
-  .badge.proof { color: var(--green); }
-  .card p { margin: 0; color: var(--ink-2); font-size: 0.97rem; }
-  .card .cta {
-    display: block; margin-top: 1rem;
-    font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--accent);
-    letter-spacing: 0.02em;
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  .caption { margin: 2.2rem 0 0.9rem; display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .caption p { margin: 0; color: var(--ink-2); font-size: 0.95rem; }
+  .caption p b { color: var(--ink); }
+  .caption a { font-size: 0.82rem; color: var(--ink-3); white-space: nowrap; }
+  .caption a:hover { color: var(--green); }
+
+  .stage {
+    border: 1px solid var(--rule); border-radius: 12px; overflow: hidden;
+    background: var(--bg);
+    box-shadow: 0 24px 60px -28px rgba(0,0,0,0.8);
+    opacity: 0; animation: rise .7s .3s ease forwards;
+  }
+  .stage iframe {
+    display: block; width: 100%; min-height: 640px; border: 0; background: var(--bg);
+  }
+
+  .proof {
+    margin: 2.6rem 0 0; padding: 1.5rem 1.6rem; border: 1px solid var(--rule);
+    border-top: 2px solid var(--green); border-radius: 10px; background: var(--panel);
+    transition: transform .2s ease, box-shadow .2s ease;
+  }
+  .proof:hover { transform: translateY(-3px); box-shadow: 0 16px 34px -22px var(--green); }
+  .proof h2 { margin: 0 0 0.5rem; font-size: 1.2rem; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+  .proof p { margin: 0 0 0.9rem; color: var(--ink-2); font-size: 0.92rem; }
+  .proof a.go { color: var(--green); font-size: 0.85rem; font-weight: 700; }
+
+  footer {
+    margin-top: 4rem; padding: 1.8rem 0 0; border-top: 1px solid var(--rule);
+    color: var(--ink-3); font-size: 0.78rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  }
+  footer .brand { font-weight: 700; color: var(--ink-2); }
+  footer .brand .dot { color: var(--green); }
+  footer a { color: var(--ink-3); }
+  footer a:hover { color: var(--ink-2); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tag, h1, .lede, .stage { animation: none; opacity: 1; transform: none; }
   }
 </style>
 </head>
 <body>
-<nav class="site-nav">
-  <a class="brand" href="index.html">Pherix</a>
-  <div class="links">
-    <a href="index.html">Home</a>
-    <a href="get-started.html">Get started</a>
-    <a href="docs.html">How it works</a>
-    <a href="features.html">Features</a>
-    <a href="demos.html" aria-current="page">Demos</a>
-  </div>
-</nav>
+  <div class="bg" aria-hidden="true"></div>
 
-<main>
-  <header>
-    <p class="eyebrow">Pherix · demos</p>
-    <h1>Watch it work. Then check the proof.</h1>
-    <p class="lede">Two boards. The first shows an agent about to make an irreversible mistake — and what happens when Pherix is in the loop. The second is the guarantee underneath it: not one lucky run, but deterministic laws re-proven on <em>every</em> run, across adversarial sequences of operations.</p>
-  </header>
+  <nav>
+    <span class="brand">pherix<span class="dot">.</span></span>
+    <span class="links">
+      <a href="index.html">Home</a>
+      <a href="get-started.html">Get started</a>
+      <a href="docs.html">How it works</a>
+      <a href="features.html">Features</a>
+      <a class="here" href="demos.html">Demos</a>
+    </span>
+  </nav>
 
-  <section class="grid" aria-label="Demo boards">
-    <a class="card" href="../docs/demo.html">
-      <div class="card-head"><h2>Contain the catastrophe</h2><span class="badge watch">Watch it work</span></div>
-      <p>An agent is one tool call away from an irreversible mistake — the kind that doesn't roll back on its own. With Pherix wrapping the tool layer, the reversible work is undone and the irreversible step is gated before it fires. The mistake is contained, not catastrophic. Watch it happen, step by step.</p>
-      <span class="cta">Watch →</span>
-    </a>
-    <a class="card" href="../docs/trust-laws.html">
-      <div class="card-head"><h2>The trust laws</h2><span class="badge proof">See the proof</span></div>
-      <p>A single demo is one run. The trust laws are the substrate: three guarantees — blast-radius, audit, oversight — stated as deterministic laws over the effect journal and re-proven on <em>every</em> run, verified against hundreds of adversarial interleavings. Not "trust our demo" — the guarantee <em>is</em> the product. This is the proof under the demo.</p>
-      <span class="cta">See the proof →</span>
-    </a>
-  </section>
+  <main>
+    <p class="tag">Demos</p>
+    <h1>Watch it work<span class="dot">.</span></h1>
+    <p class="lede">An agent is one tool call away from an irreversible mistake. With Pherix in the loop, the reversible work is undone and the irreversible step is blocked before it fires. Watch it happen, step by step.</p>
 
-  <footer>
-    <p>Served by one <code>python -m http.server</code> at the repo root. The boards live in <code>docs/</code> and open straight from these links.</p>
-    <p>Pherix is pre-release — a self-hosted library you wrap your agent with. <a href="https://github.com/LukeyP02/Pherix">Source on GitHub</a>.</p>
-  </footer>
-</main>
+    <div class="caption">
+      <p>Watch a governed agent run — <b>wrap, run, and a blocked $480k wire, in 45 seconds.</b> Use the step and play controls inside the player.</p>
+      <a href="../docs/demo.html" target="_blank" rel="noopener">open full-screen ↗</a>
+    </div>
+
+    <div class="stage">
+      <iframe src="../docs/demo.html" title="Pherix demo — a governed agent run" loading="lazy"></iframe>
+    </div>
+
+    <div class="proof">
+      <h2>The proof underneath</h2>
+      <p>A demo is one run. Underneath it sit three guarantees — blast-radius, audit, oversight — re-checked on <em>every</em> run against hundreds of adversarial sequences. Not "trust our demo": the guarantee is the product.</p>
+      <a class="go" href="../docs/trust-laws.html">See the proof →</a>
+    </div>
+
+    <footer>
+      <span class="brand">pherix<span class="dot">.</span></span>
+      <span>
+        <a href="index.html">Home</a> ·
+        <a href="get-started.html">Get started</a> ·
+        <a href="docs.html">How it works</a> ·
+        <a href="features.html">Features</a> ·
+        <a href="demos.html">Demos</a> ·
+        <a href="https://github.com/LukeyP02/Pherix">GitHub</a>
+      </span>
+    </footer>
+  </main>
 </body>
 </html>

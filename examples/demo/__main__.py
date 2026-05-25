@@ -1,7 +1,8 @@
 """Entry point — `python -m examples.demo`.
 
 Runs the three acts in order, narrates each matched before/after, replays the
-governed journal, then writes docs/demo.html. Deterministic, offline, no key.
+governed journal, then writes the watchable session JSON the web player
+(docs/demo.html) animates. Deterministic, offline, no key.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from pherix import AuditJournal  # noqa: E402
 
-from examples.demo import acts, board  # noqa: E402
+from examples.demo import acts, session  # noqa: E402
 
 RULE = "=" * 72
 
@@ -74,18 +75,20 @@ def main() -> int:
 
     results = {r1.marker: r1, r2.marker: r2, r3.marker: r3}
 
-    # Write the headline board (ties the demo to the laws).
-    board_path = board.write(results)
+    # Write the watchable session JSON (the web player's timeline) — one
+    # continuous session driven through the real engine, deterministic. The
+    # player at docs/demo.html inlines this shape; it is NOT overwritten here.
+    session_path = session.write()
 
     # Surface the journal + inspector as the next step.
     print(RULE)
     print("Next steps")
     print(RULE)
-    print(f"  Board written  : {board_path}")
+    print(f"  Session JSON   : {session_path}")
     print(f"  Journal DB     : {journal_path}")
     print("  Explore it     : python -m pherix.inspector")
     print("                   (launches a local server — open the journal DB above)")
-    print("  Serve the board: python -m http.server  (then open docs/demo.html)")
+    print("  Watch the demo : python -m http.server  (then open docs/demo.html)")
     print()
 
     all_contained = all(r.contained for r in results.values())
