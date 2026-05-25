@@ -1,165 +1,284 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pherix — ACID for agents</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pherix — guardrails for AI agents</title>
+<meta name="description" content="A self-hosted library that wraps your agent's tool calls. Undo the reversible, gate the irreversible, audit everything. A mistake is one rollback away." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
 <style>
-:root {
-  --bg: #faf8f4; --panel: #f1ece2; --ink: #161513; --ink-2: #4a443c;
-  --ink-3: #7a7268; --rule: #d0c7b5; --accent: #b4421e; --green: #355c3a;
-  --amber: #8a6a14; --blue: #2c4a6a; --shade: rgba(22, 21, 19, 0.05);
-}
-@media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14130f; --panel: #1c1a14; --ink: #ece6d8; --ink-2: #c0baac;
-    --ink-3: #7a7268; --rule: #3a342a; --accent: #e07a4e; --green: #6ba070;
-    --amber: #d4ac56; --blue: #7ea0c8; --shade: rgba(255, 250, 240, 0.04);
+    --bg: #0a0b0e;
+    --panel: #121419;
+    --panel-2: #181b22;
+    --ink: #e8ebf1;
+    --ink-2: #99a2b2;
+    --ink-3: #5a6271;
+    --ink-4: #383e49;
+    --rule: #232730;
+    --green: #5ad17f;
+    --amber: #e0b341;
+    --red: #e56854;
+    --accent: #6ea8fe;
   }
-}
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
-body {
-  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
-  font-size: 17px; line-height: 1.55; padding: 2.5rem 1.5rem 6rem;
-}
-main { max-width: 920px; margin: 0 auto; }
-.eyebrow { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.5rem; }
-h1 { font-size: 2.4rem; line-height: 1.08; margin: 0 0 0.85rem; font-weight: 500; letter-spacing: -0.01em; }
-h2 { font-size: 1.5rem; font-weight: 500; letter-spacing: -0.005em; margin: 2.5rem 0 0.75rem; }
-.lede { color: var(--ink-2); font-size: 1.1rem; max-width: 62ch; margin: 0; }
-p { color: var(--ink-2); }
-a { color: var(--accent); }
-code { font-family: ui-monospace, monospace; font-size: 0.88em; background: var(--shade); padding: 1px 5px; border-radius: 3px; }
-pre { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 1.1rem 1.25rem; overflow-x: auto; font-family: ui-monospace, monospace; font-size: 0.8rem; line-height: 1.5; color: var(--ink); }
-pre code { background: none; padding: 0; font-size: inherit; }
-footer { margin-top: 4.5rem; padding-top: 2rem; border-top: 1px solid var(--rule); font-size: 0.86rem; color: var(--ink-3); }
-.site-nav { max-width: 920px; margin: 0 auto 3rem; display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 1rem; border-bottom: 1px solid var(--rule); flex-wrap: wrap; gap: 0.75rem; }
-.site-nav .brand { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: 0.04em; text-decoration: none; color: var(--ink); }
-.site-nav .links { display: flex; gap: 1.25rem; font-family: ui-monospace, monospace; font-size: 0.8rem; }
-.site-nav .links a { text-decoration: none; color: var(--ink-3); letter-spacing: 0.04em; }
-.site-nav .links a:hover { color: var(--ink); }
-.site-nav .links a[aria-current="page"] { color: var(--accent); }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; margin: 0; padding: 0; background: var(--bg); }
+  body { margin: 0; padding: 0; background: transparent; color: var(--ink); }
+  body {
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
 
-/* page-specific */
-.hero { margin: 1rem 0 2.5rem; }
-.tagline { font-family: ui-monospace, monospace; font-size: 0.95rem; color: var(--ink-2); margin: 1.25rem 0 0; }
-.tagline b { color: var(--ink); font-weight: 600; }
-.breath { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1.5rem 0 0; font-family: ui-monospace, monospace; font-size: 0.82rem; }
-.breath span { background: var(--shade); border: 1px solid var(--rule); border-radius: 999px; padding: 0.3rem 0.8rem; color: var(--ink); }
-.cta-row { display: flex; flex-wrap: wrap; gap: 0.85rem; margin: 2rem 0 0; }
-.btn { display: inline-block; font-family: ui-monospace, monospace; font-size: 0.85rem; letter-spacing: 0.03em; text-decoration: none; padding: 0.7rem 1.3rem; border-radius: 6px; border: 1px solid var(--accent); }
-.btn-primary { background: var(--accent); color: var(--bg); }
-.btn-secondary { background: transparent; color: var(--accent); }
-.btn:hover { opacity: 0.88; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 1rem 0 0; }
-.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 1.1rem 1.2rem; }
-.card h3 { font-size: 1.02rem; font-weight: 600; margin: 0 0 0.4rem; color: var(--ink); }
-.card p { margin: 0; font-size: 0.95rem; }
-.kill { background: var(--panel); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; padding: 1rem 1.25rem; margin: 1.25rem 0 0; }
-.kill p { margin: 0; }
+  .bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  .bg::before {
+    content: ""; position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(150,162,186,0.30) 1.1px, transparent 1.6px);
+    background-size: 30px 30px;
+    -webkit-mask-image: radial-gradient(120% 90% at 50% 25%, #000 35%, transparent 90%);
+            mask-image: radial-gradient(120% 90% at 50% 25%, #000 35%, transparent 90%);
+  }
+
+  main { max-width: 980px; margin: 0 auto; padding: 0 1.5rem; }
+
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    max-width: 980px; margin: 0 auto; padding: 1.15rem 1.5rem;
+  }
+  nav .brand { font-weight: 700; letter-spacing: 0.04em; font-size: 1.02rem; color: var(--ink); }
+  nav .brand .dot { color: var(--green); }
+  nav .links { display: flex; align-items: center; gap: 1.3rem; flex-wrap: wrap; }
+  nav .links a { color: var(--ink-2); font-size: 0.84rem; }
+  nav .links a:hover { color: var(--ink); text-decoration: none; }
+  nav .links a.here { color: var(--green); }
+
+  .hero {
+    min-height: calc(100vh - 64px);
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 1.5rem 0 2rem; gap: 1.6rem;
+  }
+  .lead { text-align: center; }
+  .tag {
+    color: var(--green); font-size: 0.74rem; letter-spacing: 0.14em;
+    margin: 0 0 0.9rem; text-transform: uppercase;
+    opacity: 0; animation: rise .6s .05s ease forwards;
+  }
+  h1 {
+    text-align: center; margin: 0;
+    font-size: clamp(1.9rem, 5vw, 3.6rem); line-height: 1.04;
+    font-weight: 800; letter-spacing: -0.035em;
+    opacity: 0; animation: rise .6s .12s ease forwards;
+  }
+  h1 .dot { color: var(--green); }
+  .sub {
+    color: var(--ink-2); font-size: 1.05rem; max-width: 60ch; margin: 1.1rem auto 0;
+    letter-spacing: 0.01em;
+    opacity: 0; animation: rise .6s .2s ease forwards;
+  }
+  .sub b { color: var(--green); font-weight: 700; }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  .cta {
+    display: flex; align-items: center; justify-content: center; gap: 0.8rem; flex-wrap: wrap;
+    opacity: 0; animation: rise .6s .3s ease forwards;
+  }
+  .install {
+    display: inline-flex; align-items: stretch; overflow: hidden;
+    background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px;
+    font-size: 0.92rem; color: var(--ink);
+    transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+  }
+  .install:hover { border-color: var(--green); transform: translateY(-2px); box-shadow: 0 10px 26px -14px var(--green); }
+  .install .p { color: var(--green); padding: 0.62rem 0.4rem 0.62rem 0.95rem; }
+  .install .cmd { padding: 0.62rem 0.85rem 0.62rem 0; }
+  .install .cp {
+    display: inline-flex; align-items: center; font: inherit; cursor: pointer;
+    padding: 0 0.9rem; background: transparent; border: 0; border-left: 1px solid var(--rule);
+    color: var(--ink-3); letter-spacing: 0.02em;
+    transition: background .15s ease, color .15s ease;
+  }
+  .install .cp:hover { background: var(--green); color: #08130c; }
+  .install .cp.done { color: var(--green); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer;
+    background: var(--green); color: #08130c; border-radius: 8px;
+    padding: 0.64rem 1.25rem; font-weight: 700; font-size: 0.9rem;
+    box-shadow: 0 8px 24px -10px rgba(90,209,127,0.55);
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease, border-color .18s ease, color .18s ease;
+  }
+  .btn:hover { text-decoration: none; transform: translateY(-2px); filter: brightness(1.06); box-shadow: 0 13px 32px -10px rgba(90,209,127,0.7); }
+  .btn.ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--rule); box-shadow: none; }
+  .btn.ghost:hover { color: var(--green); border-color: var(--green); box-shadow: none; }
+
+  section.band { padding: 4.5rem 0 1rem; }
+  h2 { font-size: clamp(1.3rem, 3vw, 1.8rem); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 0.6rem; }
+  .value-lead {
+    font-size: clamp(1.1rem, 2.5vw, 1.5rem); line-height: 1.45; font-weight: 500;
+    color: var(--ink-2); max-width: 46ch; margin: 0 0 2.6rem; letter-spacing: -0.01em;
+  }
+  .value-lead b { color: var(--ink); font-weight: 700; }
+  .value-lead code {
+    color: var(--green); background: rgba(90,209,127,0.10);
+    padding: 0 0.35em; border-radius: 4px; font-size: 0.92em;
+  }
+  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; }
+  @media (max-width: 720px) { .three { grid-template-columns: 1fr; } }
+  .pillar {
+    position: relative; overflow: hidden;
+    padding: 1.5rem 1.4rem 1.6rem; border: 1px solid var(--rule);
+    border-top: 2px solid var(--c); border-radius: 10px; background: var(--panel);
+    transition: transform .2s ease, box-shadow .2s ease;
+  }
+  .pillar.undo { --c: var(--green); }
+  .pillar.gate { --c: var(--amber); }
+  .pillar.audit { --c: var(--accent); }
+  .pillar:hover { transform: translateY(-4px); box-shadow: 0 16px 34px -22px var(--c); }
+  .pillar .num {
+    position: absolute; top: 0.7rem; right: 1rem; font-size: 2.6rem; font-weight: 700;
+    color: var(--c); opacity: 0.14; letter-spacing: -0.04em; line-height: 1; pointer-events: none;
+  }
+  .pillar .v { font-size: 1.2rem; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 0.55rem; color: var(--c); }
+  .pillar p { margin: 0; color: var(--ink-2); font-size: 0.9rem; line-height: 1.55; }
+
+  .uses { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; margin-top: 1.5rem; }
+  @media (max-width: 720px) { .uses { grid-template-columns: 1fr; } }
+  .use { padding: 1.3rem 1.3rem; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); }
+  .use h3 { font-size: 1rem; font-weight: 700; margin: 0 0 0.45rem; color: var(--ink); }
+  .use p { margin: 0; color: var(--ink-2); font-size: 0.88rem; line-height: 1.55; }
+
+  .fit { margin-top: 1.2rem; color: var(--ink-2); max-width: 64ch; }
+  .fit b { color: var(--ink); }
+  .fit code { color: var(--green); background: rgba(90,209,127,0.10); padding: 0 0.35em; border-radius: 4px; font-size: 0.92em; }
+
+  footer {
+    margin-top: 4.5rem; padding: 1.8rem 0 3rem; border-top: 1px solid var(--rule);
+    color: var(--ink-3); font-size: 0.78rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  }
+  footer .brand { font-weight: 700; color: var(--ink-2); }
+  footer .brand .dot { color: var(--green); }
+  footer a { color: var(--ink-3); }
+  footer a:hover { color: var(--ink-2); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tag, h1, .sub, .cta { animation: none; opacity: 1; transform: none; }
+  }
 </style>
 </head>
 <body>
-<nav class="site-nav">
-  <a class="brand" href="index.html">Pherix</a>
-  <div class="links">
-    <a href="index.html" aria-current="page">Home</a>
-    <a href="get-started.html">Get started</a>
-    <a href="docs.html">How it works</a>
-    <a href="features.html">Features</a>
-    <a href="demos.html">Demos</a>
-  </div>
-</nav>
-<main>
-  <section class="hero">
-    <div class="eyebrow">Transactional resource runtime for AI agents</div>
-    <h1>ACID for agents.</h1>
-    <p class="lede">Database-style guarantees over the real-world side-effects of your agent's
-    tool calls — the DB writes, the file writes, the API calls. For anyone shipping
-    action-taking agents to production.</p>
-    <p class="tagline"><b>If you build agents, we protect you.</b></p>
-    <div class="breath">
-      <span>undo the reversible</span>
-      <span>gate the irreversible</span>
-      <span>audit everything</span>
-    </div>
-    <div class="cta-row">
-      <a class="btn btn-primary" href="demos.html">See the demo</a>
-      <a class="btn btn-secondary" href="get-started.html">Get started</a>
-    </div>
-  </section>
+  <div class="bg" aria-hidden="true"></div>
 
-  <section>
-    <h2>The problem it kills</h2>
-    <div class="kill">
-      <p>An agent calls a tool and the effect just <em>happens</em> — irreversibly,
-      immediately, unaudited. A wiped table, a payment sent to the wrong account,
-      a file clobbered. Pherix sits at the tool-call layer and makes that mistake
-      <b>contained</b> instead of catastrophic: reversible effects roll back, irreversible
-      ones are gated behind explicit approval, and the whole run is on the record.</p>
-    </div>
-  </section>
+  <nav>
+    <span class="brand">pherix<span class="dot">.</span></span>
+    <span class="links">
+      <a class="here" href="index.html">Home</a>
+      <a href="get-started.html">Get started</a>
+      <a href="docs.html">How it works</a>
+      <a href="features.html">Features</a>
+      <a href="demos.html">Demos</a>
+    </span>
+  </nav>
 
-  <section>
-    <h2>What you get, in one breath</h2>
-    <div class="cards">
-      <div class="card">
-        <h3>Undo the reversible</h3>
-        <p>DB and filesystem writes journal live and roll back via the backend's own
-        savepoints and copy-on-write. The backend does the undo — exact, not best-effort.</p>
+  <main>
+    <section class="hero">
+      <div class="lead">
+        <p class="tag">Guardrails for AI agents</p>
+        <h1>Let your agent run.<br>Undo the mistakes<span class="dot">.</span></h1>
+        <p class="sub">A self-hosted library that wraps your agent's tool calls. Every action is <b>reversible, gated, and audited</b> — so a bad run is one rollback away, not an incident.</p>
       </div>
-      <div class="card">
-        <h3>Gate the irreversible</h3>
-        <p>An un-undoable effect — a charge, an email — is staged, not fired. It only
-        happens at commit, and one without a compensator blocks until a human approves it.</p>
-      </div>
-      <div class="card">
-        <h3>Audit everything</h3>
-        <p>Every side-effecting tool call is an append-only journal entry. The journal
-        <em>is</em> the audit log — every action, its arguments, and its outcome, on the record.</p>
-      </div>
-    </div>
-  </section>
 
-  <section>
-    <h2>Where it earns its place</h2>
-    <div class="cards">
-      <div class="card">
-        <h3>Ops / SRE agent</h3>
-        <p>An agent operating on a production database — let it act, and roll the whole
-        step back the moment something looks wrong. Nothing persists until you commit.</p>
+      <div class="cta">
+        <a class="btn" href="demos.html">Watch the demo</a>
+        <span class="install"><span class="p">$</span><span class="cmd">pip install -e .</span><button class="cp" type="button">copy</button></span>
+        <a class="btn ghost" href="get-started.html">Get started</a>
       </div>
-      <div class="card">
-        <h3>Payments agent</h3>
-        <p>A charge is staged behind the gate; a refund is its registered compensator.
-        A failed run unwinds cleanly — the money moves only when the whole step is sound.</p>
-      </div>
-      <div class="card">
-        <h3>Data agent</h3>
-        <p>Bulk writes across SQL, object storage, and search indexes journal as one
-        transaction — commit them together, or roll them all back as one.</p>
-      </div>
-    </div>
-  </section>
+    </section>
 
-  <section>
-    <h2>How it fits</h2>
-    <p>Pherix is a <b>library</b>. You <code>pip install</code> it, wrap your agent's
-    tool-call layer, and keep your existing agent loop and model provider. It does not
-    run agents or call LLMs — it makes their actions behave like database transactions.
-    Pre-release and self-hosted; no console, no hosted service.</p>
-    <div class="cta-row">
-      <a class="btn btn-primary" href="get-started.html">Wrap your agent in 5 minutes</a>
-      <a class="btn btn-secondary" href="docs.html">How it works</a>
-    </div>
-  </section>
+    <section class="band">
+      <h2>The problem</h2>
+      <p class="value-lead">An agent calls a tool and the effect just <b>happens</b> — a wiped table, a wrong payment, a clobbered file. No undo, no approval, no record.</p>
+      <p class="fit">Pherix sits at the tool-call layer and makes that mistake <b>contained</b> instead of catastrophic: reversible effects roll back, irreversible ones wait for approval, and the whole run is on the record.</p>
+    </section>
 
-  <footer>
-    Pherix — pre-release <code>0.0.0</code>. This site is static, served by
-    <code>python -m http.server</code>. Source:
-    <a href="https://github.com/LukeyP02/Pherix">github.com/LukeyP02/Pherix</a>.
-  </footer>
-</main>
+    <section class="band">
+      <h2>What you get</h2>
+      <div class="three">
+        <div class="pillar undo">
+          <span class="num">01</span>
+          <p class="v">Undo the reversible</p>
+          <p>Database and file writes roll back through the backend's own savepoints and copy-on-write. The backend does the undo — exact, not best-effort.</p>
+        </div>
+        <div class="pillar gate">
+          <span class="num">02</span>
+          <p class="v">Gate the irreversible</p>
+          <p>A charge or an email can't be un-sent, so it doesn't fire until commit — and one with no safe undo waits for a human to approve it.</p>
+        </div>
+        <div class="pillar audit">
+          <span class="num">03</span>
+          <p class="v">Audit everything</p>
+          <p>Every tool call is recorded — who did what, when, allowed or denied. The audit trail is a byproduct, always on.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <h2>Where it earns its place</h2>
+      <div class="uses">
+        <div class="use">
+          <h3>Ops agent</h3>
+          <p>An agent working on a production database. Let it act, and roll the whole step back the moment something looks wrong. Nothing sticks until you commit.</p>
+        </div>
+        <div class="use">
+          <h3>Payments agent</h3>
+          <p>A charge waits behind the gate; a refund is its registered undo. A failed run unwinds cleanly — the money moves only when the whole step is sound.</p>
+        </div>
+        <div class="use">
+          <h3>Data agent</h3>
+          <p>Bulk writes across a database, object storage, and search all run as one step. Commit them together, or roll them all back together.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <h2>How it fits</h2>
+      <p class="fit">Pherix is a <b>library</b>. You <code>pip install</code> it, wrap your agent's tool-call layer, and keep your existing agent loop and model. It doesn't run agents or call models — it makes their actions behave like a database transaction. Pre-release and self-hosted: no console, no hosted service, no pricing.</p>
+      <div class="cta" style="justify-content:flex-start; margin-top:1.6rem;">
+        <a class="btn" href="get-started.html">Wrap your agent</a>
+        <a class="btn ghost" href="docs.html">How it works</a>
+      </div>
+    </section>
+
+    <footer>
+      <span class="brand">pherix<span class="dot">.</span></span>
+      <span>
+        <a href="index.html">Home</a> ·
+        <a href="get-started.html">Get started</a> ·
+        <a href="docs.html">How it works</a> ·
+        <a href="features.html">Features</a> ·
+        <a href="demos.html">Demos</a> ·
+        <a href="https://github.com/LukeyP02/Pherix">GitHub</a>
+      </span>
+    </footer>
+  </main>
+
+  <script>
+  (function () {
+    "use strict";
+    [].forEach.call(document.querySelectorAll(".install .cp"), function (btn) {
+      btn.addEventListener("click", function () {
+        if (navigator.clipboard) navigator.clipboard.writeText("pip install -e .");
+        var prev = btn.textContent;
+        btn.textContent = "copied"; btn.classList.add("done");
+        setTimeout(function () { btn.textContent = prev; btn.classList.remove("done"); }, 1200);
+      });
+    });
+  })();
+  </script>
 </body>
 </html>
