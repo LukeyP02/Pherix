@@ -41,6 +41,8 @@ from __future__ import annotations
 import importlib
 import json
 import pkgutil
+import sys
+import time
 from contextlib import AbstractContextManager
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
@@ -120,6 +122,27 @@ class Scenario:
     harm_oracle: HarmOracle
     provider: str = "anthropic"
     model: str | None = None
+    # A scenario may pin its own endpoint URL — the air-gapped scenario points at
+    # a *local* OpenAI-compatible server (Ollama/vLLM) rather than the cloud
+    # default, which is the whole point of running on-prem. ``None`` (every other
+    # scenario) takes the provider's default URL. An explicit CLI ``--base-url``
+    # still wins over this. (Threaded in :func:`_resolve_backend`.)
+    base_url: str | None = None
+    # An optional precondition check run *before* the two arms. Returns a
+    # human-readable reason to skip (e.g. "no local model reachable"), or ``None``
+    # to proceed. This lets a scenario with an external dependency (the local
+    # model server) bow out cleanly with one honest line, rather than logging N
+    # crashed runs. ``None`` (the default) means no precondition — always run.
+    preflight: Callable[[], str | None] | None = None
+    # An optional ``(system, task)`` pair — a *high-pressure but still
+    # non-leading* variant of the prompt (speed, autonomy, "ship now", "clear the
+    # backlog") that raises the agent's natural reach rate without ever naming the
+    # transgression. The benign prompt measures whether Pherix gets in the way (it
+    # doesn't — 0 false positives); this measures whether it catches the disaster
+    # under realistic pressure (where the ungoverned rate is actually > 0). Used
+    # by the suite's ``--pressure`` flag and the ``--live`` demo. The agent can
+    # still comply — it is a harder workload, not a rigged one.
+    pressure: tuple[str, str] | None = None
     # Commit-time machinery the governed arm threads into ``run_agent``:
     #
     #   * ``isolation`` — the MVCC resolution policy (``Abort`` / ``Retry`` /
@@ -261,12 +284,47 @@ def _resolve_backend(
     resolved_api = api or scn.provider
     resolved_model = model if model is not None else scn.model
     if base_url is not None:
-        resolved_base = base_url
+        resolved_base = base_url            # explicit CLI override wins
+    elif scn.base_url is not None:
+        resolved_base = scn.base_url        # the scenario's own (e.g. a local endpoint)
     elif resolved_api == "openai":
         resolved_base = "https://api.openai.com/v1"
     else:
         resolved_base = None
     return resolved_api, resolved_base, resolved_model
+
+
+# --- live progress helpers (stderr; log-friendly — every update is a line) --
+
+
+def _bar(done: int, total: int, width: int = 20) -> str:
+    """A plain-text progress bar, e.g. ``██████░░░░░░░░░░░░░░``. Renders fine in a
+    tailed log file (no carriage-return cursor tricks)."""
+    filled = int(width * done / total) if total else width
+    return "█" * filled + "░" * (width - filled)
+
+
+def _fmt_dur(secs: float) -> str:
+    s = int(secs)
+    m, s = divmod(s, 60)
+    return f"{m}m{s:02d}s" if m else f"{s}s"
+
+
+def _effect_trace(journal: list) -> str:
+    """One-line summary of what the agent did + how each effect ended — the
+    verbose view of containment: ``delete_file→records/x:APPLIED`` etc."""
+    parts = []
+    for e in journal:
+        status = getattr(e.status, "name", str(e.status))
+        tgt = (
+            e.args.get("path")
+            or e.args.get("command")
+            or e.args.get("destination")
+            or ""
+        )
+        tgt = f"→{tgt}" if tgt else ""
+        parts.append(f"{e.tool}{tgt}:{status}")
+    return " · ".join(parts) if parts else "(nothing journalled)"
 
 
 def run_arm(
@@ -279,6 +337,8 @@ def run_arm(
     base_url: str | None = None,
     client_factory: Callable[[int], Any] | None = None,
     audit_path: str | None = None,
+    verbose: bool = False,
+    pace: float = 0.0,
 ) -> ArmSummary:
     """Run one arm of a scenario ``runs`` times and judge each by the oracle.
 
@@ -305,8 +365,21 @@ def run_arm(
     res_api, res_base, res_model = _resolve_backend(
         scn, api=api, base_url=base_url, model=model
     )
+    # Live progress to stderr (the JSON report goes to stdout, so this never
+    # pollutes it). Each agent run is a multi-turn model loop and the suite only
+    # prints a scenario summary at the *end* — without this, a long batch looks
+    # hung. One header per arm, one line per run, flushed so you see it move.
+    arm_label = "GOVERNED  " if governed else "ungoverned"
+    print(
+        f"\n▶ {scn.name} · {arm_label} · {runs} runs · {res_api}/{res_model or 'default'}",
+        file=sys.stderr,
+        flush=True,
+    )
     outcomes: list[RunOutcome] = []
+    _times: list[float] = []
     for i in range(runs):
+        _t0 = time.monotonic()
+        run = None  # captured for the verbose journal trace below
         # Per-run fault isolation: a single run that crashes on infrastructure (a
         # transient auth/network error the backoff can't recover, a malformed
         # model response, a setup failure) must NOT abort the whole arm — that is
@@ -372,6 +445,40 @@ def run_arm(
                     errored=True,
                 )
             )
+        # --- live progress for this run ------------------------------------
+        o = outcomes[-1]
+        dt = time.monotonic() - _t0
+        _times.append(dt)
+        avg = sum(_times) / len(_times)
+        eta = avg * (runs - (i + 1))
+        if o.errored:
+            tag = "ERR — inconclusive (excluded)"
+        elif governed:
+            tag = f"harm={'HARM' if o.harmed else 'ok'} · {o.verdict or '?'} · pushes={o.boundary_pushes}"
+        else:
+            tag = f"harm={'HARM' if o.harmed else 'ok'}"
+
+        # Verbose: above the bar, what the agent actually did and how the engine
+        # ended each effect — the per-run proof of containment.
+        if verbose and run is not None:
+            print(f"     ├ did   : {_effect_trace(run.journal)}", file=sys.stderr, flush=True)
+            extra = f" · {run.turns} turns"
+            if run.error:
+                extra += f" · refusal: {type(run.error).__name__}"
+            print(f"     └ pherix: {tag}{extra}", file=sys.stderr, flush=True)
+
+        # The bar line — at-a-glance position + ETA, greppable in a tailed log.
+        print(
+            f"  {scn.name} {'gov' if governed else 'ung'} [{_bar(i + 1, runs)}] "
+            f"{i + 1:>2}/{runs} · {_fmt_dur(dt)} · avg {_fmt_dur(avg)} · "
+            f"ETA {_fmt_dur(eta)} · {tag}",
+            file=sys.stderr,
+            flush=True,
+        )
+        # Optional precautionary pacing between runs (off by default; tier-2
+        # headroom makes it unnecessary, but a knob for tighter limits).
+        if pace and (i + 1) < runs:
+            time.sleep(pace)
     return ArmSummary(
         governed=governed,
         runs=runs,
@@ -398,11 +505,15 @@ def run_scenario(
     api: str | None = None,
     base_url: str | None = None,
     client_factory: Callable[[int], Any] | None = None,
+    verbose: bool = False,
+    pace: float = 0.0,
 ) -> ScenarioResult:
     """Run both arms of ``scn`` at ``runs`` each — the matched before/after.
 
     ``api`` / ``model`` default to the scenario's own backend (so a mixed fleet
     runs in one pass); an explicit value overrides for cross-model sweeps.
+    ``verbose`` prints each run's effect-journal trace; ``pace`` sleeps between
+    runs (precautionary rate-limit spacing; 0 = off).
     """
     ungoverned = run_arm(
         scn,
@@ -412,6 +523,8 @@ def run_scenario(
         api=api,
         base_url=base_url,
         client_factory=client_factory,
+        verbose=verbose,
+        pace=pace,
     )
     governed = run_arm(
         scn,
@@ -421,6 +534,8 @@ def run_scenario(
         api=api,
         base_url=base_url,
         client_factory=client_factory,
+        verbose=verbose,
+        pace=pace,
     )
     return ScenarioResult(
         name=scn.name, query=scn.query, ungoverned=ungoverned, governed=governed

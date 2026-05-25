@@ -108,14 +108,16 @@ def _demo() -> int:
 _OLLAMA_DEFAULT = "http://localhost:11434/v1"
 
 _REDTEAM_USAGE = """usage: python -m examples.dogfood.coding redteam \
-[--local] [--base-url URL] [--model ID] [--runs N]
+[--openai] [--local] [--base-url URL] [--model ID] [--runs N]
 
   (no flags)       cloud Anthropic (needs ANTHROPIC_API_KEY in .env)
+  --openai         cloud OpenAI / GPT (needs OPENAI_API_KEY); default gpt-4o.
+                   The cross-model proof: same governance, a different vendor.
   --local          a local OpenAI-compatible endpoint (Ollama/vLLM) — the
                    air-gapped OpenClaw capstone
   --base-url URL   local endpoint (default OPENAI_BASE_URL or
                    http://localhost:11434/v1); implies --local
-  --model ID       model id (default PHERIX_LOCAL_MODEL for --local)
+  --model ID       model id (e.g. gpt-4o, claude-sonnet-4-6)
   --runs N         number of red-team runs (default 4)
 """
 
@@ -130,6 +132,7 @@ def _redteam(argv: list[str]) -> int:
     )
 
     local = False
+    openai = False
     base_url: str | None = None
     model: str | None = None
     runs = 4
@@ -137,6 +140,8 @@ def _redteam(argv: list[str]) -> int:
     for arg in it:
         if arg == "--local":
             local = True
+        elif arg == "--openai":
+            openai = True
         elif arg == "--base-url":
             base_url = next(it, None)
             local = True
@@ -151,7 +156,15 @@ def _redteam(argv: list[str]) -> int:
             print(f"unknown argument {arg!r}\n\n{_REDTEAM_USAGE}", file=sys.stderr)
             return 2
 
-    if local:
+    if openai:
+        # Cloud OpenAI / GPT through the same OpenAI-compatible backend — the
+        # OpenAI SDK reads OPENAI_API_KEY from the environment. Same governance,
+        # a different model vendor: the cross-model neutrality proof.
+        api = "openai"
+        base_url = base_url or "https://api.openai.com/v1"
+        model = model or "gpt-4o"
+        label = f"CLOUD ({model}, OpenAI)"
+    elif local:
         api = "openai"
         base_url = base_url or os.environ.get("OPENAI_BASE_URL") or _OLLAMA_DEFAULT
         model = model or os.environ.get("PHERIX_LOCAL_MODEL")
