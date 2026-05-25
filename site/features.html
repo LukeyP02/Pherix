@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pherix — Features</title>
+<style>
+:root {
+  --bg: #faf8f4; --panel: #f1ece2; --ink: #161513; --ink-2: #4a443c;
+  --ink-3: #7a7268; --rule: #d0c7b5; --accent: #b4421e; --green: #355c3a;
+  --amber: #8a6a14; --blue: #2c4a6a; --shade: rgba(22, 21, 19, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14130f; --panel: #1c1a14; --ink: #ece6d8; --ink-2: #c0baac;
+    --ink-3: #7a7268; --rule: #3a342a; --accent: #e07a4e; --green: #6ba070;
+    --amber: #d4ac56; --blue: #7ea0c8; --shade: rgba(255, 250, 240, 0.04);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+body {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
+  font-size: 17px; line-height: 1.55; padding: 2.5rem 1.5rem 6rem;
+}
+main { max-width: 920px; margin: 0 auto; }
+.eyebrow { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.5rem; }
+h1 { font-size: 2.4rem; line-height: 1.08; margin: 0 0 0.85rem; font-weight: 500; letter-spacing: -0.01em; }
+h2 { font-size: 1.5rem; font-weight: 500; letter-spacing: -0.005em; margin: 2.5rem 0 0.75rem; }
+.lede { color: var(--ink-2); font-size: 1.1rem; max-width: 62ch; margin: 0; }
+p { color: var(--ink-2); }
+a { color: var(--accent); }
+code { font-family: ui-monospace, monospace; font-size: 0.88em; background: var(--shade); padding: 1px 5px; border-radius: 3px; }
+pre { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 1.1rem 1.25rem; overflow-x: auto; font-family: ui-monospace, monospace; font-size: 0.8rem; line-height: 1.5; color: var(--ink); }
+pre code { background: none; padding: 0; font-size: inherit; }
+footer { margin-top: 4.5rem; padding-top: 2rem; border-top: 1px solid var(--rule); font-size: 0.86rem; color: var(--ink-3); }
+.site-nav { max-width: 920px; margin: 0 auto 3rem; display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 1rem; border-bottom: 1px solid var(--rule); flex-wrap: wrap; gap: 0.75rem; }
+.site-nav .brand { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: 0.04em; text-decoration: none; color: var(--ink); }
+.site-nav .links { display: flex; gap: 1.25rem; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+.site-nav .links a { text-decoration: none; color: var(--ink-3); letter-spacing: 0.04em; }
+.site-nav .links a:hover { color: var(--ink); }
+.site-nav .links a[aria-current="page"] { color: var(--accent); }
+
+/* page-specific */
+.hero { margin: 1rem 0 2.5rem; }
+.note { background: var(--panel); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; padding: 1rem 1.25rem; margin: 1.5rem 0 0; }
+.note p { margin: 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin: 1rem 0 0; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 1.2rem 1.3rem; }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; margin: 0 0 0.5rem; }
+.card-head h3 { font-size: 1.08rem; font-weight: 600; margin: 0; color: var(--ink); }
+.badge { font-family: ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.18rem 0.55rem; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-3); white-space: nowrap; }
+.card p { margin: 0 0 0.6rem; font-size: 0.95rem; }
+.card p:last-child { margin-bottom: 0; }
+</style>
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="index.html">Pherix</a>
+  <div class="links">
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="docs.html">How it works</a>
+    <a href="features.html" aria-current="page">Features</a>
+    <a href="demos.html">Demos</a>
+  </div>
+</nav>
+<main>
+  <section class="hero">
+    <div class="eyebrow">Features</div>
+    <h1>What Pherix gives you.</h1>
+    <p class="lede">The governance primitives Pherix puts around your agent's tool calls —
+    grouped by the question each one answers. Everything below is built and tested today.</p>
+    <div class="note">
+      <p>These are primitives delivered as <b>a library plus a read-only audit console —
+      not a SaaS dashboard or hosted control-plane.</b> You <code>pip install</code> it,
+      wrap your tool-call layer, and self-host. Pre-release <code>0.0.0</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The seven capabilities</h2>
+    <div class="grid">
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Control</h3>
+          <span class="badge">policy</span>
+        </div>
+        <p>Allow/deny rules plus caps — sum and count limits — and world-state-aware rules
+        that read live external state before deciding.</p>
+        <p>Enforced at commit, and again at stage-time so a bad call fails fast rather than
+        at the end of a run.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Containment</h3>
+          <span class="badge">adapters + compensators</span>
+        </div>
+        <p>Reversible effects roll back via real backend semantics — database savepoints,
+        filesystem copy-on-write. The backend does the undo, exactly.</p>
+        <p>Irreversible effects use compensators: vetted semantic inverses that run an
+        opposite action when an exact rollback is impossible.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Oversight</h3>
+          <span class="badge">the gate</span>
+        </div>
+        <p>An un-compensable irreversible effect is staged, not fired. It blocks at commit
+        until explicitly approved via <code>approve_irreversible</code>.</p>
+        <p>The human — or a higher-trust policy — is the only thing that lets it through.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Audit</h3>
+          <span class="badge">the journal</span>
+        </div>
+        <p>Every side-effecting tool call is an append-only journal entry — the journal
+        <em>is</em> the audit log, no separate logging to trust.</p>
+        <p>Read it back with the read-only inspector console
+        (<code>python -m pherix.inspector</code>), or replay it deterministically.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Isolation</h3>
+          <span class="badge">MVCC</span>
+        </div>
+        <p>MVCC-style isolation between concurrent agents. Each transaction tracks its
+        read and write sets; conflicting effects are detected before they corrupt shared state.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Dry-run</h3>
+          <span class="badge">speculative</span>
+        </div>
+        <p>Fold the journal forward against a snapshot, then discard it. Speculative execution
+        with no real effects — see what a run <em>would</em> do before letting it touch anything.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Governed memory</h3>
+          <span class="badge">adapter + policy</span>
+        </div>
+        <p>An adapter and a policy pointed at the agent's memory — the same primitives applied
+        to what the agent remembers, so memory writes are contained and on the record too.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    Pherix — pre-release <code>0.0.0</code>. This site is static, served by
+    <code>python -m http.server</code>. Source:
+    <a href="https://github.com/LukeyP02/Pherix">github.com/LukeyP02/Pherix</a>.
+  </footer>
+</main>
+</body>
+</html>

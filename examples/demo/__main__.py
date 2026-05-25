@@ -58,8 +58,8 @@ def main() -> int:
     _narrate(r1)
 
     _banner(2, "Oversight", "the wedge — a human stays on the irreversible")
-    print("  The agent tries to wire a wrong/duplicate payment. Money cannot be")
-    print("  un-sent, so this is the effect that matters most.")
+    print("  The agent tries to wire $480,000 to a wrong/attacker account. Money")
+    print("  cannot be un-sent, so this is the effect that matters most.")
     print()
     r2 = acts.act2_oversight(audit)
     _narrate(r2)
