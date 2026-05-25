@@ -156,7 +156,7 @@
       </div>
       <p class="marker"><code>Act 1</code> demo &nbsp;·&nbsp;
          <code>@pytest.mark.blast_radius</code> law</p>
-      <div class="arms"><div class="arm without"><span class="arm-tag">without Pherix</span><span class="arm-val">5 rows deleted, no undo</span></div><div class="arm with"><span class="arm-tag">with Pherix</span><span class="arm-val">5 rows restored, byte-exact ✓</span></div></div>
+      <div class="arms"><div class="arm without"><span class="arm-tag">without Pherix</span><span class="arm-val">5 customer records lost, no undo</span></div><div class="arm with"><span class="arm-tag">with Pherix</span><span class="arm-val">5 customer records restored, byte-exact ✓</span></div></div>
       <p class="laws-line"><span class="law-count pass">law: <strong>174</strong> passed of 184 · 10 skipped ✓</span></p>
       <p class="theorem">rollback(apply(S, W)) == W for any reversible effect sequence S over any world W — the world is restored byte-exactly. A partial failure mid-commit fully unwinds, leaving no half-applied state. In the irreversible lane the registered compensator is a true left-inverse (compensator ∘ tool ≈ identity on the observable); with no compensator the transaction goes STUCK rather than leaving a torn effect.</p>
     </section>
@@ -184,7 +184,7 @@
       </div>
       <p class="marker"><code>Act 2</code> demo &nbsp;·&nbsp;
          <code>@pytest.mark.oversight</code> law</p>
-      <div class="arms"><div class="arm without"><span class="arm-tag">without Pherix</span><span class="arm-val">1 charge fired, $4,800.00 gone</span></div><div class="arm with"><span class="arm-tag">with Pherix</span><span class="arm-val">0 charges fired, gated for approval ✓</span></div></div>
+      <div class="arms"><div class="arm without"><span class="arm-tag">without Pherix</span><span class="arm-val">1 charge fired, $480,000.00 gone</span></div><div class="arm with"><span class="arm-tag">with Pherix</span><span class="arm-val">0 charges fired, gated for approval ✓</span></div></div>
       <p class="laws-line"><span class="law-count pass">law: <strong>46</strong> passed of 46 ✓</span></p>
       <p class="theorem">No irreversible effect ever commits without explicit approval or a registered compensator, under any interleaving or sequence. Approval is necessary — an un-approved irreversible effect raises GateBlocked, nothing fires, the world is untouched — and sufficient: once approved it fires exactly once and is recorded. Verified against hundreds of adversarially generated approve / no-approve interleavings.</p>
     </section>
@@ -196,7 +196,7 @@
       Law counts read from <code>docs/trust-laws-results.json</code>
       (written by <code>python tests/pillar_report.py</code>).</p>
     <p>Explore the governed journal interactively with
-      <code>python -m pherix.inspector</code>. Last rendered <strong>2026-05-25 15:27:46</strong>.</p>
+      <code>python -m pherix.inspector</code>. Last rendered <strong>2026-05-25 16:38:56</strong>.</p>
   </footer>
 </main>
 </body>

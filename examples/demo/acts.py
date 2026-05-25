@@ -22,12 +22,13 @@ from pherix import (
 
 # --- the seed data, fixed so every run is identical ------------------------
 
-SEED_WIDGETS = [
-    ("flux-capacitor", "in_stock"),
-    ("sonic-driver", "in_stock"),
-    ("warp-coil", "in_stock"),
-    ("phase-inducer", "in_stock"),
-    ("tachyon-lens", "in_stock"),
+SEED_CUSTOMERS = [
+    # Production customer records — name, email, ssn_last4, status (PII).
+    ("Ada Lovelace", "ada@example.com", "4417", "active"),
+    ("Grace Hopper", "grace@example.com", "9021", "active"),
+    ("Alan Turing", "alan@example.com", "1837", "active"),
+    ("Katherine Johnson", "katherine@example.com", "6502", "churned"),
+    ("Margaret Hamilton", "margaret@example.com", "7743", "active"),
 ]
 
 # --- a deterministic in-memory "payment egress log" ------------------------
@@ -61,10 +62,12 @@ EGRESS = EgressLog()
 
 
 @tool(resource="sql")
-def purge_discontinued(conn):
-    """The agent MEANT to delete only discontinued widgets, but shipped a
-    WHERE-less DELETE — the classic blast-radius mistake. It wipes the table."""
-    conn.execute("DELETE FROM widgets")
+def purge_churned_accounts(conn):
+    """The agent MEANT to delete only churned/discontinued accounts
+    (``WHERE status = 'churned'``), but shipped a WHERE-less DELETE — the
+    classic blast-radius mistake. It wipes the entire customers table, PII
+    and all."""
+    conn.execute("DELETE FROM customers")
 
 
 @tool(resource="http", reversible=False, injects_handle=False)
@@ -79,20 +82,22 @@ def send_payment(vendor: str, amount_cents: int, memo: str):
 
 
 def _fresh_db() -> sqlite3.Connection:
-    """A fresh in-memory widgets table with the fixed seed. isolation_level=None
+    """A fresh in-memory customers table with the fixed seed. isolation_level=None
     (autocommit) lets the adapter own BEGIN / SAVEPOINT / COMMIT / ROLLBACK."""
     conn = sqlite3.connect(":memory:", isolation_level=None)
     conn.execute(
-        "CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT, status TEXT)"
+        "CREATE TABLE customers "
+        "(id INTEGER PRIMARY KEY, name TEXT, email TEXT, ssn_last4 TEXT, status TEXT)"
     )
     conn.executemany(
-        "INSERT INTO widgets (name, status) VALUES (?, ?)", SEED_WIDGETS
+        "INSERT INTO customers (name, email, ssn_last4, status) VALUES (?, ?, ?, ?)",
+        SEED_CUSTOMERS,
     )
     return conn
 
 
 def _row_count(conn: sqlite3.Connection) -> int:
-    return conn.execute("SELECT COUNT(*) FROM widgets").fetchone()[0]
+    return conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
 
 
 @dataclass
@@ -118,18 +123,21 @@ def act1_blast_radius(audit: AuditJournal) -> ActResult:
     # WITHOUT Pherix — plain sqlite, no transaction wrapper.
     conn = _fresh_db()
     before = _row_count(conn)
-    conn.execute("DELETE FROM widgets")  # the same WHERE-less mistake, ungoverned
+    conn.execute("DELETE FROM customers")  # the same WHERE-less mistake, ungoverned
     after = _row_count(conn)
     conn.close()
-    out(f"WITHOUT Pherix : {before} widgets before  ->  {after} after the DELETE")
-    out("                 the rows are gone; there is no undo.")
-    res.without_label = f"{before - after} rows deleted, no undo"
+    out(
+        f"WITHOUT Pherix : {before} customer records (PII) before  ->  "
+        f"{after} after the DELETE"
+    )
+    out("                 the records are gone; there is no undo.")
+    res.without_label = f"{before - after} customer records lost, no undo"
 
     # WITH Pherix — the same action, wrapped; rollback restores byte-exact.
     conn = _fresh_db()
     g_before = _row_count(conn)
     with agent_txn({"sql": SQLiteAdapter(conn)}, audit=audit) as txn:
-        purge_discontinued()
+        purge_churned_accounts()
         mid = _row_count(conn)
         res.txn_ids.append(txn.txn_id)
         txn.rollback()  # the operator catches the mistake; unwind the savepoint
@@ -142,7 +150,7 @@ def act1_blast_radius(audit: AuditJournal) -> ActResult:
     )
     out(f"                 savepoint rollback restored the table; txn = {state}.")
 
-    res.with_label = f"{g_before} rows restored, byte-exact"
+    res.with_label = f"{g_before} customer records restored, byte-exact"
     res.contained = g_after == g_before == before
     return res
 
@@ -154,15 +162,20 @@ def act2_oversight(audit: AuditJournal) -> ActResult:
     res = ActResult(marker="oversight", title="Oversight")
     out = res.lines.append
 
-    PAYMENT = dict(vendor="acme-corp", amount_cents=480000, memo="duplicate invoice")
+    PAYMENT = dict(
+        vendor="unknown-payee",
+        amount_cents=48000000,
+        memo="attacker-controlled account",
+    )
+    amount = f"${PAYMENT['amount_cents'] / 100:,.2f}"
 
     # WITHOUT Pherix — the irreversible effect just fires.
     EGRESS.reset()
     EGRESS.charge(**PAYMENT)  # the agent's wrong payment, ungoverned
     fired = list(EGRESS.charges)
     out(f"WITHOUT Pherix : send_payment fires immediately -> egress log: {fired}")
-    out("                 $4,800.00 is gone; the wrong/duplicate payment left.")
-    res.without_label = f"{len(fired)} charge fired, ${PAYMENT['amount_cents']/100:,.2f} gone"
+    out(f"                 {amount} is gone; the wire left to a wrong/attacker account.")
+    res.without_label = f"{len(fired)} charge fired, {amount} gone"
 
     # WITH Pherix — staged + GATED; the charge never fires.
     EGRESS.reset()
