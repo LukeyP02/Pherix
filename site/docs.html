@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works — Pherix</title>
+<style>
+:root {
+  --bg: #faf8f4; --panel: #f1ece2; --ink: #161513; --ink-2: #4a443c;
+  --ink-3: #7a7268; --rule: #d0c7b5; --accent: #b4421e; --green: #355c3a;
+  --amber: #8a6a14; --blue: #2c4a6a; --shade: rgba(22, 21, 19, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14130f; --panel: #1c1a14; --ink: #ece6d8; --ink-2: #c0baac;
+    --ink-3: #7a7268; --rule: #3a342a; --accent: #e07a4e; --green: #6ba070;
+    --amber: #d4ac56; --blue: #7ea0c8; --shade: rgba(255, 250, 240, 0.04);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+body {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
+  font-size: 17px; line-height: 1.55; padding: 2.5rem 1.5rem 6rem;
+}
+main { max-width: 920px; margin: 0 auto; }
+.eyebrow { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.5rem; }
+h1 { font-size: 2.4rem; line-height: 1.08; margin: 0 0 0.85rem; font-weight: 500; letter-spacing: -0.01em; }
+h2 { font-size: 1.5rem; font-weight: 500; letter-spacing: -0.005em; margin: 2.5rem 0 0.75rem; }
+.lede { color: var(--ink-2); font-size: 1.1rem; max-width: 62ch; margin: 0; }
+p { color: var(--ink-2); }
+a { color: var(--accent); }
+code { font-family: ui-monospace, monospace; font-size: 0.88em; background: var(--shade); padding: 1px 5px; border-radius: 3px; }
+pre { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 1.1rem 1.25rem; overflow-x: auto; font-family: ui-monospace, monospace; font-size: 0.8rem; line-height: 1.5; color: var(--ink); }
+pre code { background: none; padding: 0; font-size: inherit; }
+footer { margin-top: 4.5rem; padding-top: 2rem; border-top: 1px solid var(--rule); font-size: 0.86rem; color: var(--ink-3); }
+.site-nav { max-width: 920px; margin: 0 auto 3rem; display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 1rem; border-bottom: 1px solid var(--rule); flex-wrap: wrap; gap: 0.75rem; }
+.site-nav .brand { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: 0.04em; text-decoration: none; color: var(--ink); }
+.site-nav .links { display: flex; gap: 1.25rem; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+.site-nav .links a { text-decoration: none; color: var(--ink-3); letter-spacing: 0.04em; }
+.site-nav .links a:hover { color: var(--ink); }
+.site-nav .links a[aria-current="page"] { color: var(--accent); }
+
+/* page-specific */
+.lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0 0; }
+@media (max-width: 620px) { .lanes { grid-template-columns: 1fr; } }
+.lane { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 1.1rem 1.2rem; }
+.lane.rev { border-top: 3px solid var(--green); }
+.lane.irr { border-top: 3px solid var(--amber); }
+.lane h3 { margin: 0 0 0.4rem; font-size: 1.05rem; color: var(--ink); }
+.lane p { margin: 0; font-size: 0.95rem; }
+.adapters { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.9rem 0 0; font-family: ui-monospace, monospace; font-size: 0.78rem; }
+.adapters span { background: var(--shade); border: 1px solid var(--rule); border-radius: 5px; padding: 0.25rem 0.6rem; color: var(--ink); }
+.api { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.7rem; margin: 1rem 0 0; }
+.api div { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 0.65rem 0.85rem; }
+.api code { background: none; padding: 0; color: var(--accent); font-size: 0.9rem; }
+.api span { display: block; font-size: 0.82rem; color: var(--ink-2); margin-top: 0.15rem; }
+.note { background: var(--panel); border-left: 3px solid var(--blue); border-radius: 0 6px 6px 0; padding: 0.9rem 1.15rem; margin: 1.25rem 0 0; font-size: 0.95rem; }
+.note p { margin: 0; }
+</style>
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="index.html">Pherix</a>
+  <div class="links">
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="docs.html" aria-current="page">How it works</a>
+    <a href="demos.html">Demos</a>
+  </div>
+</nav>
+<main>
+  <div class="eyebrow">How it works</div>
+  <h1>One engine, one idea.</h1>
+  <p class="lede">Pherix turns every side-effecting tool call into an entry in a versioned
+  journal, mediated by per-resource adapters. Commit, rollback, audit — they're all just
+  traversals of that one journal. Here's the whole mental model on a page.</p>
+
+  <h2>The journal</h2>
+  <p>Every side-effecting tool call becomes an <b>effect</b>: an entry in an append-only,
+  ordered, versioned log held by a transaction. <b>Commit</b> folds the journal forward,
+  applying each effect; <b>rollback</b> folds it backward, restoring or compensating each one.
+  Nothing extra is needed for audit — the journal <em>is</em> the audit log. You just read it.</p>
+
+  <h2>The two lanes</h2>
+  <p>An effect goes down one of two lanes, decided by whether its resource can be snapshotted.
+  These are two <b>different</b> undo mechanisms, not one.</p>
+  <div class="lanes">
+    <div class="lane rev">
+      <h3>Reversible → snapshot / restore</h3>
+      <p>Runs live. The adapter snapshots the resource before, and on rollback restores it —
+      a DB <code>SAVEPOINT</code>, filesystem copy-on-write. The backend does the undo. This is
+      <b>state rollback</b>: exact, and needs no knowledge of what the action meant.</p>
+    </div>
+    <div class="lane irr">
+      <h3>Irreversible → stage, then gate</h3>
+      <p>Cannot be snapshotted, so it's staged and only fires at commit. With a registered
+      <b>compensator</b> it auto-commits and the compensator runs on rollback; without one it
+      gates for explicit approval. A compensator is a <b>semantic inverse</b>: approximate,
+      and needs to know what the action meant.</p>
+    </div>
+  </div>
+
+  <h2>Adapters</h2>
+  <p>An adapter is a triple — <code>snapshot</code>, <code>apply</code>, <code>restore</code> —
+  over one class of resource. Tools declare which resource they touch; the runtime routes each
+  effect to the right adapter. Backend drivers are optional and lazily imported, so the kernel
+  itself is dependency-free.</p>
+  <div class="adapters">
+    <span>SQLite</span><span>Postgres</span><span>MySQL</span><span>MongoDB</span>
+    <span>Redis</span><span>S3</span><span>GCS</span><span>DynamoDB</span>
+    <span>Elasticsearch</span><span>filesystem</span><span>HTTP</span><span>REST</span>
+    <span>message-queue</span><span>git</span><span>memory</span>
+  </div>
+  <div class="note">
+    <p><b>Honest about what it can't undo:</b> HTTP cannot be snapshotted, so the runtime
+    forces it down the staged/gated lane rather than pretending it can be rolled back.</p>
+  </div>
+
+  <h2>Policy</h2>
+  <p>Allow/deny rules plus capability caps, enforced at commit — and again at stage-time, so a
+  forbidden effect fails fast. Policy is a clean slate: the buyer writes their own rules against
+  it. Because state can change between staging and commit, the same rule is evaluated twice, which
+  closes the time-of-check-to-time-of-use gap.</p>
+
+  <h2>The tiny public API</h2>
+  <p>The handful you actually touch:</p>
+  <div class="api">
+    <div><code>agent_txn</code><span>wrap a run in a transaction</span></div>
+    <div><code>tool</code><span>declare a side-effecting tool</span></div>
+    <div><code>SQLiteAdapter</code>…<span>the per-resource adapters</span></div>
+    <div><code>Policy</code><span>your allow/deny + caps rules</span></div>
+    <div><code>AuditJournal</code><span>the journal / audit log</span></div>
+    <div><code>approve_irreversible</code><span>clear a gated effect to fire</span></div>
+    <div><code>replay</code><span>re-fold the journal against fresh state</span></div>
+    <div><code>dry_run</code><span>fold against a snapshot, then discard</span></div>
+  </div>
+
+  <div class="note">
+    <p>Early days — Pherix is pre-release <code>0.0.0</code>. The engine is built and tested;
+    the public surface above is small on purpose and will gain sane defaults before it grows.</p>
+  </div>
+
+  <footer>
+    Pherix — pre-release <code>0.0.0</code>. This site is static, served by
+    <code>python -m http.server</code>. Source:
+    <a href="https://github.com/LukeyP02/Pherix">github.com/LukeyP02/Pherix</a>.
+  </footer>
+</main>
+</body>
+</html>

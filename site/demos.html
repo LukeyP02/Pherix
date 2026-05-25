@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pherix · demos</title>
+<style>
+  :root {
+    --bg: #faf8f4; --panel: #f1ece2; --ink: #161513; --ink-2: #4a443c;
+    --ink-3: #7a7268; --rule: #d0c7b5; --accent: #b4421e; --green: #355c3a;
+    --amber: #8a6a14; --blue: #2c4a6a; --shade: rgba(22, 21, 19, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14130f; --panel: #1c1a14; --ink: #ece6d8; --ink-2: #c0baac;
+      --ink-3: #7a7268; --rule: #3a342a; --accent: #e07a4e; --green: #6ba070;
+      --amber: #d4ac56; --blue: #7ea0c8; --shade: rgba(255, 250, 240, 0.04);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
+    font-size: 17px; line-height: 1.55; padding: 2.5rem 1.5rem 6rem;
+  }
+  main { max-width: 920px; margin: 0 auto; }
+  .eyebrow { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.5rem; }
+  h1 { font-size: 2.4rem; line-height: 1.08; margin: 0 0 0.85rem; font-weight: 500; letter-spacing: -0.01em; }
+  h2 { font-size: 1.3rem; margin: 0; font-weight: 500; letter-spacing: -0.005em; }
+  .lede { color: var(--ink-2); font-size: 1.1rem; max-width: 62ch; margin: 0; }
+  p { color: var(--ink-2); }
+  a { color: var(--accent); }
+  code { font-family: ui-monospace, monospace; font-size: 0.88em; background: var(--shade); padding: 1px 5px; border-radius: 3px; }
+  footer { margin-top: 4.5rem; padding-top: 2rem; border-top: 1px solid var(--rule); font-size: 0.86rem; color: var(--ink-3); }
+  footer p { margin: 0.35rem 0; }
+  .site-nav { max-width: 920px; margin: 0 auto 3rem; display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 1rem; border-bottom: 1px solid var(--rule); flex-wrap: wrap; gap: 0.75rem; }
+  .site-nav .brand { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: 0.04em; text-decoration: none; color: var(--ink); }
+  .site-nav .links { display: flex; gap: 1.25rem; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+  .site-nav .links a { text-decoration: none; color: var(--ink-3); letter-spacing: 0.04em; }
+  .site-nav .links a:hover { color: var(--ink); }
+  .site-nav .links a[aria-current="page"] { color: var(--accent); }
+
+  header { margin-bottom: 0.5rem; }
+  .grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+    margin-top: 3rem;
+  }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    display: block;
+    padding: 1.5rem 1.5rem 1.75rem;
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+    text-decoration: none; color: inherit;
+    transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+  .card:hover, .card:focus-visible {
+    transform: translateY(-2px); border-color: var(--accent);
+    box-shadow: 0 6px 20px var(--shade); outline: none;
+  }
+  .card-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 0.5rem; margin-bottom: 0.75rem;
+  }
+  .card h2 { font-size: 1.3rem; margin: 0; font-weight: 500; letter-spacing: -0.005em; }
+  .badge {
+    font-family: ui-monospace, monospace; font-size: 0.68rem;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 0.15rem 0.55rem; border-radius: 99px; border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .badge.watch { color: var(--accent); }
+  .badge.proof { color: var(--green); }
+  .card p { margin: 0; color: var(--ink-2); font-size: 0.97rem; }
+  .card .cta {
+    display: block; margin-top: 1rem;
+    font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--accent);
+    letter-spacing: 0.02em;
+  }
+</style>
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="index.html">Pherix</a>
+  <div class="links">
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="docs.html">How it works</a>
+    <a href="demos.html" aria-current="page">Demos</a>
+  </div>
+</nav>
+
+<main>
+  <header>
+    <p class="eyebrow">Pherix · demos</p>
+    <h1>Watch it work. Then check the proof.</h1>
+    <p class="lede">Two boards. The first shows an agent about to make an irreversible mistake — and what happens when Pherix is in the loop. The second is the guarantee underneath it: not one lucky run, but deterministic laws re-proven on <em>every</em> run, across adversarial sequences of operations.</p>
+  </header>
+
+  <section class="grid" aria-label="Demo boards">
+    <a class="card" href="../docs/demo.html">
+      <div class="card-head"><h2>Contain the catastrophe</h2><span class="badge watch">Watch it work</span></div>
+      <p>An agent is one tool call away from an irreversible mistake — the kind that doesn't roll back on its own. With Pherix wrapping the tool layer, the reversible work is undone and the irreversible step is gated before it fires. The mistake is contained, not catastrophic. Watch it happen, step by step.</p>
+      <span class="cta">Watch →</span>
+    </a>
+    <a class="card" href="../docs/trust-laws.html">
+      <div class="card-head"><h2>The trust laws</h2><span class="badge proof">See the proof</span></div>
+      <p>A single demo is one run. The trust laws are the substrate: three guarantees — blast-radius, audit, oversight — stated as deterministic laws over the effect journal and re-proven on <em>every</em> run, verified against hundreds of adversarial interleavings. Not "trust our demo" — the guarantee <em>is</em> the product. This is the proof under the demo.</p>
+      <span class="cta">See the proof →</span>
+    </a>
+  </section>
+
+  <footer>
+    <p>Served by one <code>python -m http.server</code> at the repo root. The boards live in <code>docs/</code> and open straight from these links.</p>
+    <p>Pherix is pre-release — a self-hosted library you wrap your agent with. <a href="https://github.com/LukeyP02/Pherix">Source on GitHub</a>.</p>
+  </footer>
+</main>
+</body>
+</html>
