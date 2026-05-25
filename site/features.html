@@ -81,30 +81,12 @@
   .note b { color: var(--ink); }
   .note code { color: var(--green); background: rgba(90,209,127,0.10); padding: 0 0.35em; border-radius: 4px; font-size: 0.9em; }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 1rem; margin: 1.4rem 0 0; }
-  .card {
-    background: var(--panel); border: 1px solid var(--rule); border-top: 2px solid var(--c);
-    border-radius: 10px; padding: 1.3rem 1.4rem;
-    transition: transform .2s ease, box-shadow .2s ease;
-  }
-  .card:hover { transform: translateY(-4px); box-shadow: 0 16px 34px -22px var(--c); }
-  .card.policy { --c: var(--accent); }
-  .card.contain { --c: var(--green); }
-  .card.gate { --c: var(--amber); }
-  .card.audit { --c: var(--accent); }
-  .card.iso { --c: var(--green); }
-  .card.dry { --c: var(--amber); }
-  .card.mem { --c: var(--accent); }
-  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; margin: 0 0 0.6rem; }
-  .card-head h3 { font-size: 1.05rem; font-weight: 700; margin: 0; color: var(--ink); letter-spacing: -0.01em; }
-  .badge {
-    font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase;
-    padding: 0.2rem 0.55rem; border-radius: 999px; border: 1px solid var(--rule);
-    color: var(--ink-3); white-space: nowrap;
-  }
-  .card p { margin: 0 0 0.6rem; font-size: 0.89rem; color: var(--ink-2); line-height: 1.55; }
-  .card p:last-child { margin-bottom: 0; }
-  .card code { color: var(--green); background: rgba(90,209,127,0.10); padding: 0 0.35em; border-radius: 4px; font-size: 0.9em; }
+  .flist { margin: 1.8rem 0 0; border-top: 1px solid var(--rule); }
+  .feat { padding: 1.25rem 0; border-bottom: 1px solid var(--rule); }
+  .feat h3 { font-size: 1.02rem; font-weight: 700; margin: 0 0 0.35rem; color: var(--ink); letter-spacing: -0.01em; }
+  .feat p { margin: 0; font-size: 0.92rem; color: var(--ink-2); line-height: 1.6; max-width: 72ch; }
+  .feat em { color: var(--ink); font-style: italic; }
+  .feat code { color: var(--green); background: rgba(90,209,127,0.10); padding: 0 0.35em; border-radius: 4px; font-size: 0.9em; }
 
   footer {
     margin-top: 4rem; padding: 1.8rem 0 0; border-top: 1px solid var(--rule);
@@ -143,45 +125,41 @@
       <p>These ship as <b>a library plus a read-only inspector — not a SaaS dashboard or hosted service.</b> You <code>pip install</code> it, wrap your tool-call layer, and self-host. Pre-release <code>0.0.0</code>.</p>
     </div>
 
-    <div class="grid">
+    <div class="flist">
 
-      <div class="card policy">
-        <div class="card-head"><h3>Control</h3><span class="badge">policy</span></div>
-        <p>Allow and deny rules, plus caps — total and count limits — and rules that read live external state before deciding.</p>
-        <p>Checked at commit, and again when the effect is staged, so a bad call fails early rather than at the end of a run.</p>
+      <div class="feat">
+        <h3>Containment</h3>
+        <p>Reversible effects — database and file writes — roll back through the backend's own savepoints and copy-on-write. The backend does the undo, exactly. What can't be undone runs a registered opposite instead: a refund for a charge, a deprovision for a provision.</p>
       </div>
 
-      <div class="card contain">
-        <div class="card-head"><h3>Containment</h3><span class="badge">undo</span></div>
-        <p>Reversible effects roll back through real backend semantics — database savepoints, filesystem copy. The backend does the undo, exactly.</p>
-        <p>For effects with no exact undo, a registered opposite action runs instead — a refund for a charge, a deprovision for a provision.</p>
+      <div class="feat">
+        <h3>Oversight</h3>
+        <p>An irreversible effect with no safe undo is held at commit, not fired — until a human (or a higher-trust policy) approves it with <code>approve_irreversible</code>.</p>
       </div>
 
-      <div class="card gate">
-        <div class="card-head"><h3>Oversight</h3><span class="badge">the gate</span></div>
-        <p>An irreversible effect with no safe undo is held back, not fired. It blocks at commit until someone approves it with <code>approve_irreversible</code>.</p>
-        <p>The human — or a higher-trust policy — is the only thing that lets it through.</p>
+      <div class="feat">
+        <h3>Audit</h3>
+        <p>Every tool call is recorded as it happens — the journal <em>is</em> the audit log, no separate logging to trust. Read it back in the inspector, or re-run it to confirm it still does the same thing.</p>
       </div>
 
-      <div class="card audit">
-        <div class="card-head"><h3>Audit</h3><span class="badge">the record</span></div>
-        <p>Every side-effecting tool call is recorded — the record <em>is</em> the audit log, no separate logging to trust.</p>
-        <p>Read it back with the inspector (<code>python -m pherix.inspector</code>), or re-run it to check it still does the same thing.</p>
+      <div class="feat">
+        <h3>Policy</h3>
+        <p>Allow and deny rules, plus spend and count caps, checked at commit and again when an effect is staged — a bad call fails early, not at the end of a run.</p>
       </div>
 
-      <div class="card iso">
-        <div class="card-head"><h3>Isolation</h3><span class="badge">concurrency</span></div>
-        <p>When two agents run at once, Pherix tracks what each one reads and writes and catches conflicts before they corrupt shared state.</p>
+      <div class="feat">
+        <h3>Isolation</h3>
+        <p>When two agents run at once, Pherix tracks what each reads and writes and catches conflicts before they corrupt shared state.</p>
       </div>
 
-      <div class="card dry">
-        <div class="card-head"><h3>Dry-run</h3><span class="badge">speculative</span></div>
-        <p>Run against a snapshot, then throw it away. See exactly what a run <em>would</em> do before letting it touch anything real.</p>
+      <div class="feat">
+        <h3>Dry-run</h3>
+        <p>Run against a snapshot, then throw it away — see what a run <em>would</em> do before it touches anything real.</p>
       </div>
 
-      <div class="card mem">
-        <div class="card-head"><h3>Governed memory</h3><span class="badge">memory</span></div>
-        <p>The same guardrails pointed at the agent's memory — so what the agent remembers is contained and on the record too.</p>
+      <div class="feat">
+        <h3>Governed memory</h3>
+        <p>The same guardrails pointed at the agent's memory — what it remembers stays contained and on the record too.</p>
       </div>
 
     </div>
