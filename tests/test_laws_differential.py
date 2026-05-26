@@ -7,9 +7,10 @@ This is the metamorphic test — the *backend* is the thing that varies; the
 journal algebra must not. We run the real :class:`SQLiteAdapter` against an
 in-memory reference :class:`~tests._laws.DictAdapter` oracle.
 
-A Postgres variant is wired but skips cleanly until the Postgres adapter and
-its driver are present (the adapter worktree); when they land it activates with
-no edit here.
+A Postgres variant runs the same law against a *real* PostgreSQL via the
+savepoint-backed :class:`PostgresAdapter`. It skips cleanly when psycopg is
+absent or no server is reachable, so the offline, dependency-free kernel
+invariant holds.
 """
 
 from __future__ import annotations
@@ -129,20 +130,110 @@ def test_rollback_equivalence_across_backends(both_backends_tools, prog):
         conn.close()
 
 
-def test_postgres_variant_skips_cleanly_until_adapter_lands():
-    """Differential against Postgres activates when the adapter + driver exist.
+# --- Postgres variant -------------------------------------------------------
+# The same metamorphic law against a *real* PostgreSQL, via the savepoint-backed
+# PostgresAdapter. Skips cleanly when psycopg is absent or no server is
+# reachable, so the offline, dependency-free kernel invariant holds. A live
+# backend is exercised at a lighter example budget than the in-memory pair.
 
-    Until the Postgres adapter worktree lands this skips — it must never fail
-    for absence of an optional backend (offline, dependency-free kernel).
-    """
-    pytest.importorskip("psycopg", reason="Postgres driver not installed")
+_PG_LAW = settings(
+    max_examples=50,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+
+
+@pytest.fixture
+def pg_kv():
+    """A live-Postgres connection with a fresh ``kv`` table; skips offline."""
+    import os
+
+    psycopg = pytest.importorskip("psycopg", reason="Postgres driver not installed")
+    dsn = os.environ.get("PHERIX_TEST_PG_DSN", "dbname=pherix_test")
     try:
-        # Import probe only — unused by design (F401 is expected): its presence
-        # is what gates whether the Postgres differential body can run.
-        from pherix.core.adapters.sql import PostgresAdapter  # noqa: F401
-    except ImportError:
-        pytest.skip("PostgresAdapter not implemented yet")
-    # When both are present, the body below runs the same kv_programs through
-    # PostgresAdapter and asserts commit/rollback equivalence with SQLite.
-    # Left as a skip-guarded stub so the adapter worktree fills it in.
-    pytest.skip("Postgres differential body pending the adapter worktree")
+        conn = psycopg.connect(dsn)
+    except Exception as e:  # noqa: BLE001 — any connect failure means "skip"
+        pytest.skip(f"no reachable Postgres: {e}")
+    # The adapter drives BEGIN/COMMIT/ROLLBACK explicitly, so the raw connection
+    # must be in autocommit (no implicit psycopg transaction wrapping ours).
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("DROP TABLE IF EXISTS kv")
+        cur.execute("CREATE TABLE kv (k TEXT PRIMARY KEY, v INTEGER)")
+    try:
+        yield conn
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DROP TABLE IF EXISTS kv")
+        conn.close()
+
+
+@pytest.fixture
+def pg_tools():
+    """The kv toolset in Postgres dialect (``%s`` params, ``EXCLUDED``)."""
+
+    @tool(resource="sql", name="pg_set")
+    def pg_set(conn, k, v):
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO kv (k, v) VALUES (%s, %s) "
+                "ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v",
+                (k, v),
+            )
+
+    @tool(resource="sql", name="pg_del")
+    def pg_del(conn, k):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM kv WHERE k = %s", (k,))
+
+    return pg_set, pg_del
+
+
+def _dump_pg(conn) -> dict:
+    with conn.cursor() as cur:
+        cur.execute("SELECT k, v FROM kv")
+        return dict(cur.fetchall())
+
+
+def _run_pg(conn, pg_tools, prog, commit: bool):
+    from pherix.core.adapters.postgres import PostgresAdapter
+
+    pg_set, pg_del = pg_tools
+    with conn.cursor() as cur:
+        cur.execute("TRUNCATE kv")  # each example starts from an empty world
+    with agent_txn({"sql": PostgresAdapter(conn)}) as txn:
+        for op in prog:
+            if op.op == "set":
+                pg_set(k=op.key, v=op.value)
+            else:
+                pg_del(k=op.key)
+        if not commit:
+            txn.rollback()
+    return txn
+
+
+@given(prog=kv_programs())
+@_PG_LAW
+def test_pg_commit_equivalence_with_oracle(pg_kv, pg_tools, both_backends_tools, prog):
+    """A committed program lands the same world in real Postgres and the oracle."""
+    pg_txn = _run_pg(pg_kv, pg_tools, prog, commit=True)
+    dict_adapter = DictAdapter()
+    dict_txn = _run_dict(dict_adapter, both_backends_tools, prog, commit=True)
+
+    assert _dump_pg(pg_kv) == dict_adapter.state()
+    assert pg_txn.txn.state is TxnState.COMMITTED
+    assert [e.status for e in pg_txn.txn.effects] == [
+        e.status for e in dict_txn.txn.effects
+    ]
+
+
+@given(prog=kv_programs())
+@_PG_LAW
+def test_pg_rollback_equivalence_with_oracle(pg_kv, pg_tools, both_backends_tools, prog):
+    """Rolling back the same program empties real Postgres, as it does the oracle."""
+    _run_pg(pg_kv, pg_tools, prog, commit=False)
+    dict_adapter = DictAdapter()
+    _run_dict(dict_adapter, both_backends_tools, prog, commit=False)
+
+    assert _dump_pg(pg_kv) == {}
+    assert dict_adapter.state() == {}
