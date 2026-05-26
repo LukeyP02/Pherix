@@ -12,6 +12,8 @@ Anyone shipping action-taking agents to production — where a tool call writes 
 
 > Pre-release `0.0.0` — install from source. The wrap below is the real minimal one today; a sane-defaults, shorter wrap is coming.
 
+> **Using a coding assistant?** Point Claude Code / Cursor / Aider at [`llms.txt`](llms.txt) — it's a complete, executable integration recipe (with the gotchas spelled out) written so an LLM can wrap your agent in Pherix correctly without you fighting the API.
+
 **Install**
 
 ```bash

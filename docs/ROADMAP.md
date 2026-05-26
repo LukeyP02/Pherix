@@ -59,3 +59,22 @@ real resources (SQL, FS, HTTP, k8s)
 - **CI/CD as a Pherix workflow primitive — Slice 10+ or distinct product line.** A CI pipeline step `uses: pherix/transaction@v1` wraps the pipeline body in `agent_txn`; deploys stage with operator-supplied compensators (`kubectl apply` ↔ `kubectl rollout undo`; `aws cloudformation deploy` ↔ `aws cloudformation rollback`); failed post-deploy smoke tests fire compensators automatically. Genuinely different deployment model from in-process library and MCP gateway — *Pherix as a workflow primitive*, where the "agent" being intercepted is the pipeline itself, not an LLM. **Open design questions:** distinct product (own packaging, GitHub Action, GitLab template) or Slice 10 of the engine? Which CI systems first (GitHub Actions has the largest reach; Buildkite is friendliest to custom step types)? How does the Slice 8 gateway's cross-host arbitration interact with multi-stage pipelines that span runners? Is the CI-step abstraction just a thin shim over the existing `agent_txn` API, or does it need its own state-machine vocabulary? *(decide once Slice 8 ships — gateway dependency is real, and CI-as-pipeline closely mirrors the MCP-as-protocol shape Slice 8 is already solving)*
 
 The strategic frame: these aren't separate integrations. They are three depths of the same wedge — *Pherix as the layer between an agent and any tool that touches code.* The corporate AI-tooling cancellation case becomes "deploy the agent through Pherix at one or more of these layers, not directly." Every layer is the same engine; each one is a different point of interception.
+
+## Policy axis — over-containment as a tuning system (post-MVP)
+
+**The objection, from the market.** The sharpest critique of any containment layer (seen verbatim in the r/AI_Agents "74% rolled back" thread, 2026-05): *"the whole point of agents is to function without supervision — gate everything and you've just rebuilt a supervised script, which doesn't justify the spend."* If Pherix gates indiscriminately it destroys the autonomy that made the agent worth deploying. This is the central Policy-axis risk, and the answer is **gate proportional to blast radius, not uniformly.**
+
+**The MVP stays slim — the primitives already exist.** Over-containment is a *tuning* problem, and every lever to keep containment cost near-zero is already shipped, so nothing here is MVP work:
+- reversible lane = free autonomy (snapshot/restore, no gate — most routine work);
+- compensators = irreversible-but-invertible actions auto-commit (no human, inverse only on rollback);
+- policy caps/thresholds = graduated clearing (`refund < $100` auto, `> $1000` gate);
+- dry-run = approve-the-plan-once instead of interrupting per step.
+
+The maths: if action-risk is heavy-tailed (most actions trivial/reversible, few catastrophic), gating only the tail captures ~all the danger at ~zero autonomy cost. Containment is cheap *because* risk is concentrated.
+
+**What is roadmap (pulled by a design partner, not built ahead of one):**
+- **Proportional-policy ergonomics** — make "gate by stakes" a first-class expression the buyer writes against, not hand-rolled rules. The dial should be legible.
+- **Trust escalation** — policy that *widens* as the journal proves behaviour: start tightly gated, loosen on clean history (the employee-autonomy curve). The journal is the trust record that justifies the loosening — a fold over the audit log, not a new mechanism.
+- **Containment observability** — surface the *gate rate* and *escape rate* so over- vs under-containment is measurable. Over-containment = high gate rate + ~zero escape rate (stopping things that didn't need it). Both numbers are already in the journal; this is a read, not an engine change.
+
+**Positioning / ICP note (not a build):** Pherix de-risks best where the dangerous actions are *rare relative to routine ones* (heavy-tailed). An agent that is 95% recoverable work + a rare irreversible cliff is the sweet spot; an agent whose value is uniformly irreversible-and-high-stakes (e.g. a pure trading agent) cannot be de-risked without neutering it — flag these as poor-fit in discovery. *(decide alongside design-partner conversations — the "what fraction of your agent's high-value actions are irreversible and uncompensatable?" probe is what sizes this per buyer)*
