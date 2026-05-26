@@ -1,4 +1,4 @@
-# Pherix — ACID for agents
+# Pherix — Auditable Agents
 
 Database guarantees over an AI agent's real-world actions: **undo the reversible · gate the irreversible · audit everything.**
 
