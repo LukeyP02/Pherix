@@ -16,3 +16,21 @@ reports/
 .env
 .gstack/
 *.demo.json
+
+# Kept local, out of the repo (operator docs, demos, and the tests that
+# exercise the demo/dogfood/sims scaffolding). Files still live on disk.
+docs/
+examples/
+tests/test_dogfood*.py
+tests/test_sims_*.py
+tests/test_openclaw*.py
+tests/test_coding_cli_gateway.py
+tests/test_local_airgap.py
+tests/test_demo_session.py
+
+# Scratch — Claude session dumps, demo VO, recovered sessions.
+*-convo.txt
+*-session-replay.txt
+recovered-session-*.txt
+*-vo.txt
+TASK.md

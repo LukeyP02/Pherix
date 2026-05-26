@@ -91,12 +91,11 @@ Reversible effects run live and roll back via the backend's own savepoints. Irre
 ## See it / explore
 
 ```bash
-python -m examples.demo      # offline demo: an agent wipes a customers table and
-                             # tries a large wire transfer — Pherix contains both
-python -m pherix.inspector   # open the read-only audit console over the journal
+python -m pherix.inspector.seed demo.db   # generate a representative audit journal
+python -m pherix.inspector --db demo.db   # open the read-only audit console over it
 ```
 
-Both run fully offline — no API key, no model.
+Runs fully offline — no API key, no model. The seeded journal shows every story the console renders: a clean commit, a rollback, a gated irreversible, a STUCK transaction, and a dry-run.
 
 ## Learn more
 
