@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>How it works — Pherix</title>
-<meta name="description" content="Pherix records every side-effecting tool call. Commit, rollback, and audit are all just reading that record forward or backward." />
+<title>Docs — Pherix</title>
+<meta name="description" content="Pherix documentation: install, quickstart, the core model, adapters, policy, and the public API." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -43,11 +43,9 @@
             mask-image: radial-gradient(120% 90% at 50% 18%, #000 35%, transparent 90%);
   }
 
-  main { max-width: 860px; margin: 0 auto; padding: 0 1.5rem 4rem; }
-
   nav {
     display: flex; align-items: center; justify-content: space-between;
-    max-width: 860px; margin: 0 auto; padding: 1.15rem 1.5rem;
+    max-width: 980px; margin: 0 auto; padding: 1.15rem 1.5rem;
   }
   nav .brand { font-weight: 700; letter-spacing: 0.04em; font-size: 1.02rem; color: var(--ink); }
   nav .brand .dot { color: var(--green); }
@@ -56,46 +54,61 @@
   nav .links a:hover { color: var(--ink); text-decoration: none; }
   nav .links a.here { color: var(--green); }
 
-  .tag {
-    color: var(--green); font-size: 0.74rem; letter-spacing: 0.14em;
-    margin: 1.5rem 0 0.7rem; text-transform: uppercase;
-    opacity: 0; animation: rise .6s .05s ease forwards;
+  /* docs two-column layout */
+  .layout {
+    display: grid; grid-template-columns: 190px 1fr; gap: 2.6rem;
+    max-width: 980px; margin: 0 auto; padding: 0.5rem 1.5rem 4rem;
   }
-  h1 {
-    font-size: clamp(1.9rem, 4.5vw, 3rem); line-height: 1.05; margin: 0;
-    font-weight: 800; letter-spacing: -0.03em;
-    opacity: 0; animation: rise .6s .12s ease forwards;
+  .side { position: sticky; top: 1.5rem; align-self: start; font-size: 0.84rem; }
+  .side .grp {
+    color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.12em;
+    font-size: 0.66rem; margin: 1.2rem 0 0.35rem;
   }
-  h1 .dot { color: var(--green); }
-  .lede {
-    color: var(--ink-2); font-size: 1.05rem; max-width: 62ch; margin: 1.1rem 0 0;
-    opacity: 0; animation: rise .6s .2s ease forwards;
-  }
-  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .side .grp:first-child { margin-top: 0; }
+  .side a { display: block; color: var(--ink-2); padding: 0.24rem 0; border-left: 2px solid transparent; padding-left: 0.7rem; margin-left: -0.7rem; }
+  .side a:hover { color: var(--ink); text-decoration: none; border-left-color: var(--ink-4); }
 
-  h2 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; margin: 2.8rem 0 0.6rem; }
+  .content { min-width: 0; }
+  .content > h1 { font-size: clamp(1.8rem, 4vw, 2.4rem); font-weight: 800; letter-spacing: -0.03em; margin: 0; }
+  .content > h1 .dot { color: var(--green); }
+  .lede { color: var(--ink-2); font-size: 1rem; max-width: 64ch; margin: 0.9rem 0 0; }
+
+  section { scroll-margin-top: 1.5rem; }
+  h2 {
+    font-size: 1.2rem; font-weight: 700; letter-spacing: -0.01em;
+    margin: 2.6rem 0 0.5rem; padding-top: 0.4rem; border-top: 1px solid var(--rule);
+  }
+  h2:first-of-type { border-top: none; }
+  h3 { font-size: 0.98rem; font-weight: 700; color: var(--ink); margin: 1.4rem 0 0.3rem; }
   p { color: var(--ink-2); }
   p b { color: var(--ink); }
   code {
     font-family: inherit; font-size: 0.9em; color: var(--green);
     background: rgba(90,209,127,0.10); padding: 1px 5px; border-radius: 4px;
   }
+  pre {
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 10px;
+    padding: 1rem 1.15rem; overflow-x: auto; margin: 0.9rem 0 0;
+  }
+  pre code { color: var(--ink); background: none; padding: 0; font-size: 0.84rem; line-height: 1.6; }
 
-  .lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.1rem 0 0; }
+  .lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0 0; }
   @media (max-width: 620px) { .lanes { grid-template-columns: 1fr; } }
-  .lane { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 1.2rem 1.3rem; }
+  .lane { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 1.1rem 1.2rem; }
   .lane.rev { border-top: 2px solid var(--green); }
   .lane.irr { border-top: 2px solid var(--amber); }
-  .lane h3 { margin: 0 0 0.45rem; font-size: 1.02rem; color: var(--ink); font-weight: 700; }
-  .lane p { margin: 0; font-size: 0.9rem; }
+  .lane h3 { margin: 0 0 0.4rem; font-size: 0.98rem; }
+  .lane p { margin: 0; font-size: 0.88rem; }
 
-  .adapters { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 1rem 0 0; font-size: 0.78rem; }
+  .adapters { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.9rem 0 0; font-size: 0.78rem; }
   .adapters span { background: var(--panel-2); border: 1px solid var(--rule); border-radius: 6px; padding: 0.28rem 0.65rem; color: var(--ink-2); }
 
-  .api { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.7rem; margin: 1.1rem 0 0; }
-  .api div { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 0.75rem 0.95rem; }
-  .api code { background: none; padding: 0; color: var(--accent); font-size: 0.9rem; }
-  .api span { display: block; font-size: 0.82rem; color: var(--ink-2); margin-top: 0.2rem; }
+  table.api { width: 100%; border-collapse: collapse; margin: 0.9rem 0 0; font-size: 0.88rem; }
+  table.api td { border-top: 1px solid var(--rule); padding: 0.6rem 0.5rem; vertical-align: top; }
+  table.api tr:first-child td { border-top: none; }
+  table.api td:first-child { width: 13rem; white-space: nowrap; }
+  table.api code { background: none; padding: 0; color: var(--accent); }
+  table.api td:last-child { color: var(--ink-2); }
 
   .note {
     background: var(--panel); border: 1px solid var(--rule); border-left: 2px solid var(--accent);
@@ -104,7 +117,7 @@
   .note p { margin: 0; }
 
   footer {
-    margin-top: 4rem; padding: 1.8rem 0 0; border-top: 1px solid var(--rule);
+    margin-top: 3.5rem; padding: 1.8rem 0 0; border-top: 1px solid var(--rule);
     color: var(--ink-3); font-size: 0.78rem;
     display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
   }
@@ -113,8 +126,11 @@
   footer a { color: var(--ink-3); }
   footer a:hover { color: var(--ink-2); }
 
-  @media (prefers-reduced-motion: reduce) {
-    .tag, h1, .lede { animation: none; opacity: 1; transform: none; }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; gap: 1.2rem; }
+    .side { position: static; display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--rule); }
+    .side .grp { display: none; }
+    .side a { border-left: none; margin-left: 0; padding-left: 0; }
   }
 </style>
 </head>
@@ -126,76 +142,139 @@
     <span class="links">
       <a href="index.html">Home</a>
       <a href="get-started.html">Get started</a>
-      <a class="here" href="docs.html">How it works</a>
+      <a class="here" href="docs.html">Docs</a>
       <a href="features.html">Features</a>
       <a href="demos.html">Demos</a>
     </span>
   </nav>
 
-  <main>
-    <p class="tag">How it works</p>
-    <h1>One idea<span class="dot">.</span></h1>
-    <p class="lede">Pherix records every side-effecting tool call, in order, as the agent runs. Commit, rollback, and audit are all just reading that record — forward, backward, or as-is. Here's the whole mental model on one page.</p>
+  <div class="layout">
+    <aside class="side">
+      <div class="grp">Start</div>
+      <a href="#overview">Overview</a>
+      <a href="#install">Install</a>
+      <a href="#quickstart">Quickstart</a>
+      <div class="grp">Concepts</div>
+      <a href="#record">The record</a>
+      <a href="#lanes">The two lanes</a>
+      <a href="#adapters">Adapters</a>
+      <a href="#policy">Policy</a>
+      <div class="grp">Reference</div>
+      <a href="#api">Public API</a>
+      <a href="#status">Status</a>
+    </aside>
 
-    <h2>The record</h2>
-    <p>Every side-effecting tool call is recorded as one entry, in the order it happened. <b>Commit</b> reads the record forward and applies each effect; <b>rollback</b> reads it backward and undoes each one. Nothing extra is needed for audit — the record <b>is</b> the audit log. You just read it.</p>
+    <main class="content">
+      <h1>Docs<span class="dot">.</span></h1>
+      <p class="lede">Pherix records every side-effecting tool call, in order, as your agent runs. Commit, rollback, and audit are all just reading that record — forward, backward, or as-is. The whole model fits on one page.</p>
 
-    <h2>The two lanes</h2>
-    <p>Each effect goes down one of two lanes, decided by whether its resource can be snapshotted. These are two <b>different</b> ways to undo, not one.</p>
-    <div class="lanes">
-      <div class="lane rev">
-        <h3>Reversible → snapshot, then restore</h3>
-        <p>Runs live. The backend takes a snapshot before the effect and restores it on rollback — a database <code>SAVEPOINT</code>, a filesystem copy. The backend does the undo: exact, and it doesn't need to know what the action meant.</p>
-      </div>
-      <div class="lane irr">
-        <h3>Irreversible → hold back, then approve</h3>
-        <p>Can't be snapshotted, so it's held back and only fires at commit. With a registered opposite action (a refund for a charge) it auto-commits and that opposite runs on rollback; without one it waits for a human to approve it.</p>
-      </div>
-    </div>
+      <section id="overview">
+        <h2>Overview</h2>
+        <p>Pherix is a library. You wrap your agent's tool-call layer and keep your existing agent loop and model provider — the loop never knows it's inside a transaction. Reversible effects run live and roll back through the backend's own snapshots; irreversible ones are held back and only fire at commit, gated for approval when they have no safe undo.</p>
+      </section>
 
-    <h2>Adapters</h2>
-    <p>An adapter knows how to snapshot, run, and restore one kind of resource. Tools say which resource they touch; Pherix routes each effect to the right adapter. Backend drivers are optional and loaded only when used, so the core has no dependencies.</p>
-    <div class="adapters">
-      <span>SQLite</span><span>Postgres</span><span>MySQL</span><span>MongoDB</span>
-      <span>Redis</span><span>S3</span><span>GCS</span><span>DynamoDB</span>
-      <span>Elasticsearch</span><span>filesystem</span><span>HTTP</span><span>REST</span>
-      <span>message-queue</span><span>git</span><span>memory</span>
-    </div>
-    <div class="note">
-      <p><b>Honest about what it can't undo:</b> an HTTP call can't be snapshotted, so Pherix holds it back for approval rather than pretending it can be rolled back.</p>
-    </div>
+      <section id="install">
+        <h2>Install</h2>
+        <p>Pre-release <code>0.0.0</code>, from source:</p>
+<pre><code>git clone https://github.com/LukeyP02/Pherix &amp;&amp; cd Pherix
+pip install -e .</code></pre>
+      </section>
 
-    <h2>Policy</h2>
-    <p>Allow and deny rules, plus caps — total spend, count limits — and rules that read live external state before deciding. Policy is a clean slate: you write your own rules against it. State can change while an effect waits, so the same rule is checked twice — once when the effect is staged, once again at commit — and the effect can't slip through in the gap.</p>
+      <section id="quickstart">
+        <h2>Quickstart</h2>
+        <p>Declare each side-effecting tool with the resource it touches, then wrap the run. Leaving the block cleanly commits; calling <code>rollback()</code> undoes everything.</p>
+<pre><code>import sqlite3
+from pherix import AuditJournal, SQLiteAdapter, agent_txn, tool
 
-    <h2>The small public API</h2>
-    <p>The handful you actually touch:</p>
-    <div class="api">
-      <div><code>agent_txn</code><span>wrap a run in a transaction</span></div>
-      <div><code>tool</code><span>declare a side-effecting tool</span></div>
-      <div><code>SQLiteAdapter</code>…<span>the per-resource adapters</span></div>
-      <div><code>Policy</code><span>your allow / deny + caps rules</span></div>
-      <div><code>AuditJournal</code><span>the recorded run / audit log</span></div>
-      <div><code>approve_irreversible</code><span>clear a held effect to fire</span></div>
-      <div><code>replay</code><span>re-run the record against fresh state</span></div>
-      <div><code>dry_run</code><span>run against a snapshot, then discard</span></div>
-    </div>
+@tool(resource="sql")
+def insert_user(conn, name, role):
+    conn.execute("INSERT INTO users (name, role) VALUES (?, ?)", (name, role))
+    return name
 
-    <div class="note">
-      <p>Early days — Pherix is pre-release <code>0.0.0</code>. The engine is built and tested; the public surface above is small on purpose and will gain sane defaults before it grows.</p>
-    </div>
+conn = sqlite3.connect("app.db", isolation_level=None)
+adapters = {"sql": SQLiteAdapter(conn)}
+audit = AuditJournal.in_memory()
 
-    <footer>
-      <span class="brand">pherix<span class="dot">.</span></span>
-      <span>
-        <a href="index.html">Home</a> ·
-        <a href="get-started.html">Get started</a> ·
-        <a href="docs.html">How it works</a> ·
-        <a href="features.html">Features</a> ·
-        <a href="demos.html">Demos</a> ·
-        <a href="https://github.com/LukeyP02/Pherix">GitHub</a>
-      </span>
-    </footer>
-  </main>
+with agent_txn(adapters, audit=audit) as txn:
+    insert_user(name="ada", role="engineer")
+    # caught a problem? txn.rollback() — nothing was saved.
+# left the block cleanly → commit. The writes are now durable.</code></pre>
+        <div class="note"><p>The full end-to-end walk-through — including irreversible effects and the approval gate — is on <a href="get-started.html">Get started</a>.</p></div>
+      </section>
+
+      <section id="record">
+        <h2>The record</h2>
+        <p>Every side-effecting tool call is recorded as one entry, in the order it happened. <b>Commit</b> reads the record forward and applies each effect; <b>rollback</b> reads it backward and undoes each one; <b>replay</b> re-runs it against fresh state; <b>dry-run</b> runs it against a snapshot, then discards. Audit needs nothing extra — the record <b>is</b> the audit log.</p>
+      </section>
+
+      <section id="lanes">
+        <h2>The two lanes</h2>
+        <p>Each effect goes down one of two lanes, decided by whether its resource can be snapshotted. These are two <b>different</b> ways to undo, not one.</p>
+        <div class="lanes">
+          <div class="lane rev">
+            <h3>Reversible → snapshot, then restore</h3>
+            <p>Runs live. The backend snapshots before the effect and restores on rollback — a database <code>SAVEPOINT</code>, a filesystem copy. The backend does the undo: exact, and it needn't know what the action meant.</p>
+          </div>
+          <div class="lane irr">
+            <h3>Irreversible → hold back, then approve</h3>
+            <p>Can't be snapshotted, so it's held back and only fires at commit. With a registered opposite action (a refund for a charge) it auto-commits and that opposite runs on rollback; without one it waits for a human to approve.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="adapters">
+        <h2>Adapters</h2>
+        <p>An adapter knows how to snapshot, run, and restore one kind of resource. Tools say which resource they touch; Pherix routes each effect to the right adapter. Backend drivers are optional and loaded only when used, so the core has no dependencies.</p>
+        <div class="adapters">
+          <span>SQLite</span><span>Postgres</span><span>MySQL</span><span>MongoDB</span>
+          <span>Redis</span><span>S3</span><span>GCS</span><span>DynamoDB</span>
+          <span>Elasticsearch</span><span>filesystem</span><span>HTTP</span><span>REST</span>
+          <span>message-queue</span><span>git</span><span>memory</span>
+        </div>
+        <div class="note">
+          <p><b>Honest about what it can't undo:</b> an HTTP call can't be snapshotted, so Pherix holds it back for approval rather than pretending it can be rolled back.</p>
+        </div>
+      </section>
+
+      <section id="policy">
+        <h2>Policy</h2>
+        <p>Allow and deny rules, plus caps — total spend, count limits — and rules that read live external state before deciding. Policy is a clean slate you write your own rules against. State can change while an effect waits, so the same rule is checked twice — once when the effect is staged, once again at commit — and the effect can't slip through in the gap.</p>
+      </section>
+
+      <section id="api">
+        <h2>Public API</h2>
+        <p>The handful you actually touch:</p>
+        <table class="api">
+          <tr><td><code>agent_txn</code></td><td>wrap a run in a transaction</td></tr>
+          <tr><td><code>tool</code></td><td>declare a side-effecting tool</td></tr>
+          <tr><td><code>SQLiteAdapter</code> …</td><td>the per-resource adapters</td></tr>
+          <tr><td><code>Policy</code></td><td>your allow / deny + caps rules</td></tr>
+          <tr><td><code>AuditJournal</code></td><td>the recorded run / audit log</td></tr>
+          <tr><td><code>approve_irreversible</code></td><td>clear a held effect to fire</td></tr>
+          <tr><td><code>replay</code></td><td>re-run the record against fresh state</td></tr>
+          <tr><td><code>dry_run</code></td><td>run against a snapshot, then discard</td></tr>
+        </table>
+      </section>
+
+      <section id="status">
+        <h2>Status</h2>
+        <div class="note">
+          <p>Early days — Pherix is pre-release <code>0.0.0</code>. The engine is built and tested; the public surface above is small on purpose and will gain sane defaults before it grows.</p>
+        </div>
+      </section>
+
+      <footer>
+        <span class="brand">pherix<span class="dot">.</span></span>
+        <span>
+          <a href="index.html">Home</a> ·
+          <a href="get-started.html">Get started</a> ·
+          <a href="docs.html">Docs</a> ·
+          <a href="features.html">Features</a> ·
+          <a href="demos.html">Demos</a> ·
+          <a href="https://github.com/LukeyP02/Pherix">GitHub</a>
+        </span>
+      </footer>
+    </main>
+  </div>
 </body>
 </html>
