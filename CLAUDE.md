@@ -239,7 +239,9 @@ agents without a per-language SDK.
 dry-run, the MCP gateway, plus the engine-hardening pass that made the moat claims
 true: crash-consistent recovery (`core/recovery.py`), cross-process isolation
 (single-host), world-state policy (`PolicyContext.read`), the longitudinal envelope
-(`core/envelope.py`). **1011 Python tests + 210 TypeScript, fully offline.**
+(`core/envelope.py`). **936 Python tests + 210 TypeScript, fully offline**
+(backend-driver, live-server, and the Node-driven SDK-parity tests skip cleanly
+when the relevant runtime is absent).
 
 **Each axis is now at base in *both* languages** — the "flesh each axis to its base,
 in two languages" push has landed:
@@ -253,9 +255,12 @@ in two languages" push has landed:
   partial-failure path.
 - **Interception** — *TypeScript SDK at parity.* `tests/test_sdk_parity.py` drives the
   same scenario through both engines and asserts **structurally identical journals**
-  (13 scenarios) — the proof the two SDKs are one system. The substrate passed the
-  convergent-generalisation test: 10 new TS adapters fit `ResourceAdapter` *unchanged*,
-  so the engine LOC is flat while coverage is up.
+  (13 scenarios: reversible commit / irreversible gate / isolation conflict + one per
+  ported adapter) — the proof the two SDKs are one system. The Python half runs in-process;
+  the TS half is `pherix-ts/test/parity/runner.mts`, spawned via `npx tsx`. The module is
+  `skipif(node is None)`, so a machine without Node skips it cleanly and the offline Python
+  invariant holds. The substrate passed the convergent-generalisation test: 10 new TS
+  adapters fit `ResourceAdapter` *unchanged*, so the engine LOC is flat while coverage is up.
 - **Policy**: starter templates built; expressiveness is the remaining edge.
 
 **Two open adapter-axis follow-ups** (surfaced by the parity suite, deliberately
