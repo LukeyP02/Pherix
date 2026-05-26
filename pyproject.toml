@@ -3,6 +3,7 @@ name = "pherix"
 version = "0.0.0"
 description = "A transactional resource runtime for AI agents"
 requires-python = ">=3.12"
+classifiers = ["License :: OSI Approved :: MIT License"]
 dependencies = []
 
 [project.optional-dependencies]
