@@ -186,7 +186,7 @@ class SQLiteAdapter(SavepointAdapter):
     def apply(self, effect: Effect, tool_fn: Callable[..., Any]) -> Any:
         # D2: the txn-owned connection is injected as the tool's first arg;
         # the @tool wrapper hides it from the agent's call-site.
-        return tool_fn(self._conn, **effect.args)
+        return _materialise_cursor(tool_fn(self._conn, **effect.args))
 
     # --- versioning (Slice 4 — VersionedResourceAdapter) -------------------
 
@@ -404,6 +404,28 @@ class SQLiteAdapter(SavepointAdapter):
             "rows_modified": modified,
             "rows_deleted": deleted,
         }
+
+
+# --- result materialisation ------------------------------------------------
+
+
+def _materialise_cursor(result: Any) -> Any:
+    """Drain a live ``sqlite3.Cursor`` into journal-safe, re-iterable rows.
+
+    A tool that does ``return execute_isolated(...)`` for a read hands back a
+    one-shot ``sqlite3.Cursor``. Two problems with letting that become
+    ``effect.result``: (1) a Cursor is not JSON-serialisable, so the journal
+    write would raise ``TypeError`` and take down the whole transaction; (2) a
+    cursor is consumed exactly once, so journalling it would race the agent's
+    own read. We drain it here into a plain list of rows — lossless,
+    re-iterable, and serialisable — so the natural reader pattern is safe.
+    ``sqlite3.Row`` rows keep their column names (``dict``); bare tuples become
+    lists. Non-cursor results pass through untouched.
+    """
+    if isinstance(result, sqlite3.Cursor):
+        rows = result.fetchall()
+        return [dict(r) if isinstance(r, sqlite3.Row) else list(r) for r in rows]
+    return result
 
 
 # --- Slice 4 isolation helper ---------------------------------------------

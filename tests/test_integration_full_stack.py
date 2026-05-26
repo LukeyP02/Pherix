@@ -24,6 +24,7 @@ module scope.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import tempfile
@@ -320,3 +321,42 @@ def test_isolation_conflict_across_two_connections(stack):
         assert _balances(db_path) == [(1, 999)]
     finally:
         conn2.close()
+
+
+def test_reader_tool_returning_cursor_is_journalled_not_crashed(stack):
+    """A tool that returns a live cursor must not take down the transaction.
+
+    Regression for the latent ``execute_isolated`` bug: a reader written the
+    natural way — ``return execute_isolated(conn, "SELECT ...")`` — used to hand
+    a ``sqlite3.Cursor`` back as ``effect.result``. The audit journal then tried
+    to ``json.dumps`` it and raised ``TypeError`` mid-commit, killing the whole
+    txn. ``SQLiteAdapter.apply`` now drains the cursor to journal-safe rows, so
+    the commit lands and the rows are both returned to the agent and recorded.
+    """
+    adapters, audit, db_path, _ = stack
+    open_account, _ = _register_tools()
+
+    @tool(resource="sql")
+    def read_account(conn, account_id):
+        # Deliberately return the cursor directly — the mistake the fix tolerates.
+        return execute_isolated(
+            conn,
+            "SELECT id, balance FROM accounts WHERE id = ?",
+            (account_id,),
+            reads=[("accounts", account_id)],
+        )
+
+    with agent_txn(adapters, audit=audit) as ctx:
+        open_account(account_id=7, balance=500)
+        rows = read_account(account_id=7)
+
+    # The agent got materialised, re-iterable rows — not a one-shot cursor.
+    # (The fixture connection uses the default row factory, so rows come back
+    # as lists; a ``sqlite3.Row`` factory would preserve column names as dicts.)
+    assert rows == [[7, 500]]
+    assert ctx.txn.state is TxnState.COMMITTED
+    # And the journal recorded the read effect's result losslessly.
+    effects = audit.get_effects(ctx.txn.txn_id)
+    read_row = [e for e in effects if e["tool"] == "read_account"][0]
+    assert json.loads(read_row["result"]) == [[7, 500]]
+    assert read_row["status"] == EffectStatus.APPLIED.name
