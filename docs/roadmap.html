@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Roadmap — Pherix</title>
+<meta name="description" content="Where Pherix is going. The engine is built; now we make it visible and adoptable without compromising the data-untouched moat." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0b0e;
+    --panel: #121419;
+    --panel-2: #181b22;
+    --ink: #e8ebf1;
+    --ink-2: #99a2b2;
+    --ink-3: #5a6271;
+    --ink-4: #383e49;
+    --rule: #232730;
+    --green: #5ad17f;
+    --amber: #e0b341;
+    --red: #e56854;
+    --accent: #6ea8fe;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; margin: 0; padding: 0; background: var(--bg); }
+  body {
+    margin: 0; padding: 0; background: transparent; color: var(--ink);
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  .bg::before {
+    content: ""; position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(150,162,186,0.30) 1.1px, transparent 1.6px);
+    background-size: 30px 30px;
+    -webkit-mask-image: radial-gradient(120% 90% at 50% 18%, #000 35%, transparent 90%);
+            mask-image: radial-gradient(120% 90% at 50% 18%, #000 35%, transparent 90%);
+  }
+
+  main { max-width: 940px; margin: 0 auto; padding: 0 1.5rem 4rem; }
+
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    max-width: 940px; margin: 0 auto; padding: 1.15rem 1.5rem;
+  }
+  nav .brand { font-weight: 700; letter-spacing: 0.04em; font-size: 1.02rem; color: var(--ink); }
+  nav .brand .dot { color: var(--green); }
+  nav .links { display: flex; align-items: center; gap: 1.3rem; flex-wrap: wrap; }
+  nav .links a { color: var(--ink-2); font-size: 0.84rem; }
+  nav .links a:hover { color: var(--ink); text-decoration: none; }
+  nav .links a.here { color: var(--green); }
+
+  .tag {
+    color: var(--green); font-size: 0.74rem; letter-spacing: 0.14em;
+    margin: 1.5rem 0 0.7rem; text-transform: uppercase;
+    opacity: 0; animation: rise .6s .05s ease forwards;
+  }
+  h1 {
+    font-size: clamp(1.9rem, 4.5vw, 3rem); line-height: 1.05; margin: 0;
+    font-weight: 800; letter-spacing: -0.03em;
+    opacity: 0; animation: rise .6s .12s ease forwards;
+  }
+  h1 .dot { color: var(--green); }
+  .lede {
+    color: var(--ink-2); font-size: 1.05rem; max-width: 64ch; margin: 1.1rem 0 0;
+    opacity: 0; animation: rise .6s .2s ease forwards;
+  }
+  .lede b { color: var(--ink); }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  /* Phases */
+  .phase {
+    margin: 2.6rem 0 0; padding: 1.6rem 1.7rem 1.8rem; border: 1px solid var(--rule);
+    border-top: 2px solid var(--c); border-radius: 12px; background: var(--panel);
+    transition: transform .2s ease, box-shadow .2s ease;
+  }
+  .phase.done { --c: var(--green); }
+  .phase.active { --c: var(--amber); }
+  .phase.pending { --c: var(--ink-4); }
+  .phase.future { --c: var(--accent); }
+  .phase:hover { transform: translateY(-3px); box-shadow: 0 18px 38px -24px var(--c); }
+  .phase-head {
+    display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap;
+    margin: 0 0 0.55rem;
+  }
+  .phase-head h2 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em; color: var(--ink); }
+  .phase-head .which { color: var(--c); font-weight: 700; }
+  .phase .blurb { margin: 0 0 1.1rem; color: var(--ink-2); font-size: 0.92rem; max-width: 68ch; }
+  .phase .blurb b { color: var(--ink); }
+
+  .pill {
+    display: inline-block; font-size: 0.66rem; letter-spacing: 0.14em;
+    text-transform: uppercase; padding: 0.18rem 0.6rem; border-radius: 5px;
+    font-weight: 700; vertical-align: middle;
+  }
+  .pill.done { background: rgba(90,209,127,0.12); color: var(--green); border: 1px solid rgba(90,209,127,0.3); }
+  .pill.active { background: rgba(224,179,65,0.12); color: var(--amber); border: 1px solid rgba(224,179,65,0.32); }
+  .pill.pending { background: var(--panel-2); color: var(--ink-3); border: 1px solid var(--rule); }
+  .pill.future { background: rgba(110,168,254,0.10); color: var(--accent); border: 1px solid rgba(110,168,254,0.28); }
+
+  .group { margin: 1.4rem 0 0; }
+  .group-head {
+    color: var(--ink-3); text-transform: uppercase; font-size: 0.66rem;
+    letter-spacing: 0.14em; margin: 0 0 0.5rem;
+  }
+  ul.items { list-style: none; padding: 0; margin: 0; }
+  ul.items li {
+    border-top: 1px solid var(--rule); padding: 0.65rem 0;
+    color: var(--ink-2); font-size: 0.9rem; line-height: 1.55;
+  }
+  ul.items li:first-child { border-top: none; }
+  ul.items li b { color: var(--ink); }
+  ul.items li em { color: var(--ink-3); font-style: italic; }
+  ul.items li code { color: var(--green); background: rgba(90,209,127,0.10); padding: 0 0.32em; border-radius: 4px; font-size: 0.88em; }
+
+  .followup {
+    margin: 1.4rem 0 0; padding: 0.95rem 1.15rem;
+    background: var(--panel-2); border: 1px solid var(--rule); border-left: 2px solid var(--ink-4);
+    border-radius: 0 8px 8px 0; font-size: 0.86rem; color: var(--ink-2);
+  }
+  .followup b { color: var(--ink); }
+  .followup code { color: var(--green); background: rgba(90,209,127,0.10); padding: 0 0.32em; border-radius: 4px; font-size: 0.9em; }
+  .followup ul { margin: 0.5rem 0 0; padding-left: 1.1rem; }
+  .followup li { margin: 0.2rem 0; }
+
+  .constraint {
+    margin: 1rem 0 0; padding: 0.9rem 1.15rem;
+    background: rgba(110,168,254,0.06); border: 1px solid rgba(110,168,254,0.18); border-left: 2px solid var(--accent);
+    border-radius: 0 8px 8px 0; font-size: 0.88rem; color: var(--ink-2);
+  }
+  .constraint b { color: var(--ink); }
+
+  /* Positioning footer block */
+  .positioning {
+    margin: 3rem 0 0; padding: 1.8rem 1.9rem 1.9rem; border: 1px solid var(--rule);
+    border-radius: 12px; background: var(--panel);
+  }
+  .positioning h2 { margin: 0 0 0.4rem; font-size: 1.2rem; font-weight: 800; letter-spacing: -0.01em; color: var(--ink); }
+  .positioning .blurb { color: var(--ink-2); font-size: 0.92rem; margin: 0 0 1rem; max-width: 68ch; }
+  .positioning .blurb b { color: var(--ink); }
+  .positioning ul { list-style: none; padding: 0; margin: 0; }
+  .positioning li {
+    border-top: 1px solid var(--rule); padding: 0.75rem 0;
+    color: var(--ink-2); font-size: 0.9rem; line-height: 1.6;
+  }
+  .positioning li:first-child { border-top: none; }
+  .positioning li b { color: var(--ink); }
+
+  footer {
+    margin-top: 4rem; padding: 1.8rem 0 0; border-top: 1px solid var(--rule);
+    color: var(--ink-3); font-size: 0.78rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  }
+  footer .brand { font-weight: 700; color: var(--ink-2); }
+  footer .brand .dot { color: var(--green); }
+  footer a { color: var(--ink-3); }
+  footer a:hover { color: var(--ink-2); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tag, h1, .lede { animation: none; opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="bg" aria-hidden="true"></div>
+
+  <nav>
+    <span class="brand">pherix<span class="dot">.</span></span>
+    <span class="links">
+      <a href="../site/index.html">Home</a>
+      <a href="../site/get-started.html">Get started</a>
+      <a href="../site/docs.html">Docs</a>
+      <a href="../site/features.html">Features</a>
+      <a href="../site/demos.html">Demos</a>
+      <a class="here" href="roadmap.html">Roadmap</a>
+    </span>
+  </nav>
+
+  <main>
+    <p class="tag">Roadmap</p>
+    <h1>Where Pherix is going<span class="dot">.</span></h1>
+    <p class="lede">The engine is built. The work now is making it <b>visible</b> and <b>adoptable</b> — without compromising the data-untouched moat that keeps Pherix out of customer infrastructure.</p>
+
+    <!-- Phase 1 -->
+    <section class="phase done">
+      <div class="phase-head">
+        <h2><span class="which">Phase 1</span> — Engine</h2>
+        <span class="pill done">Done</span>
+      </div>
+      <p class="blurb">The runtime substrate. Every capability — commit, rollback, replay, dry-run, isolation, audit — is one traversal of one journal. <b>Both languages, fully offline tests.</b></p>
+
+      <ul class="items">
+        <li><b>Two lanes</b> — reversible (snapshot/restore via the backend) and irreversible (stage + gate, or stage + compensate).</li>
+        <li><b>MVCC-style isolation</b> between concurrent agents, with read/write-key conflict detection.</li>
+        <li><b>Deterministic replay</b> — fold the journal forward against fresh state, assert identical results.</li>
+        <li><b>Policy</b> — predicate evaluated at stage-time <em>and</em> commit-time (TOCTOU-safe).</li>
+        <li><b>Dry-run / speculation</b> — fold forward against a snapshot, then discard.</li>
+        <li><b>MCP gateway</b> — any-language agents hit the same engine, no per-language SDK required.</li>
+        <li><b>Crash-consistent recovery</b> driven from the durable journal (<code>core/recovery.py</code>).</li>
+        <li><b>World-state policy</b> via <code>PolicyContext.read</code> — predicates that read live state.</li>
+        <li><b>Longitudinal envelope</b> (<code>core/envelope.py</code>) — cross-process / single-host isolation.</li>
+        <li><b>16 Python adapters</b> + <b>14 TypeScript</b> at semantic + field-name parity.</li>
+        <li><b>Vetted compensator catalog</b> at module parity in both languages: <code>{identity, payments, provisioning, saas}</code>.</li>
+        <li><b>936 Python + 210 TypeScript tests</b>, fully offline. Parity proven by <code>tests/test_sdk_parity.py</code>: 13 scenarios producing structurally identical journals in both engines.</li>
+      </ul>
+
+      <div class="followup">
+        <b>Open follow-ups</b> — surfaced by the parity suite, deliberately scoped out of the engine pass:
+        <ul>
+          <li><code>sql.py</code> <code>execute_isolated</code> — returns a live <code>sqlite3.Cursor</code>; materialise via <code>.fetchall()</code> for readers (latent Python correctness bug).</li>
+          <li>TS <code>SqliteAdapter.readsCommittedOnly()</code> hardcoded <code>false</code>; on-disk cross-process isolation parity awaits the TS meta-connection path.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Phase 2 -->
+    <section class="phase active">
+      <div class="phase-head">
+        <h2><span class="which">Phase 2</span> — Make it visible</h2>
+        <span class="pill active">Active</span>
+      </div>
+      <p class="blurb">Build to the <b>base</b> — the things any buyer assumes work. Let the design partner bring the edge cases.</p>
+
+      <div class="group">
+        <p class="group-head">The laptop demo — six baseline stories</p>
+        <p class="blurb">A single 5-minute script the buyer runs on their own machine. Each story lands a different buyer; together they prove this is a <b>runtime</b>, not a rollback library.</p>
+        <ul class="items">
+          <li><b>Rollback on failure</b> — adapter restore. <em>"Our agent broke prod last week."</em></li>
+          <li><b>Isolation under concurrency</b> — N agents racing on the same DB, conflict caught. <em>"50 agents step on each other."</em></li>
+          <li><b>Policy / capability enforcement</b> — forbidden call blocked at stage time, before it happens. <em>Compliance / security / platform teams.</em></li>
+          <li><b>Irreversible gating</b> — money / email / external API paused for human approval. <em>"More autonomy, last-mile trust."</em></li>
+          <li><b>Dry-run / speculation</b> — show what the agent <em>would</em> do, without doing it. <em>Reviewer / planning UIs.</em></li>
+          <li><b>Replay + audit</b> — re-run yesterday's run on fresh state, confirm same result. <em>Compliance / debugging / regression.</em></li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <p class="group-head">Five additional engine stories</p>
+        <p class="blurb">Capabilities the engine already has, but no buyer-facing demo yet. Each is a real differentiator vs the obvious competitors.</p>
+        <ul class="items">
+          <li><b>Cross-language parity</b> — Python service + TypeScript edge worker on one journal. Most competitors are single-language.</li>
+          <li><b>MCP gateway / any-language agents</b> — Go / Rust / Java agents get the same guarantees without an SDK.</li>
+          <li><b>Crash recovery</b> — kill the process mid-transaction, restart, fold the durable journal forward, end consistent. Most "transactional" libraries cheat here.</li>
+          <li><b>World-state policy</b> — predicate evaluated against live external state at commit time. TOCTOU-safe by construction.</li>
+          <li><b>Journal-as-truth vs LLM transcript</b> — the LLM claims it called X but the journal disagrees. The journal is ground truth. Security / audit angle.</li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <p class="group-head">Distribution levers</p>
+        <p class="blurb">How the Saturday-afternoon user finds Pherix. They're the funnel; the enterprise sale follows them home.</p>
+        <ul class="items">
+          <li><b>One ecosystem integration</b> — pick one to start: LangGraph / OpenAI Agents SDK / Anthropic Agent SDK / Mastra.</li>
+          <li><b>Migration guide</b> — "naive tool calling → Pherix in 5 lines". The lowest-friction adoption path.</li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <p class="group-head">Operational proof points</p>
+        <p class="blurb">The questions every buyer asks before deployment. Own the numbers before they're asked.</p>
+        <ul class="items">
+          <li><b>Latency / throughput overhead</b> benchmark per tool call. Ship the number with the laptop demo.</li>
+          <li><b>Compensator catalog growth</b> — Stripe, SendGrid, Twilio, AWS side-effects, … "We did the unsexy work; you don't have to."</li>
+          <li><b>Multi-tenant isolation</b> for SaaS agent companies — one runtime, N tenants, no cross-leak.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Phase 3 -->
+    <section class="phase pending">
+      <div class="phase-head">
+        <h2><span class="which">Phase 3</span> — Paid hosted control plane</h2>
+        <span class="pill pending">Pending · design-partner-pulled</span>
+      </div>
+      <p class="blurb">OSS does single-host. The paid tier is the things that <b>inherently</b> need centralised infrastructure — you can't self-host them usefully even if you had the code, because the value <em>is</em> the aggregation. Not built ahead of demand; pulled in by the first design partner who needs them.</p>
+
+      <ul class="items">
+        <li><b>Cross-host arbiter</b> — multi-region, multi-agent coordination at org scale.</li>
+        <li><b>Audit search</b> across many agents — "what did agent #47 do to our database in Q3?"</li>
+        <li><b>Anonymised policy library</b> — aggregating across tenants, so each customer benefits from every other customer's threat-discovery without ever seeing their data.</li>
+      </ul>
+
+      <div class="constraint">
+        <b>Constraint — metadata only.</b> The control plane sees txn ids, effect shapes, policy verdicts, conflict witnesses. It never sees row values, file contents, or HTTP payloads. The data-untouched moat is preserved across <em>both</em> tiers — the boundary between OSS and paid is drawn on <em>infrastructure</em>, not on features.
+      </div>
+    </section>
+
+    <!-- Phase 4+ -->
+    <section class="phase future">
+      <div class="phase-head">
+        <h2><span class="which">Phase 4+</span> — Future-bets</h2>
+        <span class="pill future">Future</span>
+      </div>
+      <p class="blurb">Signposted on the trajectory, not committed. Each one extends the substrate without forcing engine surgery — the convergent-generalisation test.</p>
+
+      <ul class="items">
+        <li><b>Agent memory as an adapter</b> — governed and auditable memory mutations. Sleeper differentiator; the spec is already implied by the four axes.</li>
+        <li><b>Long-running / checkpointing</b> for hours-long autonomous agents that want to commit periodically rather than one giant transaction.</li>
+        <li><b>Hosted control plane preview UI</b> — even just a mocked screen of the multi-agent view, planting the upgrade seed before the plane ships.</li>
+      </ul>
+    </section>
+
+    <!-- Positioning -->
+    <section class="positioning">
+      <h2>Why this shape</h2>
+      <p class="blurb">The roadmap reflects four strategic choices that compound. They are the context that makes the phase ordering above make sense.</p>
+      <ul>
+        <li><b>AI-native infrastructure, not an AI-native application.</b> Pherix only exists because of the agent moment, but it sells shovels to the miners. The vertical-agent companies (Sierra, Decagon, Devin, Harvey, …) are customers, not competitors. The bigger that wave gets, the bigger Pherix's market.</li>
+        <li><b>Open-core, not freemium.</b> OSS gets every capability that runs on a single host. Paid is hosted infrastructure that <em>genuinely</em> cannot be self-hosted usefully. The line is drawn on infrastructure, not features. Never gate a single-host capability behind paid.</li>
+        <li><b>Small teams are the funnel, not a leak.</b> ~99% of users will never pay a cent. The ~1% that does funds the whole thing because they genuinely need the org-scale piece. The Saturday-afternoon user on a personal project is the same engineer who champions the enterprise sale 12 months later — same person, longer memory than you'd think.</li>
+        <li><b>Data-untouched moat.</b> The laptop demo runs on the buyer's machine; the hosted plane sees only metadata. Hosting cost tracks revenue by construction — zero customers means zero infra to run; first paying customer funds the first piece of the control plane.</li>
+      </ul>
+    </section>
+
+    <footer>
+      <span class="brand">pherix<span class="dot">.</span></span>
+      <span>
+        <a href="../site/index.html">Home</a> ·
+        <a href="../site/get-started.html">Get started</a> ·
+        <a href="../site/docs.html">Docs</a> ·
+        <a href="../site/features.html">Features</a> ·
+        <a href="../site/demos.html">Demos</a> ·
+        <a href="roadmap.html">Roadmap</a> ·
+        <a href="https://github.com/LukeyP02/Pherix">GitHub</a>
+      </span>
+    </footer>
+  </main>
+</body>
+</html>
