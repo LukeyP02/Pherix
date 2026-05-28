@@ -1,155 +1,48 @@
-# Pherix — integration recipe for AI coding assistants
+# Pherix
 
-> If you are an AI coding assistant (Claude Code, Cursor, Aider, …) integrating
-> Pherix into an existing agent, follow this file top to bottom. It is written
-> to be executed, not just read. Every code block is correct against the current
-> API — mirror the idioms exactly, especially the three gotchas in §6.
+> Pherix is a transactional resource runtime for AI agents — a Python + TypeScript
+> library that gives an agent's tool calls database-style ACID guarantees over their
+> external side-effects (DB writes, file writes, API calls). Reversible effects run live
+> and roll back via real backend semantics (DB savepoints, filesystem copy-on-write);
+> irreversible effects are staged, bounded by policy, and either auto-compensated or gated.
+> Every capability — commit, rollback, replay, dry-run, isolation, audit — is one
+> traversal of a single append-only effect journal.
 
-## 1. What Pherix is (and is not)
+Pherix is a library you wrap your agent's tool-call layer with. It is **not** an agent
+framework, a permission system, or an observability tool: it enforces and contains; it does
+not run the agent or call the LLM. Phase 1 (the engine) is built — both lanes, MVCC
+isolation, replay, policy, dry-run, the MCP gateway, crash-consistent recovery — with 936
+Python tests passing (959 collected) + 214 TypeScript, fully offline.
 
-Pherix gives an agent's **tool calls** database-style transaction semantics over
-their *external side-effects*. You wrap the agent's tool layer; the agent loop
-and the model provider are unchanged and stay transaction-unaware.
+This file is the curated index. For the complete, executable integration guide in one
+fetch, see [llms-full.txt](llms-full.txt).
 
-- **Reversible effects** (SQL writes, file writes) run live and are journalled;
-  on rollback the adapter restores a real before-snapshot (SQL `SAVEPOINT`, etc.).
-- **Irreversible effects** (charging a card, sending a message) are *staged*: the
-  agent gets a placeholder, and they fire only at `commit()`. If a staged effect
-  has a registered **compensator** (a semantic inverse) it auto-commits; if not,
-  it **gates** — `commit()` blocks until a human/policy calls
-  `approve_irreversible()`.
+## Start here
 
-It is **not** a permission system, an agent framework, or an observability tool.
-It enforces and contains; it does not run the agent or call the LLM.
+- [llms-full.txt](llms-full.txt): the complete, executable integration recipe — follow it top to bottom to wrap an existing agent in Pherix, with the three silent-failure gotchas spelled out.
+- [README](README.md): install, minimal wrap, quickstart with expected output.
+- [Project spec (CLAUDE.md)](CLAUDE.md): the full system definition — the journal, the four axes, the execution model, the conventions.
 
-## 2. Install
+## Concepts & architecture
 
-```bash
-pip install pherix          # backend drivers (sqlite3 is stdlib) load lazily
-```
+- [Architecture, drawn](docs/architecture.html): the stack, the journal and its three folds, the reversible/irreversible lanes, the two undo mechanisms (adapter restore vs compensator), the module map.
+- [North star](docs/north-star.html): the essence — make being wrong cheap, via four orthogonal axes (interception, policy, adapters, compensators) over a journal.
+- [Roadmap](docs/ROADMAP.md): slice-by-slice build status, the interception ladder, the over-containment tuning system.
+- [Code roadmap](docs/code-roadmap.html): what is built vs next vs engineering debt, reconciled against the code.
 
-## 3. The mental model (one paragraph)
+## Position & strategy
 
-Decorate each tool with `@tool(resource=...)`. Open `with agent_txn(adapters) as
-txn:` around the agent's work. Inside that block every decorated tool call is
-intercepted, journalled, and routed to the adapter named by its `resource`.
-**Clean exit auto-commits; an exception auto-rolls-back.** Outside the block the
-decorated tool is a transparent passthrough — so the same tool functions work
-un-journalled in tests.
+- [Position](docs/position.html): who it is for, why they pay, the honest privacy-bounded moat, the open-core pricing model.
+- [Distribution](docs/distribution.html): the watch/enforce/reverse message, the hook→trust→moat adoption ladder, channel cadence, the heavy-tailed ICP.
+- [Verdict](docs/verdict.html): an honest scored read on code quality, market positioning, and feasibility.
 
-## 4. Minimal integration — the reversible (SQL) path
+## Examples
 
-This is the smallest correct integration. Copy the shape exactly.
+- examples/quickstart.py: the smallest correct integration, verified end-to-end in a fresh venv.
+- examples/slice1_demo.py … slice8_demo.py: one runnable demo per engine capability.
+- examples/demo: the watchable three-act demo (reversible unwind, gated irreversible, audit readback).
 
-```python
-import sqlite3
-from pherix import agent_txn, tool, SQLiteAdapter, AuditJournal
+## Optional
 
-# (a) Decorate each side-effecting tool. The first param (`conn`) is the
-#     resource handle Pherix injects — the agent never passes it.
-@tool(resource="sql")
-def insert_user(conn, name, role):
-    conn.execute("INSERT INTO users (name, role) VALUES (?, ?)", (name, role))
-    return name
-
-# (b) The connection MUST be autocommit so Pherix controls every
-#     BEGIN/SAVEPOINT/COMMIT/ROLLBACK itself.
-conn = sqlite3.connect("app.db", isolation_level=None)
-
-# (c) Map each `resource` string to an adapter instance.
-adapters = {"sql": SQLiteAdapter(conn)}
-audit = AuditJournal.in_memory()        # or AuditJournal("audit.db") to persist
-
-# (d) Wrap the agent's existing work. No changes to the agent loop itself —
-#     it just calls the decorated tools as before.
-with agent_txn(adapters, audit=audit) as txn:
-    run_the_agent()                      # whatever your agent already does
-    # clean exit -> auto-commit; raised exception -> auto-rollback
-```
-
-To undo mid-sequence, call `txn.rollback()` explicitly (everything journalled so
-far is restored). To inspect what happened: `audit.get_effects(txn.txn_id)`.
-
-## 5. The irreversible path — gate and compensator
-
-Declare irreversible tools with `reversible=False, injects_handle=False` (no
-handle is injected — they call your real SDK directly). Two sub-cases:
-
-```python
-from pherix import agent_txn, tool, HTTPAdapter, SQLiteAdapter, GateBlocked
-
-# A compensator is just another registered tool — the semantic inverse.
-@tool(resource="http", reversible=False, injects_handle=False)
-def refund_charge(customer, amount):
-    stripe.Refund.create(customer=customer, amount=amount)
-
-# Irreversible + compensator -> auto-commits, refund runs only on rollback.
-@tool(resource="http", reversible=False, injects_handle=False,
-      compensator="refund_charge")          # reference the inverse BY NAME
-def charge_card(customer, amount):
-    return stripe.Charge.create(customer=customer, amount=amount)
-
-# Irreversible + NO compensator -> gates; needs explicit approval at commit.
-@tool(resource="http", reversible=False, injects_handle=False)
-def send_email(to, body):
-    sendgrid.send(to=to, body=body)        # an email cannot be un-sent
-
-adapters = {"sql": SQLiteAdapter(conn), "http": HTTPAdapter()}
-with agent_txn(adapters) as txn:
-    charge_card(customer="alice", amount=4200)        # staged
-    receipt = send_email(to="alice@x.com", body="hi") # staged -> placeholder
-    # `receipt` is NOT the email result — it's a StagedResult sentinel.
-    # A human/policy must approve the un-compensatable effect before commit:
-    txn.approve_irreversible(receipt.effect_id)
-    # If you DON'T approve, commit() raises GateBlocked and the whole txn
-    # rolls back — no charge, no email, SQL restored. That is the point.
-```
-
-## 6. The three gotchas — get these wrong and it fails silently
-
-1. **Isolation needs explicit read/write keys.** Pherix does not parse SQL. For
-   multi-agent isolation to work, route reads/writes through `execute_isolated`
-   and declare the rows touched. Miss this and concurrent agents will not be
-   conflict-checked.
-   ```python
-   from pherix.core.adapters.sql import execute_isolated   # NB: not top-level
-   @tool(resource="sql")
-   def credit(conn, account, amount):
-       execute_isolated(
-           conn, "UPDATE accounts SET val = val + ? WHERE name = ?",
-           (amount, account),
-           writes=[("accounts", account)],   # ("table", primary-key-value)
-       )
-   ```
-   Then pass a policy: `agent_txn(adapters, isolation=Abort())`. For
-   `Retry(n)` you must use `run_txn(fn, adapters, isolation=Retry(2))` instead
-   of the `with` form (Pherix needs to own the callable to re-run it).
-
-2. **A staged irreversible returns a placeholder, not the real result.** The
-   value back from an irreversible tool call is a `StagedResult` carrying
-   `.effect_id`, not the SDK's return value (which doesn't exist until commit).
-   Do not feed it into a later step expecting the real id. If step N needs the
-   real result of an irreversible step, that step must itself be reversible or
-   the sequence must be restructured.
-
-3. **The SQLite connection must be `isolation_level=None` (autocommit).** Pherix
-   issues every BEGIN/SAVEPOINT/COMMIT/ROLLBACK. If sqlite3's implicit
-   transaction machinery is active, rollback will not behave.
-
-## 7. `resource` strings must match the adapters dict
-
-`@tool(resource="sql")` routes to `adapters["sql"]`. A typo'd resource raises at
-call time ("no adapter registered for resource …"). Keep the strings in one place.
-
-## 8. Verify the integration (do this before declaring success)
-
-1. Run a transaction that calls a reversible tool, then `txn.rollback()`; assert
-   the side-effect is gone from the resource.
-2. Run an irreversible-with-no-compensator tool without approving; assert
-   `GateBlocked` is raised and nothing fired.
-3. Read `audit.get_effects(txn.txn_id)` and confirm one journal row per tool call
-   with the expected status (`APPLIED` / `COMPENSATED` / `GATED`).
-
-If all three hold, the integration is correct. Report what you wrapped, which
-resources you mapped, and any tool whose result a later step depended on (gotcha
-#2) so a human can confirm the sequencing is safe.
+- [Pressure test](docs/pressure-test.html): what was tested and fixed in the Phase 1 audit.
+- TypeScript SDK (pherix-ts/): 14 adapters at semantic + field-name parity with Python; a parity suite proves both engines produce structurally identical journals.

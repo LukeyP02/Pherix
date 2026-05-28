@@ -1,0 +1,155 @@
+# Pherix — integration recipe for AI coding assistants
+
+> If you are an AI coding assistant (Claude Code, Cursor, Aider, …) integrating
+> Pherix into an existing agent, follow this file top to bottom. It is written
+> to be executed, not just read. Every code block is correct against the current
+> API — mirror the idioms exactly, especially the three gotchas in §6.
+
+## 1. What Pherix is (and is not)
+
+Pherix gives an agent's **tool calls** database-style transaction semantics over
+their *external side-effects*. You wrap the agent's tool layer; the agent loop
+and the model provider are unchanged and stay transaction-unaware.
+
+- **Reversible effects** (SQL writes, file writes) run live and are journalled;
+  on rollback the adapter restores a real before-snapshot (SQL `SAVEPOINT`, etc.).
+- **Irreversible effects** (charging a card, sending a message) are *staged*: the
+  agent gets a placeholder, and they fire only at `commit()`. If a staged effect
+  has a registered **compensator** (a semantic inverse) it auto-commits; if not,
+  it **gates** — `commit()` blocks until a human/policy calls
+  `approve_irreversible()`.
+
+It is **not** a permission system, an agent framework, or an observability tool.
+It enforces and contains; it does not run the agent or call the LLM.
+
+## 2. Install
+
+```bash
+pip install pherix          # backend drivers (sqlite3 is stdlib) load lazily
+```
+
+## 3. The mental model (one paragraph)
+
+Decorate each tool with `@tool(resource=...)`. Open `with agent_txn(adapters) as
+txn:` around the agent's work. Inside that block every decorated tool call is
+intercepted, journalled, and routed to the adapter named by its `resource`.
+**Clean exit auto-commits; an exception auto-rolls-back.** Outside the block the
+decorated tool is a transparent passthrough — so the same tool functions work
+un-journalled in tests.
+
+## 4. Minimal integration — the reversible (SQL) path
+
+This is the smallest correct integration. Copy the shape exactly.
+
+```python
+import sqlite3
+from pherix import agent_txn, tool, SQLiteAdapter, AuditJournal
+
+# (a) Decorate each side-effecting tool. The first param (`conn`) is the
+#     resource handle Pherix injects — the agent never passes it.
+@tool(resource="sql")
+def insert_user(conn, name, role):
+    conn.execute("INSERT INTO users (name, role) VALUES (?, ?)", (name, role))
+    return name
+
+# (b) The connection MUST be autocommit so Pherix controls every
+#     BEGIN/SAVEPOINT/COMMIT/ROLLBACK itself.
+conn = sqlite3.connect("app.db", isolation_level=None)
+
+# (c) Map each `resource` string to an adapter instance.
+adapters = {"sql": SQLiteAdapter(conn)}
+audit = AuditJournal.in_memory()        # or AuditJournal("audit.db") to persist
+
+# (d) Wrap the agent's existing work. No changes to the agent loop itself —
+#     it just calls the decorated tools as before.
+with agent_txn(adapters, audit=audit) as txn:
+    run_the_agent()                      # whatever your agent already does
+    # clean exit -> auto-commit; raised exception -> auto-rollback
+```
+
+To undo mid-sequence, call `txn.rollback()` explicitly (everything journalled so
+far is restored). To inspect what happened: `audit.get_effects(txn.txn_id)`.
+
+## 5. The irreversible path — gate and compensator
+
+Declare irreversible tools with `reversible=False, injects_handle=False` (no
+handle is injected — they call your real SDK directly). Two sub-cases:
+
+```python
+from pherix import agent_txn, tool, HTTPAdapter, SQLiteAdapter, GateBlocked
+
+# A compensator is just another registered tool — the semantic inverse.
+@tool(resource="http", reversible=False, injects_handle=False)
+def refund_charge(customer, amount):
+    stripe.Refund.create(customer=customer, amount=amount)
+
+# Irreversible + compensator -> auto-commits, refund runs only on rollback.
+@tool(resource="http", reversible=False, injects_handle=False,
+      compensator="refund_charge")          # reference the inverse BY NAME
+def charge_card(customer, amount):
+    return stripe.Charge.create(customer=customer, amount=amount)
+
+# Irreversible + NO compensator -> gates; needs explicit approval at commit.
+@tool(resource="http", reversible=False, injects_handle=False)
+def send_email(to, body):
+    sendgrid.send(to=to, body=body)        # an email cannot be un-sent
+
+adapters = {"sql": SQLiteAdapter(conn), "http": HTTPAdapter()}
+with agent_txn(adapters) as txn:
+    charge_card(customer="alice", amount=4200)        # staged
+    receipt = send_email(to="alice@x.com", body="hi") # staged -> placeholder
+    # `receipt` is NOT the email result — it's a StagedResult sentinel.
+    # A human/policy must approve the un-compensatable effect before commit:
+    txn.approve_irreversible(receipt.effect_id)
+    # If you DON'T approve, commit() raises GateBlocked and the whole txn
+    # rolls back — no charge, no email, SQL restored. That is the point.
+```
+
+## 6. The three gotchas — get these wrong and it fails silently
+
+1. **Isolation needs explicit read/write keys.** Pherix does not parse SQL. For
+   multi-agent isolation to work, route reads/writes through `execute_isolated`
+   and declare the rows touched. Miss this and concurrent agents will not be
+   conflict-checked.
+   ```python
+   from pherix.core.adapters.sql import execute_isolated   # NB: not top-level
+   @tool(resource="sql")
+   def credit(conn, account, amount):
+       execute_isolated(
+           conn, "UPDATE accounts SET val = val + ? WHERE name = ?",
+           (amount, account),
+           writes=[("accounts", account)],   # ("table", primary-key-value)
+       )
+   ```
+   Then pass a policy: `agent_txn(adapters, isolation=Abort())`. For
+   `Retry(n)` you must use `run_txn(fn, adapters, isolation=Retry(2))` instead
+   of the `with` form (Pherix needs to own the callable to re-run it).
+
+2. **A staged irreversible returns a placeholder, not the real result.** The
+   value back from an irreversible tool call is a `StagedResult` carrying
+   `.effect_id`, not the SDK's return value (which doesn't exist until commit).
+   Do not feed it into a later step expecting the real id. If step N needs the
+   real result of an irreversible step, that step must itself be reversible or
+   the sequence must be restructured.
+
+3. **The SQLite connection must be `isolation_level=None` (autocommit).** Pherix
+   issues every BEGIN/SAVEPOINT/COMMIT/ROLLBACK. If sqlite3's implicit
+   transaction machinery is active, rollback will not behave.
+
+## 7. `resource` strings must match the adapters dict
+
+`@tool(resource="sql")` routes to `adapters["sql"]`. A typo'd resource raises at
+call time ("no adapter registered for resource …"). Keep the strings in one place.
+
+## 8. Verify the integration (do this before declaring success)
+
+1. Run a transaction that calls a reversible tool, then `txn.rollback()`; assert
+   the side-effect is gone from the resource.
+2. Run an irreversible-with-no-compensator tool without approving; assert
+   `GateBlocked` is raised and nothing fired.
+3. Read `audit.get_effects(txn.txn_id)` and confirm one journal row per tool call
+   with the expected status (`APPLIED` / `COMPENSATED` / `GATED`).
+
+If all three hold, the integration is correct. Report what you wrapped, which
+resources you mapped, and any tool whose result a later step depended on (gotcha
+#2) so a human can confirm the sequencing is safe.
