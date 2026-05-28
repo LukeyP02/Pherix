@@ -10,6 +10,13 @@ const state = {
   timer: null,
   seenTxns: new Set(),   // for the "fresh row" flash in live mode
   firstLoad: true,
+  // scrubber
+  scrub: {
+    effects: [],         // the effects array for the currently-loaded transaction
+    head: -1,            // current playhead index into effects (-1 = off / not loaded)
+    playing: false,
+    playTimer: null,
+  },
 };
 
 const esc = (s) =>
@@ -124,12 +131,19 @@ async function loadDetail() {
     return;
   }
   const t = data.transaction;
+  const effects = data.effects || [];
   const banners = {
     STUCK: `<div class="banner error">⚠ STUCK — a compensator was missing or failed. The journal cannot complete the unwind; an operator must intervene.</div>`,
     ROLLED_BACK: `<div class="banner undone">↩ Rolled back — every effect was undone via the backward fold. Nothing took effect.</div>`,
     PARTIAL: `<div class="banner error">◐ Partial — a staged irreversible failed mid-fire; the txn is unwinding.</div>`,
     STAGED: t.has_gate ? `<div class="banner pending">⏸ Held at the gate — an irreversible effect is awaiting approval before it can fire.</div>` : "",
   };
+
+  // reset scrubber state for this transaction
+  stopPlay();
+  state.scrub.effects = effects;
+  state.scrub.head = -1;
+
   detail.innerHTML = `
     <div class="detail-head">
       <h2>${esc(t.txn_id)} ${pill(t.tone, t.state)} ${t.dry_run ? pill("unknown", "dry-run") : ""}</h2>
@@ -143,8 +157,12 @@ async function loadDetail() {
       </div>
     </div>
     ${banners[t.state] || ""}
-    <div class="timeline">${data.effects.map(renderEffect).join("")}</div>
+    ${renderScrubber(effects.length)}
+    <div class="timeline">${effects.map(renderEffect).join("")}</div>
   `;
+
+  // wire up scrubber controls (must run after innerHTML is set)
+  initScrubber();
 }
 
 function renderEffect(e) {
@@ -175,6 +193,104 @@ function renderEffect(e) {
     ${verdicts ? `<div class="verdicts">${verdicts}</div>` : ""}
     ${args}
   </div>`;
+}
+
+/* --- session-replay scrubber --- */
+
+/** Build the scrubber toolbar HTML and inject it before the timeline. */
+function renderScrubber(count) {
+  if (count === 0) return "";
+  return `
+    <div class="scrubber" id="scrubber">
+      <div class="scrubber-btns">
+        <button class="scrub-btn" id="sBtnStart"  title="jump to start">⏮</button>
+        <button class="scrub-btn" id="sBtnBack"   title="step back">◀</button>
+        <button class="scrub-btn" id="sBtnPlay"   title="play / pause">▶</button>
+        <button class="scrub-btn" id="sBtnFwd"    title="step forward">▶▶</button>
+        <button class="scrub-btn" id="sBtnEnd"    title="jump to end">⏭</button>
+      </div>
+      <input class="scrub-range" id="sRange" type="range"
+             min="0" max="${count - 1}" value="0" step="1" />
+      <span class="scrub-pos" id="sPosLabel">0 / ${count - 1}</span>
+    </div>`;
+}
+
+/** Wire scrubber DOM events. Called once after loadDetail re-renders. */
+function initScrubber() {
+  const s = state.scrub;
+  const n = s.effects.length;
+  if (n === 0) return;
+
+  // initialise to first effect visible
+  setScrubHead(0);
+
+  const sBtnPlay  = $("#sBtnPlay");
+  const sBtnBack  = $("#sBtnBack");
+  const sBtnFwd   = $("#sBtnFwd");
+  const sBtnStart = $("#sBtnStart");
+  const sBtnEnd   = $("#sBtnEnd");
+  const sRange    = $("#sRange");
+
+  sBtnPlay.addEventListener("click", () => togglePlay());
+  sBtnBack.addEventListener("click", () => { stopPlay(); setScrubHead(s.head - 1); });
+  sBtnFwd.addEventListener("click",  () => { stopPlay(); setScrubHead(s.head + 1); });
+  sBtnStart.addEventListener("click",() => { stopPlay(); setScrubHead(0); });
+  sBtnEnd.addEventListener("click",  () => { stopPlay(); setScrubHead(n - 1); });
+  sRange.addEventListener("input",   () => { stopPlay(); setScrubHead(Number(sRange.value)); });
+}
+
+/** Move the playhead to position `pos` (clamped to valid range). */
+function setScrubHead(pos) {
+  const s = state.scrub;
+  const n = s.effects.length;
+  if (n === 0) return;
+  pos = Math.max(0, Math.min(n - 1, pos));
+  s.head = pos;
+
+  // update range + label
+  const sRange = $("#sRange");
+  const sPosLabel = $("#sPosLabel");
+  if (sRange) sRange.value = pos;
+  if (sPosLabel) sPosLabel.textContent = `${pos} / ${n - 1}`;
+
+  // apply CSS classes to each .effect node
+  const nodes = document.querySelectorAll(".timeline .effect");
+  nodes.forEach((el, i) => {
+    el.classList.remove("scrub-past", "scrub-current", "scrub-future");
+    if (i < pos)  el.classList.add("scrub-past");
+    else if (i === pos) el.classList.add("scrub-current");
+    else          el.classList.add("scrub-future");
+  });
+
+  // scroll current effect into view
+  const cur = document.querySelector(".timeline .effect.scrub-current");
+  if (cur) cur.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function togglePlay() {
+  if (state.scrub.playing) stopPlay();
+  else startPlay();
+}
+
+function startPlay() {
+  const s = state.scrub;
+  if (s.effects.length === 0) return;
+  s.playing = true;
+  const btn = $("#sBtnPlay");
+  if (btn) { btn.textContent = "⏸"; btn.classList.add("active"); }
+  // advance every 600ms; stop when we hit the last effect
+  s.playTimer = setInterval(() => {
+    if (s.head >= s.effects.length - 1) { stopPlay(); return; }
+    setScrubHead(s.head + 1);
+  }, 600);
+}
+
+function stopPlay() {
+  const s = state.scrub;
+  s.playing = false;
+  if (s.playTimer) { clearInterval(s.playTimer); s.playTimer = null; }
+  const btn = $("#sBtnPlay");
+  if (btn) { btn.textContent = "▶"; btn.classList.remove("active"); }
 }
 
 /* --- live mode --- */

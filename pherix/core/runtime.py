@@ -726,7 +726,7 @@ def agent_txn(
     commit-start; the policy decides what to do with conflicts.
     """
     policy = policy or Policy.allow_all()
-    audit = audit or AuditJournal.in_memory()
+    audit = audit or AuditJournal.default()
 
     for adapter in _unique(adapters):
         if isinstance(adapter, TransactionalResourceAdapter):

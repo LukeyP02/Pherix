@@ -1,5 +1,6 @@
 """Pherix — a transactional resource runtime for AI agents."""
 
+from pherix.core.audit import default_journal_path
 from pherix.frontends.library import (
     Abort,
     Allow,
@@ -103,6 +104,7 @@ __all__ = [
     "publish_tool",
     "tombstone_compensator",
     "AuditJournal",
+    "default_journal_path",
     "ResourceAdapter",
     "TransactionalResourceAdapter",
     "VersionedResourceAdapter",

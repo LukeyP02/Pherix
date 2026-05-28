@@ -197,12 +197,19 @@ def test_explicit_commit_then_clean_exit_does_not_double_commit(conn, insert_use
 
 
 def test_default_audit_persists_the_whole_story(conn, insert_user):
-    # audit=None means "default audit store", not "no persistence".
+    # audit=None means "default audit store", not "no persistence". The new
+    # default is durable — AuditJournal.default() at $PHERIX_JOURNAL (pinned to
+    # a per-test tmp path by the autouse _isolate_journal fixture), NOT the old
+    # in-memory journal.
+    import os
+
     with agent_txn({"sql": SQLiteAdapter(conn)}) as txn:
         insert_user(name="bob")
         insert_user(name="alice")
 
     assert txn.audit is not None
+    assert txn.audit.path == os.environ["PHERIX_JOURNAL"]
+    assert txn.audit.path != ":memory:"
     assert txn.audit.get_transaction(txn.txn_id)["state"] == "COMMITTED"
     assert [e["status"] for e in txn.audit.get_effects(txn.txn_id)] == [
         "APPLIED",

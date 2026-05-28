@@ -3,7 +3,9 @@ import json
 import pytest
 
 from pherix.core.adapters.base import SnapshotHandle
-from pherix.core.audit import AuditJournal
+from pathlib import Path
+
+from pherix.core.audit import AuditJournal, default_journal_path
 from pherix.core.effects import Effect, EffectStatus
 from pherix.core.transaction import Transaction, TxnState
 
@@ -150,3 +152,43 @@ def test_audit_update_effect_persists_late_appended_keys():
     assert json.loads(rows[0]["read_keys"]) == [["sql", ["users", "bob"], 7]]
     assert json.loads(rows[0]["write_keys"]) == [["sql", ["users", "bob"]]]
     assert rows[0]["status"] == "APPLIED"
+
+
+# --- the durable default location (flight-recorder: persist by default) ------
+
+
+def test_default_journal_path_honours_env_var(monkeypatch, tmp_path):
+    """$PHERIX_JOURNAL, when set, names the journal location verbatim."""
+    target = str(tmp_path / "custom" / "journal.db")
+    monkeypatch.setenv("PHERIX_JOURNAL", target)
+    assert default_journal_path() == target
+
+
+def test_default_journal_path_falls_back_to_home(monkeypatch, tmp_path):
+    """With $PHERIX_JOURNAL unset, the default is ~/.pherix/journal.db, and the
+    parent ~/.pherix/ directory is created on the way out."""
+    monkeypatch.delenv("PHERIX_JOURNAL", raising=False)
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+    path = default_journal_path()
+
+    assert path == str(fake_home / ".pherix" / "journal.db")
+    assert (fake_home / ".pherix").is_dir()
+
+
+def test_audit_default_opens_the_canonical_path(monkeypatch, tmp_path):
+    """AuditJournal.default() is the persistent default — it opens the file at
+    default_journal_path(), NOT an in-memory journal."""
+    target = str(tmp_path / "journal.db")
+    monkeypatch.setenv("PHERIX_JOURNAL", target)
+    with AuditJournal.default() as j:
+        assert j.path == target
+        assert j.path != ":memory:"
+    assert Path(target).exists()
+
+
+def test_in_memory_remains_the_explicit_ephemeral_opt_out():
+    """in_memory() still yields a non-durable :memory: journal — the explicit
+    way to opt OUT of persistence now that default() persists."""
+    assert AuditJournal.in_memory().path == ":memory:"

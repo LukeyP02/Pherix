@@ -9,8 +9,10 @@ Slice 1, an in-place status update is enough to tell the whole story.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from pherix.core.effects import Effect, strict_json_default
@@ -73,6 +75,24 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def default_journal_path() -> str:
+    """The canonical on-disk journal location for a default agent run.
+
+    Returns ``$PHERIX_JOURNAL`` when the operator has named a location, else
+    ``~/.pherix/journal.db``. The parent directory (``~/.pherix/``) is created
+    if absent so the caller can open the connection without a pre-flight
+    ``mkdir``. This *names* the durable default; it does not weaken the
+    "operator picks durability" stance — :meth:`AuditJournal.in_memory` stays
+    the explicit ephemeral opt-out.
+    """
+    env_path = os.environ.get("PHERIX_JOURNAL")
+    if env_path:
+        return env_path
+    path = Path.home() / ".pherix" / "journal.db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return str(path)
+
+
 class AuditJournal:
     """SQLite-backed audit journal — persistent transcript of every effect.
 
@@ -99,6 +119,17 @@ class AuditJournal:
         backgrounding it is rejected at the call site.
         """
         return self._path
+
+    @classmethod
+    def default(cls) -> "AuditJournal":
+        """Construct a journal at the canonical durable location.
+
+        Delegates to :func:`default_journal_path` — ``$PHERIX_JOURNAL`` if set,
+        else ``~/.pherix/journal.db``. This is what an :func:`agent_txn` with no
+        explicit ``audit=`` opens, so default agent runs persist their journal
+        across process restarts (the Slice 5 replay machinery depends on it).
+        """
+        return cls(default_journal_path())
 
     @classmethod
     def in_memory(cls) -> "AuditJournal":

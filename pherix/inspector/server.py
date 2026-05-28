@@ -188,12 +188,35 @@ def main(argv: list[str] | None = None) -> int:
         prog="python -m pherix.inspector",
         description="Live governance console over a Pherix audit journal.",
     )
-    ap.add_argument("--db", required=True, help="path to the audit journal SQLite file")
+    ap.add_argument(
+        "--db",
+        default=None,
+        help=(
+            "path to the audit journal SQLite file "
+            "(default: the standard Pherix journal location)"
+        ),
+    )
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--verbose", action="store_true", help="log each request")
     args = ap.parse_args(argv)
-    serve(args.db, args.host, args.port, args.verbose)
+
+    if args.db is None:
+        from pherix.core.audit import default_journal_path  # parallel stream
+
+        db_path = str(default_journal_path())
+    else:
+        db_path = args.db
+
+    import os
+
+    if not os.path.exists(db_path):
+        print(
+            f"No journal yet at {db_path!r} — run an agent first, or pass --db."
+        )
+        return 1
+
+    serve(db_path, args.host, args.port, args.verbose)
     return 0
 
 

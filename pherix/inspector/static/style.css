@@ -119,3 +119,38 @@ header {
 
 .empty { color: var(--ink-3); padding: 2rem 1rem; text-align: center; }
 .legend { color: var(--ink-3); font-size: 0.7rem; padding: 0.5rem 0.8rem; border-top: 1px solid var(--rule); display: flex; gap: 0.7rem; flex-wrap: wrap; }
+
+/* --- session-replay scrubber --- */
+.scrubber {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 0.75rem; margin: 0.6rem 0;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 5px;
+  flex-wrap: wrap;
+}
+.scrubber-btns { display: flex; gap: 0.25rem; }
+.scrub-btn {
+  background: var(--panel-2); border: 1px solid var(--rule); border-radius: 4px;
+  color: var(--ink-2); font: inherit; font-size: 0.8rem;
+  padding: 0.2rem 0.55rem; cursor: pointer; transition: color 0.1s, border-color 0.1s;
+  line-height: 1.4;
+}
+.scrub-btn:hover { color: var(--ink); border-color: var(--ink-3); }
+.scrub-btn.active { color: var(--accent); border-color: var(--accent); }
+.scrub-range {
+  flex: 1; min-width: 80px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.scrub-pos {
+  color: var(--ink-3); font-size: 0.72rem; white-space: nowrap;
+  min-width: 4.5rem; text-align: right;
+}
+
+/* effect states controlled by the scrubber playhead */
+.effect.scrub-past   { opacity: 1; }
+.effect.scrub-current {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: var(--panel-2);
+}
+.effect.scrub-future { opacity: 0.28; filter: saturate(0.35); }
