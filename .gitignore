@@ -17,9 +17,10 @@ reports/
 .gstack/
 *.demo.json
 
-# Kept local, out of the repo (operator docs, demos, and the tests that
+# Kept local, out of the repo (operator HTML notes, demos, and the tests that
 # exercise the demo/dogfood/sims scaffolding). Files still live on disk.
-docs/
+# docs/ is now TRACKED shipped documentation; notes/ is the local HTML scratch.
+notes/
 examples/
 tests/test_dogfood*.py
 tests/test_sims_*.py

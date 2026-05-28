@@ -323,10 +323,12 @@ orchestrator, workers, reviewers. Adjust accordingly:
 - **Default Luke-facing output is HTML, not markdown.** Anything the operator will
   *re-read or share* — decision aids, architecture explainers, walked-through
   examples, slice deep-dives — ships as a self-contained HTML artifact under
-  `docs/`, served by the single `python -m http.server` at the repo root. Markdown
-  stays the register for *agent-consumed* artifacts (`CLAUDE.md`, `TASK.md`,
-  `ROADMAP.md`) and brief chat answers. The global `~/.claude/CLAUDE.md` §"Output
-  format" defines the bar HTML must clear; this project enforces it.
+  `notes/` (the local HTML scratch, kept out of the repo), served by the single
+  `python -m http.server` at the repo root. `docs/` is reserved for *tracked,
+  shipped* documentation (e.g. operator recipes). Markdown stays the register for
+  *agent-consumed* artifacts (`CLAUDE.md`, `TASK.md`, `ROADMAP.md`) and brief chat
+  answers. The global `~/.claude/CLAUDE.md` §"Output format" defines the bar HTML
+  must clear; this project enforces it.
 - **Trust the operator's reasoning.** If you find yourself simplifying past the
   actual decision, you've gone too far — the goal is *clarity*, not infantilisation.
   Same depth, better signposting.
@@ -334,14 +336,14 @@ orchestrator, workers, reviewers. Adjust accordingly:
   "explain how X works": full picture with terms defined and trade-offs surfaced.
   Match length to the operator's question, not to your own thoroughness instinct.
 - **Keep Luke-facing HTML current with git state.** Every slice merge and every
-  big architectural decision triggers a sweep of the `docs/` suite as part of
+  big architectural decision triggers a sweep of the `notes/` suite as part of
   the same change: update status colours (done / active / pending) and "you are
-  here" markers in `docs/index.html` and `docs/roadmap.html`; refresh commit
+  here" markers in `notes/index.html` and `notes/roadmap.html`; refresh commit
   SHAs and test counts; bring slice cards' status pills and body copy in line
-  with `docs/ROADMAP.md`; resolve / strike-through any follow-ups that the
+  with `notes/ROADMAP.md`; resolve / strike-through any follow-ups that the
   merge addressed. Retire decision-aid pages once their slice merges
-  (`docs/slice-N-decisions.html` — delete the file and remove its hub card; the
-  reasoning lives in the code, the merge commit, and `docs/ROADMAP.md`). The
+  (`notes/slice-N-decisions.html` — delete the file and remove its hub card; the
+  reasoning lives in the code, the merge commit, and `notes/ROADMAP.md`). The
   Slice 8+ trilogy — **determinism, memory, audit** — must stay consistently
   reflected across `future.html`, `roadmap.html`, and the hub. Stale HTML is
   technical debt; flag and fix as part of every merge sweep, not later.
