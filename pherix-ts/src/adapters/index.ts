@@ -42,3 +42,4 @@ export { MongoAdapter } from "./mongodb.js";
 export type { MongoDatabase, MongoCollection, MongoDoc } from "./mongodb.js";
 export { MySQLAdapter } from "./mysql.js";
 export type { MySQLConnection } from "./mysql.js";
+export { MemoryAdapter, MemoryHandle } from "./memory.js";

@@ -89,6 +89,7 @@ from typing import Any, Callable
 
 import pytest
 
+from pherix.core.adapters.memory import MemoryAdapter
 from pherix.core.adapters.dynamodb import DynamoDBAdapter
 from pherix.core.adapters.elasticsearch import ElasticsearchAdapter
 from pherix.core.adapters.gcs import GCSAdapter
@@ -611,6 +612,24 @@ def _messagequeue_gate() -> tuple[list[Any], TxnState, str]:
     return list(ctx.txn.effects), ctx.txn.state, outcome
 
 
+def _memory_commit() -> tuple[list[Any], TxnState, str]:
+    """Reversible: a memory remember that commits. write_key carries a sha256
+    version (content-addressed), so parity verifies both lane and versioning
+    match across languages."""
+    REGISTRY.clear()
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    adapter = MemoryAdapter(conn)
+
+    @tool("memory", name="rememberFact")
+    def remember_fact(handle, key: str, value: str):  # noqa: ANN001
+        handle.remember(key, value)
+        return {"ok": True}
+
+    with agent_txn({"memory": adapter}) as ctx:
+        remember_fact(key="greeting", value="hello")
+    return list(ctx.txn.effects), ctx.txn.state, "ok"
+
+
 def _rest_gate() -> tuple[list[Any], TxnState, str]:
     """Irreversible + gate: a REST POST with no compensator. commit() gates ->
     ROLLED_BACK, effect GATED. The call never fires."""
@@ -663,6 +682,8 @@ SCENARIOS = [
     # Irreversible adapters — one gate scenario each (GATED -> ROLLED_BACK).
     Scenario("rest_gate", _rest_gate),
     Scenario("messagequeue_gate", _messagequeue_gate),
+    # Memory adapter — reversible commit with write_key (content-addressed sha256).
+    Scenario("memory_commit", _memory_commit),
 ]
 
 

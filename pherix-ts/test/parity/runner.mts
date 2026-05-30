@@ -61,6 +61,8 @@ import {
   GitHandle,
   HttpAdapter,
   IsolationConflict,
+  MemoryAdapter,
+  MemoryHandle,
   MongoAdapter,
   MqAdapter,
   MySQLAdapter,
@@ -621,6 +623,30 @@ async function messagequeueGate(): Promise<CanonJournal> {
   return canonical(cap.txn!, outcome);
 }
 
+/** memory_commit — remember one key that commits. write_key carries a sha256
+ *  version (content-addressed, not a counter), so parity verifies both the lane
+ *  and the versioning scheme match across languages. */
+async function memoryCommit(): Promise<CanonJournal> {
+  REGISTRY.clear();
+  const db = new Database(":memory:");
+  const mem = new MemoryAdapter(db);
+
+  const rememberFact = tool<{ key: string; value: string }>(
+    "memory",
+    (handle: MemoryHandle, args: { key: string; value: string }) => {
+      handle.remember(args.key, args.value);
+      return { ok: true };
+    },
+    { name: "rememberFact" },
+  );
+
+  const ctx = await agentTxn({ memory: mem }, async () => {
+    await rememberFact({ key: "greeting", value: "hello" });
+  });
+  db.close();
+  return canonical(ctx.txn, "ok");
+}
+
 const SCENARIOS: Record<string, () => Promise<CanonJournal>> = {
   reversible_commit: reversibleCommit,
   irreversible_gate: irreversibleGate,
@@ -639,6 +665,8 @@ const SCENARIOS: Record<string, () => Promise<CanonJournal>> = {
   // Irreversible adapters — one gate scenario each (GATED -> ROLLED_BACK).
   rest_gate: restGate,
   messagequeue_gate: messagequeueGate,
+  // Memory adapter — reversible commit with write_key (content-addressed sha256).
+  memory_commit: memoryCommit,
 };
 
 async function main(): Promise<void> {
