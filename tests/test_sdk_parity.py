@@ -99,6 +99,7 @@ from pherix.core.adapters.http import HTTPAdapter
 from pherix.core.adapters.messagequeue import MQAdapter, publish_tool
 from pherix.core.adapters.mongodb import MongoAdapter
 from pherix.core.adapters.mysql import MySQLAdapter
+from pherix.core.adapters.postgres import PostgresAdapter
 from pherix.core.adapters.redis import RedisAdapter
 from pherix.core.adapters.rest import RESTAdapter, rest_tool
 from pherix.core.adapters.s3 import S3Adapter
@@ -551,6 +552,70 @@ def _mysql_commit() -> tuple[list[Any], TxnState, str]:
     return list(ctx.txn.effects), ctx.txn.state, "ok"
 
 
+class _FakePgCursor:
+    """A sqlite-backed cursor speaking enough of psycopg's cursor surface.
+
+    Rewrites ``%s`` placeholders to ``?`` so the real PostgresAdapter code path
+    runs offline against SQLite. PostgresAdapter uses no Postgres-specific DDL
+    beyond ``BIGINT`` (which SQLite handles transparently).
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+        self._cur: sqlite3.Cursor | None = None
+
+    @staticmethod
+    def _rewrite(sql: str) -> str:
+        return sql.replace("%s", "?")
+
+    def execute(self, sql: str, params: tuple = ()) -> None:
+        self._cur = self._conn.execute(self._rewrite(sql), params)
+
+    def fetchone(self):  # noqa: ANN201
+        return self._cur.fetchone() if self._cur is not None else None
+
+    def __enter__(self) -> "_FakePgCursor":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        return None
+
+
+class _FakePgConn:
+    def __init__(self) -> None:
+        self._conn = sqlite3.connect(":memory:", isolation_level=None)
+        self._conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
+
+    def cursor(self) -> _FakePgCursor:
+        return _FakePgCursor(self._conn)
+
+
+def _postgres_commit() -> tuple[list[Any], TxnState, str]:
+    """Reversible: insert one row via PostgresAdapter that commits.
+
+    Uses a SQLite-backed fake connection so the real SAVEPOINT lane runs offline.
+    The ``import psycopg`` guard in ``PostgresAdapter.__init__`` is satisfied via
+    ``sys.modules`` patching — only the connection is used after init.
+    """
+    import sys
+    import unittest.mock as mock
+
+    REGISTRY.clear()
+    psycopg_stub = {} if "psycopg" in sys.modules else {"psycopg": mock.MagicMock()}
+    with mock.patch.dict(sys.modules, psycopg_stub):
+        pg = PostgresAdapter(_FakePgConn())
+
+    @tool("postgres", name="insertUser")
+    def insert_user(conn, name: str) -> str:  # noqa: ANN001
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO users (name) VALUES (%s)", (name,))
+        return name
+
+    with agent_txn({"postgres": pg}) as ctx:
+        insert_user(name="bob")
+    return list(ctx.txn.effects), ctx.txn.state, "ok"
+
+
 def _git_commit() -> tuple[list[Any], TxnState, str]:
     """Reversible: a git op against a real temp repo that commits.
 
@@ -728,6 +793,7 @@ SCENARIOS = [
     Scenario("gcs_commit", _gcs_commit),
     Scenario("elasticsearch_commit", _elasticsearch_commit),
     Scenario("mysql_commit", _mysql_commit),
+    Scenario("postgres_commit", _postgres_commit),
     Scenario("git_commit", _git_commit),
     Scenario("fs_commit", _fs_commit),
     # Irreversible adapters — one gate scenario each (GATED -> ROLLED_BACK).

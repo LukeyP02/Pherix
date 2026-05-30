@@ -68,6 +68,9 @@ import {
   MongoAdapter,
   MqAdapter,
   MySQLAdapter,
+  PostgresAdapter,
+  type PgClient,
+  type PgResult,
   REGISTRY,
   RedisAdapter,
   RestAdapter,
@@ -544,6 +547,43 @@ async function mysqlCommit(): Promise<CanonJournal> {
   return out;
 }
 
+/** postgres_commit — insert one row via PostgresAdapter that commits.
+ *  Uses a FakePg (better-sqlite3-backed async client) so the savepoint lane
+ *  runs offline, mirroring the Python half's SQLite-backed _FakePgConn. */
+async function postgresCommit(): Promise<CanonJournal> {
+  REGISTRY.clear();
+  class FakePg implements PgClient {
+    constructor(public readonly db: Database.Database) {}
+    async query(text: string, params: unknown[] = []): Promise<PgResult> {
+      const sql = text.replace(/\$\d+/g, "?");
+      if (/^\s*select/i.test(sql) || /\breturning\b/i.test(sql)) {
+        const rows = this.db.prepare(sql).all(...(params as never[])) as Array<Record<string, unknown>>;
+        return { rows };
+      }
+      if (params.length > 0) {
+        this.db.prepare(sql).run(...(params as never[]));
+        return { rows: [] };
+      }
+      this.db.exec(sql);
+      return { rows: [] };
+    }
+  }
+  const db = new Database(":memory:");
+  db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)");
+  const pg = new PostgresAdapter(new FakePg(db));
+  const insertUser = tool<{ name: string }>(
+    "postgres",
+    (c: PgClient, args: { name: string }) => c.query("INSERT INTO users (name) VALUES ($1)", [args.name]),
+    { name: "insertUser" },
+  );
+  const ctx = await agentTxn({ postgres: pg }, async () => {
+    await insertUser({ name: "bob" });
+  });
+  const out = canonical(ctx.txn, "ok");
+  db.close();
+  return out;
+}
+
 /** git_commit — a git op against a real temp repo that commits. Guarded: the
  *  Python half skips when git is absent, so this branch is only invoked with a
  *  git binary present (same machine runs both halves). */
@@ -720,6 +760,7 @@ const SCENARIOS: Record<string, () => Promise<CanonJournal>> = {
   gcs_commit: gcsCommit,
   elasticsearch_commit: elasticsearchCommit,
   mysql_commit: mysqlCommit,
+  postgres_commit: postgresCommit,
   git_commit: gitCommit,
   fs_commit: fsCommit,
   // Irreversible adapters — one gate scenario each (GATED -> ROLLED_BACK).
