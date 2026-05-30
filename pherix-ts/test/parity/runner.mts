@@ -55,6 +55,8 @@ import {
   DynamoDbAdapter,
   Effect,
   ElasticsearchAdapter,
+  FilesystemAdapter,
+  FsHandle,
   GateBlocked,
   GcsAdapter,
   GitAdapter,
@@ -647,6 +649,32 @@ async function memoryCommit(): Promise<CanonJournal> {
   return canonical(ctx.txn, "ok");
 }
 
+/** fs_commit — write one file in a temp directory. Exercises FilesystemAdapter's
+ *  copy-on-write snapshot path. The write_key carries a sha256 of the file
+ *  content, so parity also verifies the content-hash versioning scheme matches
+ *  across languages. */
+async function fsCommit(): Promise<CanonJournal> {
+  REGISTRY.clear();
+  const root = mkdtempSync(path.join(tmpdir(), "pherix_fs_parity_"));
+  const fs = new FilesystemAdapter(root);
+  const writeFile = tool<{ content: string }>(
+    "fs",
+    (handle: FsHandle, args: { content: string }) => {
+      handle.write("data.txt", Buffer.from(args.content));
+      return { ok: true };
+    },
+    { name: "writeFile" },
+  );
+  try {
+    const ctx = await agentTxn({ fs }, async () => {
+      await writeFile({ content: "hello" });
+    });
+    return canonical(ctx.txn, "ok");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 const SCENARIOS: Record<string, () => Promise<CanonJournal>> = {
   reversible_commit: reversibleCommit,
   irreversible_gate: irreversibleGate,
@@ -662,6 +690,7 @@ const SCENARIOS: Record<string, () => Promise<CanonJournal>> = {
   elasticsearch_commit: elasticsearchCommit,
   mysql_commit: mysqlCommit,
   git_commit: gitCommit,
+  fs_commit: fsCommit,
   // Irreversible adapters — one gate scenario each (GATED -> ROLLED_BACK).
   rest_gate: restGate,
   messagequeue_gate: messagequeueGate,

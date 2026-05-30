@@ -89,6 +89,7 @@ from typing import Any, Callable
 
 import pytest
 
+from pherix.core.adapters.filesystem import FilesystemAdapter
 from pherix.core.adapters.memory import MemoryAdapter
 from pherix.core.adapters.dynamodb import DynamoDBAdapter
 from pherix.core.adapters.elasticsearch import ElasticsearchAdapter
@@ -583,6 +584,29 @@ def _git_commit() -> tuple[list[Any], TxnState, str]:
         shutil.rmtree(repo, ignore_errors=True)
 
 
+def _fs_commit() -> tuple[list[Any], TxnState, str]:
+    """Reversible: write one file in a temp rooted directory, commits normally.
+
+    Exercises FilesystemAdapter's copy-on-write snapshot path. The write_key
+    records the sha256 of the file content after the write, so parity also
+    verifies the content-hash versioning scheme matches across languages."""
+    REGISTRY.clear()
+    root = Path(tempfile.mkdtemp(prefix="pherix_fs_parity_"))
+    fs = FilesystemAdapter(root)
+
+    @tool("fs", name="writeFile")
+    def write_file(handle, content: str):  # noqa: ANN001
+        handle.write("data.txt", content.encode())
+        return {"ok": True}
+
+    try:
+        with agent_txn({"fs": fs}) as ctx:
+            write_file(content="hello")
+        return list(ctx.txn.effects), ctx.txn.state, "ok"
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 class _FakeBroker:
     def __init__(self) -> None:
         self.published: list[tuple[str, Any]] = []
@@ -679,6 +703,7 @@ SCENARIOS = [
     Scenario("elasticsearch_commit", _elasticsearch_commit),
     Scenario("mysql_commit", _mysql_commit),
     Scenario("git_commit", _git_commit),
+    Scenario("fs_commit", _fs_commit),
     # Irreversible adapters — one gate scenario each (GATED -> ROLLED_BACK).
     Scenario("rest_gate", _rest_gate),
     Scenario("messagequeue_gate", _messagequeue_gate),
