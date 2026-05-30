@@ -103,6 +103,7 @@ from pherix.core.adapters.redis import RedisAdapter
 from pherix.core.adapters.rest import RESTAdapter, rest_tool
 from pherix.core.adapters.s3 import S3Adapter
 from pherix.core.adapters.sql import SQLiteAdapter, execute_isolated
+from pherix.core.dry_run import dry_run
 from pherix.core.isolation import IsolationConflict
 from pherix.core.runtime import GateBlocked, agent_txn
 from pherix.core.tools import REGISTRY, tool
@@ -654,6 +655,31 @@ def _memory_commit() -> tuple[list[Any], TxnState, str]:
     return list(ctx.txn.effects), ctx.txn.state, "ok"
 
 
+def _dry_run_commit() -> tuple[list[Any], TxnState, str]:
+    """Dry-run: a single reversible SQL write runs, then is rolled back.
+
+    The effect lands in the journal with status COMPENSATED (ran and then
+    unwound via snapshot restore) and the transaction ends ROLLED_BACK — the
+    same ROLLED_BACK value that explicit rollback and gate-block produce, but
+    reached via the dry-run finalise path instead of an error path.  The world
+    (the in-memory SQLite DB) is byte-identical to its state before the dry-run.
+    Parity asserts that both languages produce the same journal: one COMPENSATED
+    reversible effect, final_state=rolled_back, outcome=ok."""
+    REGISTRY.clear()
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    conn.execute("CREATE TABLE notes (body TEXT)")
+    sql = SQLiteAdapter(conn)
+
+    @tool("sql", name="insertNote")
+    def insert_note(conn, body: str):  # noqa: ANN001
+        conn.execute("INSERT INTO notes (body) VALUES (?)", (body,))
+        return {"ok": True}
+
+    with dry_run({"sql": sql}) as ctx:
+        insert_note(body="hello")
+    return list(ctx.txn.effects), ctx.txn.state, "ok"
+
+
 def _rest_gate() -> tuple[list[Any], TxnState, str]:
     """Irreversible + gate: a REST POST with no compensator. commit() gates ->
     ROLLED_BACK, effect GATED. The call never fires."""
@@ -709,6 +735,8 @@ SCENARIOS = [
     Scenario("messagequeue_gate", _messagequeue_gate),
     # Memory adapter — reversible commit with write_key (content-addressed sha256).
     Scenario("memory_commit", _memory_commit),
+    # Dry-run path — reversible write runs and is rolled back; COMPENSATED + ROLLED_BACK.
+    Scenario("dry_run_commit", _dry_run_commit),
 ]
 
 

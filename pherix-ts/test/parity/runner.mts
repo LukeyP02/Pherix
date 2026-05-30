@@ -76,6 +76,7 @@ import {
   type SqliteDatabase,
   TxnState,
   agentTxn,
+  dryRun,
   executeIsolated,
   publishTool,
   restTool,
@@ -675,6 +676,36 @@ async function fsCommit(): Promise<CanonJournal> {
   }
 }
 
+/** dry_run_commit — a single reversible SQL write that runs then is rolled back.
+ *  Effect lands as COMPENSATED (ran, snapshot restored) and the transaction ends
+ *  ROLLED_BACK — the dry-run finalise path, not an error path.  Parity asserts
+ *  that both languages produce the same journal: one COMPENSATED reversible, and
+ *  final_state=rolled_back, outcome=ok. */
+async function dryRunCommit(): Promise<CanonJournal> {
+  REGISTRY.clear();
+  const db = new Database(":memory:");
+  db.exec("CREATE TABLE notes (body TEXT)");
+  const sql = new SqliteAdapter(db);
+
+  const insertNote = tool<{ body: string }>(
+    "sql",
+    (conn: SqliteDatabase, args: { body: string }) => {
+      conn.prepare("INSERT INTO notes (body) VALUES (?)").run(args.body);
+      return { ok: true };
+    },
+    { name: "insertNote" },
+  );
+
+  try {
+    const ctx = await dryRun({ sql }, async () => {
+      await insertNote({ body: "hello" });
+    });
+    return canonical(ctx.txn, "ok");
+  } finally {
+    db.close();
+  }
+}
+
 const SCENARIOS: Record<string, () => Promise<CanonJournal>> = {
   reversible_commit: reversibleCommit,
   irreversible_gate: irreversibleGate,
@@ -696,6 +727,8 @@ const SCENARIOS: Record<string, () => Promise<CanonJournal>> = {
   messagequeue_gate: messagequeueGate,
   // Memory adapter — reversible commit with write_key (content-addressed sha256).
   memory_commit: memoryCommit,
+  // Dry-run path — reversible write runs and is rolled back; COMPENSATED + ROLLED_BACK.
+  dry_run_commit: dryRunCommit,
 };
 
 async function main(): Promise<void> {
