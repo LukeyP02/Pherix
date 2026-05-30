@@ -17,6 +17,9 @@ ahead of it are the ones the law watches return to baseline.
 from __future__ import annotations
 
 import pytest
+
+pytest.importorskip("hypothesis")
+
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 

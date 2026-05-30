@@ -16,6 +16,9 @@ invariant holds.
 from __future__ import annotations
 
 import pytest
+
+pytest.importorskip("hypothesis")
+
 from hypothesis import HealthCheck, given, settings
 
 from pherix.core.adapters.sql import SQLiteAdapter

@@ -39,6 +39,9 @@ import tempfile
 from pathlib import Path
 
 import pytest
+
+pytest.importorskip("hypothesis")
+
 from hypothesis import HealthCheck, settings
 from hypothesis.stateful import (
     RuleBasedStateMachine,

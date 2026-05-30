@@ -18,6 +18,9 @@ so it is production savepoint machinery being folded, not a toy.
 from __future__ import annotations
 
 import pytest
+
+pytest.importorskip("hypothesis")
+
 from hypothesis import HealthCheck, given, settings
 
 from pherix.core.adapters.sql import SQLiteAdapter

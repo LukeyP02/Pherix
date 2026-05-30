@@ -23,6 +23,9 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
+
+pytest.importorskip("hypothesis")
+
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
