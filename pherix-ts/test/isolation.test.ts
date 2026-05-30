@@ -5,9 +5,13 @@
  * (checkConflicts) detects it; the resolution policy (Abort default) decides
  * what to do. Self-bumps — a key I read then wrote myself — must NOT count.
  *
- * Single-connection in-process tier. The cross-process intent ledger and the
+ * Single-connection in-process tier, plus the on-disk meta-connection path
+ * (readsCommittedOnly: true). The cross-process intent ledger and the
  * Retry-via-run-loop are deliberately deferred (see isolation.ts). */
 
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -231,5 +235,138 @@ describe("Serialize registry coordination", () => {
     expect(() => new Abort().resolve(null, [{ resource: "r", key: ["k"], versionAtRead: 0, versionNow: 1, versionExpected: 0 }])).toThrow(
       IsolationConflict,
     );
+  });
+});
+
+// --- on-disk: readsCommittedOnly path (meta-connection) ----------------------
+//
+// Mirrors tests/test_isolation_self_write.py on-disk section.
+// The meta-connection (metaDb) sits outside the main connection's BEGIN so
+// readVersion always reflects the latest committed state from any process,
+// not the snapshot taken when the txn opened. This prevents the false
+// self-conflict that would otherwise fire on on-disk read-then-write.
+
+describe("SqliteAdapter with metaDb (readsCommittedOnly: true)", () => {
+  let dir: string;
+  let dbPath: string;
+  let mainDb: Database.Database;
+  let metaDb: Database.Database;
+  let sql: SqliteAdapter;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pherix-iso-"));
+    dbPath = join(dir, "test.db");
+    // WAL mode lets the meta-connection read committed state while the main
+    // connection holds an open write transaction.
+    mainDb = new Database(dbPath);
+    mainDb.exec("PRAGMA journal_mode=WAL");
+    mainDb.exec("CREATE TABLE counters (name TEXT PRIMARY KEY, val INTEGER)");
+    mainDb.prepare("INSERT INTO counters VALUES (?, ?)").run("x", 0);
+    metaDb = new Database(dbPath, { readonly: true });
+    REGISTRY.clear();
+    sql = new SqliteAdapter(mainDb, { metaDb });
+  });
+
+  afterEach(() => {
+    mainDb.close();
+    metaDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("readsCommittedOnly is true when metaDb is provided", () => {
+    expect(sql.readsCommittedOnly()).toBe(true);
+  });
+
+  it("readsCommittedOnly is false without metaDb", () => {
+    const mem = new Database(":memory:");
+    const adapter = new SqliteAdapter(mem);
+    expect(adapter.readsCommittedOnly()).toBe(false);
+    mem.close();
+  });
+
+  it("read-then-write same key (no external writer) does not conflict", async () => {
+    // Matrix #1 / THE BUG: without the meta-connection, readVersion inside a
+    // BEGIN saw our own uncommitted version bump, making it look like a
+    // cross-txn write — a false IsolationConflict. With metaDb the committed
+    // base at read and at commit-time match, so the self-bump cancels.
+    const readWrite = tool<{ val: number }>(
+      "sql",
+      (conn: SqliteDatabase, args) => {
+        executeIsolated(
+          conn,
+          "SELECT val FROM counters WHERE name = ?",
+          ["x"],
+          { reads: [["counters", "x"]] },
+        );
+        executeIsolated(
+          conn,
+          "UPDATE counters SET val = ? WHERE name = ?",
+          [args.val, "x"],
+          { writes: [["counters", "x"]] },
+        );
+        return { ok: true };
+      },
+      { name: "readWrite_ondisk" },
+    );
+
+    const ctx = await agentTxn({ sql }, async () => {
+      await readWrite({ val: 42 });
+    });
+    expect(ctx.txn.state).toBe(TxnState.COMMITTED);
+    const row = mainDb.prepare("SELECT val FROM counters WHERE name = ?").get("x") as { val: number };
+    expect(row.val).toBe(42);
+  });
+
+  it("read-only key written by an external committed txn triggers a conflict", async () => {
+    // Matrix #4: A reads x, B commits a write to x, A's meta-conn sees the
+    // committed bump → IsolationConflict at A's commit.
+    //
+    // We use a nested agentTxn (like the Python test) so executeIsolated inside
+    // writeB sees an active effect and bumps the version side-table correctly.
+    const readA = tool<Record<string, never>>(
+      "sql",
+      (conn: SqliteDatabase, _args) =>
+        executeIsolated(
+          conn,
+          "SELECT val FROM counters WHERE name = ?",
+          ["x"],
+          { reads: [["counters", "x"]] },
+        ),
+      { name: "readA_ondisk" },
+    );
+
+    const writeB = tool<{ val: number }>(
+      "sql",
+      (conn: SqliteDatabase, args) =>
+        executeIsolated(
+          conn,
+          "UPDATE counters SET val = ? WHERE name = ?",
+          [args.val, "x"],
+          { writes: [["counters", "x"]] },
+        ),
+      { name: "writeB_ondisk" },
+    );
+
+    // db2: a second connection for the concurrent writer (no metaDb needed; it
+    // commits and we discard it — cross-process detection is the metaDb's job).
+    const db2 = new Database(dbPath);
+    db2.exec("PRAGMA journal_mode=WAL");
+    const sql2 = new SqliteAdapter(db2 as unknown as SqliteDatabase);
+
+    await expect(
+      agentTxn({ sql }, async () => {
+        await readA({});
+        // Nested agentTxn for the external write — the tool call sets activeEffect
+        // so executeIsolated correctly bumps the version side-table and commits.
+        await agentTxn({ sql: sql2 }, async () => {
+          await writeB({ val: 99 });
+        });
+        // After this nested commit, the version of ("counters","x") is 1.
+        // sql's metaDb is outside any BEGIN → sees version 1.
+        // Our outer read_key has vAtRead=0 → conflict at A's commit.
+      }),
+    ).rejects.toThrow(IsolationConflict);
+
+    db2.close();
   });
 });

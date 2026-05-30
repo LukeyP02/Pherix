@@ -47,9 +47,15 @@ const ADAPTER_FOR = new WeakMap<object, SqliteAdapter>();
 export class SqliteAdapter implements TransactionalResourceAdapter, StateDiffable {
   readonly name = "sql";
   private readonly db: SqliteDatabase;
+  /** Committed-only read connection (never inside a BEGIN). Present only for
+   *  on-disk databases; null for `:memory:`. When present, readVersion routes
+   *  through this connection so cross-process commits are visible at
+   *  commit-time even though the main connection's snapshot was taken earlier. */
+  private readonly metaDb: SqliteDatabase | null;
 
-  constructor(db: SqliteDatabase) {
+  constructor(db: SqliteDatabase, opts: { metaDb?: SqliteDatabase } = {}) {
     this.db = db;
+    this.metaDb = opts.metaDb ?? null;
     // Create the version side-table eagerly (idempotent) so the first
     // readVersion on an unknown key returns 0, not a missing-table error.
     this.db.exec(VERSIONS_TABLE_DDL);
@@ -109,16 +115,20 @@ export class SqliteAdapter implements TransactionalResourceAdapter, StateDiffabl
   }
 
   /** Whether readVersion reflects ONLY committed state (excludes this txn's own
-   *  uncommitted writes). False for the single-connection in-process adapter:
-   *  reads see our own bumps, so the diff uses the own-write-visible branch.
-   *  The committed-only (cross-process meta-connection) path is deferred. */
+   *  uncommitted writes). True when a metaDb (committed-only connection) was
+   *  provided — on-disk databases with cross-process isolation. False for the
+   *  single-connection in-process path (`:memory:` or no metaDb supplied):
+   *  reads see our own bumps, so the diff uses the own-write-visible branch. */
   readsCommittedOnly(): boolean {
-    return false;
+    return this.metaDb !== null;
   }
 
-  /** Current version of `key`. Absent row → 0 ("never written"); never null. */
+  /** Current version of `key`. Absent row → 0 ("never written"); never null.
+   *  Uses metaDb when present so the read bypasses the main connection's BEGIN
+   *  snapshot and sees the latest committed state from any process. */
   readVersion(key: unknown): number {
-    const row = this.db
+    const target = this.metaDb ?? this.db;
+    const row = target
       .prepare("SELECT version FROM _pherix_versions WHERE resource = ? AND key_json = ?")
       .get(this.name, SqliteAdapter.encodeKey(key)) as { version: number } | undefined;
     return row === undefined ? 0 : Number(row.version);
