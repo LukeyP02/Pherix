@@ -371,6 +371,18 @@ class Policy:
     deny: set[str] = field(default_factory=set)
     rules: list[PolicyRule] = field(default_factory=list)
     caps: list[Any] = field(default_factory=list)
+    # An optional gate-approval predicate ``(effect) -> bool``. The commit-time
+    # human gate (``runtime.commit``) holds back every staged irreversible that
+    # has no compensator and no out-of-band ``approve_irreversible`` token. This
+    # predicate is the *third* way past that gate: if it returns ``True`` for an
+    # effect, the runtime treats that effect as policy-approved and lets it fire
+    # without a human in the loop. ``None`` (the default) means "no policy
+    # auto-approval" — the gate behaves exactly as before. This is the seam the
+    # authority-policy primitive's ``admin_auto_approves`` rides: a higher-trust
+    # actor's authority *is* the approval. It is deliberately a predicate over
+    # the lone effect (not the journal) because the gate decision is per-staged-
+    # effect; richer context is already reachable via the actor stamped on it.
+    auto_approve: Callable[[Effect], bool] | None = None
 
     # -- construction ---------------------------------------------------
 
@@ -386,6 +398,7 @@ class Policy:
         caps: Sequence[Any] | None = None,
         allow: set[str] | None = None,
         deny: set[str] | None = None,
+        auto_approve: Callable[[Effect], bool] | None = None,
     ) -> "Policy":
         """Compose a policy declaratively.
 
@@ -393,14 +406,39 @@ class Policy:
         Allow | Deny`` — they are wrapped into :class:`PolicyRule`
         automatically. ``caps`` is a sequence of :class:`_CountCap` /
         :class:`_SumCap` (constructed via :meth:`Cap.count` /
-        :meth:`Cap.sum`).
+        :meth:`Cap.sum`). ``auto_approve`` is an optional gate-approval
+        predicate ``(effect) -> bool`` (see :attr:`auto_approve`) — the seam
+        :func:`admin_auto_approves` rides to let a higher-trust actor's
+        authority stand in for ``approve_irreversible``.
         """
-        p = cls(allow=allow, deny=set(deny) if deny is not None else set())
+        p = cls(
+            allow=allow,
+            deny=set(deny) if deny is not None else set(),
+            auto_approve=auto_approve,
+        )
         for fn in rules or ():
             p.rules.append(PolicyRule(fn=fn))
         for cap in caps or ():
             p.caps.append(cap)
         return p
+
+    # -- gate-approval query (consumed by runtime.commit) ---------------
+
+    def approves_gate(self, effect: Effect) -> bool:
+        """Does this policy auto-approve ``effect`` past the human gate?
+
+        The commit-time gate consults this for every staged irreversible that
+        lacks a compensator and an explicit ``approve_irreversible`` token. A
+        ``True`` here means "the policy's authority rules vouch for this
+        effect" — the runtime then fires it without a human approval. ``False``
+        (the default, when no :attr:`auto_approve` predicate is set) leaves the
+        gate's behaviour exactly as it was. A predicate that itself raises is
+        *not* swallowed — a broken authority rule must fail loudly, never
+        silently auto-approve.
+        """
+        if self.auto_approve is None:
+            return False
+        return bool(self.auto_approve(effect))
 
     # -- registration (decorator-style) ---------------------------------
 
@@ -819,6 +857,258 @@ def refund_if_paid(
     return _rule
 
 
+# -- authority policy: actor trust tiers over the existing eval -------------
+#
+# The per-effect ``actor`` (PR #40) is *who an effect runs on whose authority*.
+# A policy rule already reaches it (``effect.actor`` / ``ctx.actor(effect)``);
+# the raw capability is proven by ``tests/test_actor.py``. What was missing is
+# the *product surface*: a declarative way to say "trusted actors fly, untrusted
+# actors hit the gate, admins skip it." This is the Policy axis extended — not a
+# new subsystem and not engine surgery. Everything below is a thin layer of
+# vetted rule/predicate factories over the same twice-evaluated (stage + commit)
+# fold the engine already runs, plus the one additive gate seam
+# (:attr:`Policy.auto_approve`).
+#
+# An actor is *attribution, not identity* — Pherix records the claimed principal
+# and never verifies it (see :class:`PolicyRule`). A trust tier is therefore a
+# statement about *the claim*, not an authenticated fact; the buyer layers real
+# auth upstream if they need it.
+
+
+# Tier ordinals: higher = more authority. ``untrusted`` < ``trusted`` < ``admin``.
+# A NULL actor (no principal declared — the library-caller default) maps to
+# :attr:`TrustTiers.default_tier`, so every rule below is NULL-tolerant by
+# construction: ``effect.actor is None`` resolves to a real tier, never crashes.
+_TIER_ORDER: dict[str, int] = {"untrusted": 0, "trusted": 1, "admin": 2}
+
+
+@dataclass(frozen=True)
+class TrustTiers:
+    """A declarative map from actor sets to trust tiers.
+
+    Three named tiers, lowest to highest authority: ``untrusted``,
+    ``trusted``, ``admin``. You declare the membership of each as a set of
+    actor strings; :meth:`tier_of` resolves any ``effect.actor`` (including
+    ``None``) to exactly one tier. The factories below
+    (:func:`untrusted_gates_irreversible`, :func:`admin_auto_approves`,
+    :func:`per_actor_count_cap`) take a :class:`TrustTiers` and turn it into
+    rules / predicates over the existing stage+commit policy fold.
+
+    NULL-tolerance is the load-bearing default: an effect with ``actor=None``
+    (no principal declared) resolves to :attr:`default_tier`. Pick that
+    deliberately — ``"untrusted"`` (the safe default: an unattributed effect
+    earns the *least* authority) is recommended, and is the default here.
+
+    Membership is by exact string match. An actor that appears in no set
+    resolves to :attr:`unknown_tier` — distinct from :attr:`default_tier`
+    (which is for the *absent* actor) so an operator can choose to treat a
+    *named-but-unlisted* actor differently from an *anonymous* one. By default
+    both fall to ``"untrusted"``. Sets are frozen on construction so a
+    :class:`TrustTiers` is hashable and safe to share across transactions.
+    """
+
+    admin: frozenset[str] = frozenset()
+    trusted: frozenset[str] = frozenset()
+    untrusted: frozenset[str] = frozenset()
+    default_tier: str = "untrusted"
+    unknown_tier: str = "untrusted"
+
+    def __init__(
+        self,
+        *,
+        admin: Sequence[str] | set[str] | None = None,
+        trusted: Sequence[str] | set[str] | None = None,
+        untrusted: Sequence[str] | set[str] | None = None,
+        default_tier: str = "untrusted",
+        unknown_tier: str = "untrusted",
+    ) -> None:
+        for label, value in (
+            ("default_tier", default_tier),
+            ("unknown_tier", unknown_tier),
+        ):
+            if value not in _TIER_ORDER:
+                raise ValueError(
+                    f"TrustTiers.{label}={value!r} is not a known tier; "
+                    f"expected one of {sorted(_TIER_ORDER)}"
+                )
+        object.__setattr__(self, "admin", frozenset(admin or ()))
+        object.__setattr__(self, "trusted", frozenset(trusted or ()))
+        object.__setattr__(self, "untrusted", frozenset(untrusted or ()))
+        object.__setattr__(self, "default_tier", default_tier)
+        object.__setattr__(self, "unknown_tier", unknown_tier)
+        # A principal listed in two tiers is a configuration bug — the resolution
+        # would be order-dependent and silently surprising. Fail loud at
+        # construction rather than guess.
+        overlaps = (
+            (self.admin & self.trusted)
+            | (self.admin & self.untrusted)
+            | (self.trusted & self.untrusted)
+        )
+        if overlaps:
+            raise ValueError(
+                f"TrustTiers: actor(s) {sorted(overlaps)!r} appear in more than "
+                f"one tier; each actor belongs to exactly one tier"
+            )
+
+    def tier_of(self, actor: str | None) -> str:
+        """Resolve an actor (or ``None``) to its tier name.
+
+        ``None`` → :attr:`default_tier` (the unattributed-effect default).
+        A listed actor → its tier. A named-but-unlisted actor →
+        :attr:`unknown_tier`.
+        """
+        if actor is None:
+            return self.default_tier
+        if actor in self.admin:
+            return "admin"
+        if actor in self.trusted:
+            return "trusted"
+        if actor in self.untrusted:
+            return "untrusted"
+        return self.unknown_tier
+
+    def rank_of(self, actor: str | None) -> int:
+        """The integer authority rank of ``actor``'s tier (higher = more)."""
+        return _TIER_ORDER[self.tier_of(actor)]
+
+    def at_least(self, actor: str | None, tier: str) -> bool:
+        """Is ``actor``'s tier ``tier`` or higher in authority?"""
+        if tier not in _TIER_ORDER:
+            raise ValueError(
+                f"unknown tier {tier!r}; expected one of {sorted(_TIER_ORDER)}"
+            )
+        return self.rank_of(actor) >= _TIER_ORDER[tier]
+
+
+def untrusted_gates_irreversible(
+    tiers: TrustTiers,
+    *,
+    min_tier: str = "trusted",
+) -> Callable[[Effect, "PolicyContext"], Verdict]:
+    """Rule: an actor below ``min_tier`` may not let an irreversible effect through.
+
+    "Force the human gate for untrusted actors." Returns a rule
+    ``(effect, ctx) -> Allow | Deny`` suitable for ``policy.rule(...)`` /
+    :meth:`Policy.with_rules`. It is a no-op ``Allow`` for reversible effects
+    (those have a clean state-rollback; the gate is only meaningful for the
+    irreversible lane) and for any actor whose tier is ``min_tier`` or higher.
+    For a *below-tier* actor staging an *irreversible* effect it returns
+    ``Deny`` — and because the engine evaluates the policy at stage-time AND
+    commit-time, that denial fires before the effect is ever journalled and
+    again on the commit-time re-walk. An irreversible effect that is denied
+    never fires: a ``Deny`` here *is* the forced gate, expressed declaratively.
+
+    NULL-tolerant: ``effect.actor is None`` resolves through
+    :meth:`TrustTiers.tier_of` to ``tiers.default_tier`` (``"untrusted"`` by
+    default), so an unattributed irreversible effect is gated, not waved
+    through.
+    """
+
+    def _rule(effect: Effect, ctx: "PolicyContext") -> Verdict:
+        if effect.reversible:
+            return Allow()
+        if tiers.at_least(effect.actor, min_tier):
+            return Allow()
+        return Deny(
+            f"untrusted_gates_irreversible: actor {effect.actor!r} is tier "
+            f"{tiers.tier_of(effect.actor)!r}, below the {min_tier!r} required "
+            f"to commit an irreversible effect ({effect.tool!r}) — gated"
+        )
+
+    _rule.__name__ = f"untrusted_gates_irreversible(min_tier={min_tier})"
+    return _rule
+
+
+def admin_auto_approves(
+    tiers: TrustTiers,
+    *,
+    min_tier: str = "admin",
+) -> Callable[[Effect], bool]:
+    """Gate-approval predicate: an actor at ``min_tier`` or higher skips the gate.
+
+    Returns a predicate ``(effect) -> bool`` for :attr:`Policy.auto_approve` /
+    ``Policy.with_rules(auto_approve=...)``. The commit-time human gate holds
+    back every staged irreversible lacking a compensator and an explicit
+    ``approve_irreversible`` token; this predicate is the third way past it —
+    *the actor's authority is the approval*. It returns ``True`` exactly when
+    the effect's actor is ``min_tier`` (default ``"admin"``) or higher, letting
+    that effect fire with no human in the loop.
+
+    This is the deliberate dual of :func:`untrusted_gates_irreversible`: one
+    *tightens* the gate for low-authority actors (Deny), the other *relaxes* it
+    for high-authority ones (auto-approve). Compose both on one policy and you
+    have a full authority ladder: untrusted → forced gate, trusted → normal
+    gate (human approval still required), admin → auto-approved.
+
+    NULL-tolerant: a ``None`` actor resolves to ``tiers.default_tier`` — by the
+    recommended default ``"untrusted"``, well below ``admin``, so an
+    unattributed effect is **never** auto-approved.
+    """
+
+    def _approve(effect: Effect) -> bool:
+        return tiers.at_least(effect.actor, min_tier)
+
+    _approve.__name__ = f"admin_auto_approves(min_tier={min_tier})"
+    return _approve
+
+
+def per_actor_count_cap(
+    *,
+    limits: dict[str | None, int],
+    default: int | None = None,
+    tool: str | None = None,
+) -> Callable[[Effect, "PolicyContext"], Verdict]:
+    """Rule: cap how many effects a single actor may run within one transaction.
+
+    A per-*actor* capability cap, complementing :meth:`Cap.count` (per-*tool*).
+    ``limits`` maps an actor to its allowance; ``default`` is the allowance for
+    any actor not in the map (``None`` = unlimited). Optionally scope the cap to
+    a single ``tool`` (``None`` = count every effect regardless of tool).
+
+    The count is a *fold over the journal so far* — the rule walks
+    ``ctx.journal`` and counts prior effects with the same actor (and, if
+    scoped, the same tool), then asks "would this effect be one too many?" No
+    mutable cap-state is needed: the journal already holds the history, so the
+    same rule gives the same answer at stage-time and on the commit-time
+    re-walk. (The current candidate effect is the one being evaluated; at
+    stage-time it is not yet in ``ctx.journal``, at commit-time it is — the fold
+    counts strictly-prior same-actor effects either way and compares against the
+    limit, so both walks agree.)
+
+    NULL-tolerant: the ``None`` actor is a valid key in ``limits`` (cap the
+    unattributed bucket explicitly) and otherwise falls to ``default``.
+    """
+
+    def _rule(effect: Effect, ctx: "PolicyContext") -> Verdict:
+        if tool is not None and effect.tool != tool:
+            return Allow()
+        limit = limits.get(effect.actor, default)
+        if limit is None:
+            return Allow()
+        # Count strictly-prior effects attributed to this actor (within the
+        # optional tool scope). At commit-time the current effect is already in
+        # ctx.journal; exclude it by index identity so both walks agree.
+        prior = sum(
+            1
+            for e in ctx.journal
+            if e.actor == effect.actor
+            and (tool is None or e.tool == tool)
+            and e.index != effect.index
+        )
+        if prior + 1 > limit:
+            scope = f" of tool {tool!r}" if tool is not None else ""
+            return Deny(
+                f"per_actor_count_cap: actor {effect.actor!r} would exceed its "
+                f"cap (max={limit}) on effects{scope} in this transaction; "
+                f"already at {prior}"
+            )
+        return Allow()
+
+    suffix = f", tool={tool!r}" if tool is not None else ""
+    _rule.__name__ = f"per_actor_count_cap(default={default}{suffix})"
+    return _rule
+
+
 __all__ = [
     "Allow",
     "Cap",
@@ -829,7 +1119,11 @@ __all__ = [
     "PolicyVerdict",
     "PolicyViolation",
     "ReadMediator",
+    "TrustTiers",
     "Verdict",
+    "admin_auto_approves",
+    "per_actor_count_cap",
     "refund_if_paid",
     "sql_reader",
+    "untrusted_gates_irreversible",
 ]

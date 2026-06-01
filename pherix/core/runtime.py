@@ -434,23 +434,34 @@ class TxnContext:
             raise
 
         if staged:
-            # D3: the gate — every staged irreversible must be
-            # compensator-backed OR approved. "Approved" is the union of the
-            # in-process pre-approvals (``approve_irreversible``) and the
-            # *journalled* approvals an out-of-process ``approve(token)`` wrote
-            # (``audit.approved_effect_ids``). Reading the journal here is what
-            # makes approval work over the wire: the resumed commit folds the
-            # persisted APPROVED records and the gate passes for effects a
-            # different process cleared. The read happens at commit-time, after
-            # the policy re-eval above — so a revocation between approval and
-            # resume still wins (TOCTOU).
+            # D3: the gate — every staged irreversible must clear it by ONE of:
+            #   1. a registered compensator (the effect is undoable), OR
+            #   2. an approval — the union of in-process pre-approvals
+            #      (``approve_irreversible``) and the *journalled* approvals an
+            #      out-of-process ``approve(token)`` wrote
+            #      (``audit.approved_effect_ids``). The journal read here is what
+            #      makes approval work over the wire: a resumed commit folds the
+            #      persisted APPROVED records, at commit-time after the policy
+            #      re-eval, so a revocation between approval and resume still
+            #      wins (TOCTOU), OR
+            #   3. a policy auto-approval (``policy.approves_gate(e)``): the
+            #      effect's *actor authority* vouches for it (the authority-
+            #      policy primitive's ``admin_auto_approves`` — no human in the
+            #      loop).
+            # Anything clearing none of these is GATED and the txn unwinds.
             approved = set(self._approvals) | self.audit.approved_effect_ids(
                 self.txn.txn_id
             )
+
+            def _gate_cleared(e: Effect) -> bool:
+                return (
+                    e.compensator is not None
+                    or e.effect_id in approved
+                    or self._policy.approves_gate(e)
+                )
+
             needs_approval = [
-                e.effect_id
-                for e in staged
-                if e.compensator is None and e.effect_id not in approved
+                e.effect_id for e in staged if not _gate_cleared(e)
             ]
             if needs_approval:
                 if pending_approval:
@@ -463,10 +474,7 @@ class TxnContext:
                     # rather than duplicates.
                     handles: list[PendingApproval] = []
                     for e in staged:
-                        if (
-                            e.compensator is None
-                            and e.effect_id not in approved
-                        ):
+                        if not _gate_cleared(e):
                             token = compute_approval_token(
                                 self.txn.txn_id, e.effect_id
                             )
@@ -496,10 +504,7 @@ class TxnContext:
                 # Default in-process hard gate: mark blocked effects GATED,
                 # unwind, and raise.
                 for e in staged:
-                    if (
-                        e.compensator is None
-                        and e.effect_id not in approved
-                    ):
+                    if not _gate_cleared(e):
                         e.status = EffectStatus.GATED
                         self.audit.update_effect(e)
                 self._partial_unwind()
