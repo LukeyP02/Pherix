@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS effects (
     result     TEXT,
     read_keys  TEXT NOT NULL DEFAULT '[]',
     write_keys TEXT NOT NULL DEFAULT '[]',
+    actor      TEXT,
     ts         TEXT NOT NULL,
     PRIMARY KEY (txn_id, idx)
 );
@@ -108,7 +109,37 @@ class AuditJournal:
         self._conn = sqlite3.connect(path)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        # Additive migration: ``CREATE TABLE IF NOT EXISTS`` is a no-op against
+        # an existing ``effects`` table, so a journal created before the
+        # ``actor`` column was added does NOT gain it from the schema above.
+        # Add it idempotently here, guarded by a column-exists check so a fresh
+        # journal (already carrying the column) and an upgraded one converge on
+        # the same shape. SQLite ``ADD COLUMN`` is cheap (metadata-only) and
+        # the new column defaults to NULL for every existing row — so old
+        # effects read back as ``actor = None``, never crash. See the
+        # NULL-tolerance contract this column is held to.
+        self._ensure_column("effects", "actor", "TEXT")
         self._conn.commit()
+
+    def _ensure_column(self, table: str, column: str, decl: str) -> None:
+        """Idempotently add ``column`` to ``table`` if it is not already there.
+
+        Reads the live schema via ``PRAGMA table_info`` and only issues the
+        ``ALTER TABLE ... ADD COLUMN`` when the column is absent — so the
+        method is safe to call on every connect, against both a fresh journal
+        (column present from the schema) and a pre-existing one (column added
+        here). ``table`` / ``column`` / ``decl`` are code-supplied constants,
+        never agent input, so interpolating them is safe (SQLite cannot
+        parameterise DDL identifiers regardless).
+        """
+        existing = {
+            row["name"]
+            for row in self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if column not in existing:
+            self._conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} {decl}"
+            )
 
     @property
     def path(self) -> str:
@@ -205,10 +236,16 @@ class AuditJournal:
     # --- effects ---
 
     def record_effect(self, effect: Effect) -> None:
+        # ``actor`` (the on-whose-authority principal) is set at Effect
+        # construction and never mutates, so it is written here on insert and
+        # left untouched by :meth:`update_effect`. NULL for any effect with no
+        # declared actor — the column is nullable and the reader degrades to
+        # ``None``.
         self._conn.execute(
             "INSERT INTO effects (txn_id, idx, effect_id, tool, resource, "
-            "reversible, status, args, snapshot, result, read_keys, write_keys, ts) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "reversible, status, args, snapshot, result, read_keys, write_keys, "
+            "actor, ts) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 effect.txn_id,
                 effect.index,
@@ -222,6 +259,7 @@ class AuditJournal:
                 _dump(effect.result),
                 _dump(effect.read_keys) or "[]",
                 _dump(effect.write_keys) or "[]",
+                effect.actor,
                 effect.ts.isoformat(),
             ),
         )

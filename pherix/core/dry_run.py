@@ -45,7 +45,7 @@ from pherix.core.audit import AuditJournal
 from pherix.core.effects import Effect
 from pherix.core.isolation import REGISTRY as ISOLATION_REGISTRY
 from pherix.core.policy import Policy, PolicyVerdict
-from pherix.core.tools import active_txn
+from pherix.core.tools import active_actor, active_txn
 
 
 def _unique(adapters: dict[str, Any]) -> list[Any]:
@@ -119,6 +119,7 @@ def dry_run(
     policy: Policy | None = None,
     audit: AuditJournal | None = None,
     client_id: str | None = None,
+    actor: str | None = None,
 ) -> Iterator[Any]:
     """Speculative-execution context manager.
 
@@ -162,7 +163,14 @@ def dry_run(
         if isinstance(adapter, TransactionalResourceAdapter):
             adapter.begin()
 
-    ctx = TxnContext(adapters, policy, audit, dry_run=True, client_id=client_id)
+    ctx = TxnContext(
+        adapters,
+        policy,
+        audit,
+        dry_run=True,
+        client_id=client_id,
+        actor=actor,
+    )
     # Slice 4 (D5): register the context with the in-process arbitration
     # substrate — same as :func:`agent_txn` — so :class:`Serialize`
     # waiters can see us as a peer. Dry-runs don't actually compete for
@@ -171,6 +179,9 @@ def dry_run(
     # without churning this scaffold.
     ISOLATION_REGISTRY.register(ctx)
     token = active_txn.set(ctx)
+    # Seed the per-effect actor contextvar with the txn default — same as
+    # :func:`agent_txn`. ``acting_as`` overrides it per call.
+    actor_token = active_actor.set(actor)
     try:
         try:
             yield ctx
@@ -185,6 +196,7 @@ def dry_run(
             raise
         finally:
             active_txn.reset(token)
+            active_actor.reset(actor_token)
     finally:
         ISOLATION_REGISTRY.unregister(ctx)
 

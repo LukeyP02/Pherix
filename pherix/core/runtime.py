@@ -47,7 +47,7 @@ from pherix.core.policy import (
     PolicyViolation,
     sql_reader,
 )
-from pherix.core.tools import REGISTRY, active_effect, active_txn
+from pherix.core.tools import REGISTRY, active_actor, active_effect, active_txn
 from pherix.core.transaction import Transaction, TransactionStateError, TxnState
 
 
@@ -145,6 +145,7 @@ class TxnContext:
         *,
         dry_run: bool = False,
         client_id: str | None = None,
+        actor: str | None = None,
     ):
         self.txn = Transaction(policy=policy)
         self.audit = audit
@@ -188,6 +189,15 @@ class TxnContext:
         # as ``dry_run`` is; written into the nullable ``client_id`` audit
         # column. Library callers never supply one and the column stays NULL.
         self._client_id = client_id
+        # Actor: the transaction-level *default* principal each effect inherits
+        # (the "on whose authority" provenance), distinct from ``client_id``
+        # (which agent/session produced the effect). Held here as the txn
+        # default; the live per-effect value is read from the ``active_actor``
+        # contextvar at stamp-time, so :func:`pherix.core.tools.acting_as` can
+        # override it per call (one agent acting for several principals). This
+        # is attribution, not auth — Pherix records the claimed actor, never
+        # verifies it.
+        self._actor = actor
         self._stage_verdicts: list[PolicyVerdict] = []
         # Slice 8: capture a read-only state baseline per StateDiffable
         # adapter at txn begin. A SQLite SAVEPOINT is not separately
@@ -231,6 +241,15 @@ class TxnContext:
             raise CompensatorNotRegistered(spec.compensator, tool_name)
 
         adapter = self._resolve_adapter(spec.resource)
+        # Stamp the actor (the principal this effect runs on behalf of) from
+        # the live context: the ``active_actor`` contextvar, which the runtime
+        # seeded with this txn's default at ``agent_txn(.., actor=)`` time and
+        # which ``acting_as`` may have overridden for this specific call.
+        # Falls back to the txn default if the contextvar is unset (e.g. an
+        # effect journalled outside the ``agent_txn`` seeding path).
+        effect_actor = active_actor.get()
+        if effect_actor is None:
+            effect_actor = self._actor
         effect = Effect(
             txn_id=self.txn.txn_id,
             index=self.txn.next_index(),
@@ -239,6 +258,7 @@ class TxnContext:
             resource=spec.resource,
             reversible=adapter.supports_rollback(),
             compensator=spec.compensator,
+            actor=effect_actor,
         )
 
         # Slice 6: stage-time policy evaluation against the fully-built
@@ -712,6 +732,7 @@ def agent_txn(
     isolation: Any = None,
     *,
     client_id: str | None = None,
+    actor: str | None = None,
 ) -> Iterator[TxnContext]:
     """Wrap an agent's tool-call layer in a transaction.
 
@@ -724,6 +745,17 @@ def agent_txn(
     default), :class:`Retry` (only meaningful with :func:`run_txn`), or
     :class:`Serialize`. The isolation diff itself runs unconditionally at
     commit-start; the policy decides what to do with conflicts.
+
+    ``actor`` is the transaction-level *default* principal — the party every
+    effect in the block runs *on behalf of* (e.g. ``"alice"``,
+    ``"role:admin"``). It is stamped onto each :class:`Effect` as it is
+    journalled, and persisted in the audit journal. A per-call override is
+    available via :func:`pherix.core.tools.acting_as`, for the case where one
+    agent session acts for several principals across calls. ``actor`` is
+    *attribution, not identity*: Pherix records the claimed principal but does
+    NOT verify it, and it is distinct from ``client_id`` (which agent/session
+    produced the effect). Library callers who never set it leave the column
+    NULL.
     """
     policy = policy or Policy.allow_all()
     audit = audit or AuditJournal.default()
@@ -732,11 +764,22 @@ def agent_txn(
         if isinstance(adapter, TransactionalResourceAdapter):
             adapter.begin()
 
-    ctx = TxnContext(adapters, policy, audit, isolation=isolation, client_id=client_id)
+    ctx = TxnContext(
+        adapters,
+        policy,
+        audit,
+        isolation=isolation,
+        client_id=client_id,
+        actor=actor,
+    )
     # Slice 4 (D5): register the open ctx with the in-process arbitration
     # substrate so a concurrent Serialize commit can find us and wait.
     ISOLATION_REGISTRY.register(ctx)
     token = active_txn.set(ctx)
+    # Seed the per-effect actor contextvar with this txn's default. Each Effect
+    # reads ``active_actor`` as it is journalled; ``acting_as`` rebinds it for
+    # per-call overrides. Reset on every exit path alongside ``active_txn``.
+    actor_token = active_actor.set(actor)
     try:
         try:
             yield ctx
@@ -752,6 +795,7 @@ def agent_txn(
             raise
         finally:
             active_txn.reset(token)
+            active_actor.reset(actor_token)
     finally:
         # Unregister AFTER active_txn reset and AFTER rollback/commit have
         # run — so the close-event fires only once the txn is truly done

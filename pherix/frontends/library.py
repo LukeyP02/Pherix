@@ -91,7 +91,7 @@ from pherix.core.replay import (
     replay,
 )
 from pherix.core.runtime import CompensatorNotRegistered, GateBlocked, agent_txn
-from pherix.core.tools import tool
+from pherix.core.tools import acting_as, tool
 
 
 def run_txn(
@@ -168,6 +168,7 @@ __all__ = [
     "ReplayDivergence",
     "EffectOutcome",
     "tool",
+    "acting_as",
     "Policy",
     "PolicyContext",
     "PolicyRule",

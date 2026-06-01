@@ -415,6 +415,18 @@ class MCPServer:
         )
 
     # -- engine entry points -----------------------------------------------
+    #
+    # The sidecar path captures the session identity (declared at MCP
+    # ``initialize``, held on ``self._identity``) and threads it as BOTH
+    # ``client_id`` and ``actor``. They are distinct axes — ``client_id`` is
+    # *which MCP client/session produced* the effect, ``actor`` is *on whose
+    # authority* it runs — but in the single-tenant sidecar the producing
+    # client and the authorizing principal are the same party, so one identity
+    # serves both. A multi-tenant gateway that maps a session to a different
+    # downstream principal would diverge them here (and could further use
+    # ``acting_as`` for per-call actor overrides within a session). Like
+    # ``client_id``, ``actor`` here is *claimed*, not verified — Pherix
+    # attributes, it does not authenticate.
 
     def _open_txn(self, policy: Policy):
         return agent_txn(
@@ -422,6 +434,7 @@ class MCPServer:
             policy=policy,
             audit=self._gateway.audit,
             client_id=self._identity,
+            actor=self._identity,
         )
 
     def _open_dry_run(self, policy: Policy):
@@ -430,6 +443,7 @@ class MCPServer:
             policy=policy,
             audit=self._gateway.audit,
             client_id=self._identity,
+            actor=self._identity,
         )
 
     # -- helpers -----------------------------------------------------------

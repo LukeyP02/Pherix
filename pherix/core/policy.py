@@ -117,6 +117,22 @@ class PolicyRule:
     The wrapper exists so rules carry a stable ``name`` for
     :attr:`PolicyViolation.rule` and so the engine can treat ``@policy.rule``
     callables identically to :class:`Cap` instances.
+
+    A rule receives the full :class:`~pherix.core.effects.Effect`, so it can
+    branch on the **actor** — the principal the effect runs *on whose
+    authority* (``effect.actor``) — exactly as it branches on ``effect.tool``
+    or ``effect.args``. This is what makes a principal-aware policy possible::
+
+        @policy.rule
+        def only_admins_delete(effect, ctx):
+            if effect.tool == "delete_account" and effect.actor != "role:admin":
+                return Deny(f"delete requires role:admin, not {effect.actor!r}")
+            return Allow()
+
+    Pherix exposes the *claimed* actor — it never verifies it — so a rule that
+    branches on ``effect.actor`` is enforcing an attribution-based policy, not
+    an authenticated one. See :meth:`PolicyContext.actor` for the same value
+    surfaced through the context.
     """
 
     fn: Callable[[Effect, "PolicyContext"], Verdict]
@@ -269,6 +285,22 @@ class PolicyContext:
     def journal(self) -> tuple[Effect, ...]:
         """The journal so far, frozen at this moment in time."""
         return tuple(self._journal)
+
+    def actor(self, effect: Effect) -> str | None:
+        """The principal an effect runs *on whose authority* (``effect.actor``).
+
+        A thin, documented surface for the actor inside a rule — the value is
+        already on the effect the rule receives (``effect.actor``); this method
+        exists so principal-aware policy reads symmetrically with
+        :meth:`read` (world state) and ``ctx.journal`` (the journal so far).
+        Returns ``None`` when no actor was declared.
+
+        This is *attribution, not identity*: the value is whatever the caller
+        claimed at ``agent_txn(.., actor=...)`` (or via ``acting_as``); Pherix
+        does not verify it. Distinct from ``client_id`` (which agent/session
+        produced the effect), which lives on the transaction, not the effect.
+        """
+        return effect.actor
 
     def cap_running(self, cap: Any) -> float | int:
         return self._cap_totals.get(id(cap), 0)
