@@ -34,6 +34,16 @@ from typing import Any
 EFFECT_STATUSES = ("STAGED", "APPLIED", "COMPENSATED", "GATED", "FAILED")
 TXN_STATES = ("OPEN", "STAGED", "COMMITTED", "ROLLED_BACK", "PARTIAL", "STUCK")
 
+# A transaction is *settled* once it has reached a terminal state — the
+# forward/backward fold has run to completion and the txn will not change
+# again. OPEN and STAGED are in-flight (the body is still running, or the
+# commit is mid-bracket holding staged irreversibles), so they are excluded
+# from outcome RATES: a rate over a denominator that still contains in-flight
+# txns would drift as those txns settle. The reliability outcome rates are
+# therefore taken over settled txns only; in-flight txns are reported
+# separately (the held-back chains).
+SETTLED_STATES = ("COMMITTED", "ROLLED_BACK", "PARTIAL", "STUCK")
+
 # Effective per-effect verdict derived from the persisted status. This is the
 # honest, schema-backed reading of "what the policy/engine decided about this
 # effect" — distinct from the optional per-rule verdict rows (see
@@ -98,6 +108,17 @@ def _loads(blob: Any, default: Any) -> Any:
         return blob
 
 
+def _rate(numerator: int, denominator: int) -> float:
+    """A rate that is total over a denominator, guarding the empty case.
+
+    A reliability rate is a fraction ``k / n``; on an empty journal (or an
+    empty settled set) ``n = 0`` and the honest value is ``0.0``, not a
+    ``ZeroDivisionError``. The empty-journal zero-rate guard the spec calls
+    for lives here, in one place every rate routes through.
+    """
+    return (numerator / denominator) if denominator else 0.0
+
+
 class JournalReader:
     """Read-only window onto a Pherix audit journal.
 
@@ -129,6 +150,11 @@ class JournalReader:
         # the timeline's per-effect ``actor`` falls back to ``None`` and the
         # ``stats`` actor roll-up is simply empty for a pre-actor journal.
         self._has_actor = self._column_exists("effects", "actor")
+        # The conflicts table (Prong #2) is optional in exactly the same way
+        # the verdicts table is: a journal written before conflict recording
+        # simply has none, and the reader degrades to "zero conflicts" rather
+        # than failing to load.
+        self._has_conflicts = self._table_exists("conflicts")
 
     # --- introspection ------------------------------------------------------
 
@@ -291,7 +317,15 @@ class JournalReader:
                     "policy_verdicts": verdicts_by_index.get(e["idx"], []),
                 }
             )
-        return {"transaction": summary, "effects": effects}
+        # Prong #2: the conflicts (if any) attach to the transaction, not to
+        # an effect — a conflict is a property of the txn's read-set against
+        # the world at commit, spanning the whole journal, so it rides
+        # alongside the effect list rather than inside it.
+        return {
+            "transaction": summary,
+            "effects": effects,
+            "conflicts": self.get_conflicts(txn_id),
+        }
 
     # --- per-rule policy verdicts (optional table) -------------------------
 
@@ -318,6 +352,40 @@ class JournalReader:
                     "rule": d["rule_name"],
                     "kind": d["kind"],            # 'rule' | 'cap' | 'allowlist'
                     "reason": d["reason"],
+                }
+            )
+        return out
+
+    # --- isolation conflicts (optional table, Prong #2) --------------------
+
+    def get_conflicts(self, txn_id: str) -> list[dict]:
+        """Recorded isolation conflicts for one transaction, oldest-first.
+
+        Each row carries the parsed ``key`` tuple and the three versions
+        (``version_at_read`` / ``version_now`` / ``version_expected``), so a
+        console can render *what moved* without re-parsing JSON. Empty when
+        the journal predates conflict recording (no table) or the txn never
+        conflicted — the two are indistinguishable to a reader and both mean
+        "nothing to show", so neither raises.
+        """
+        if not self._has_conflicts:
+            return []
+        rows = self._conn.execute(
+            "SELECT * FROM conflicts WHERE txn_id = ? ORDER BY seq",
+            (txn_id,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            out.append(
+                {
+                    "seq": d["seq"],
+                    "resource": d["resource"],
+                    "key": _loads(d["key"], []),
+                    "version_at_read": _loads(d["version_at_read"], None),
+                    "version_now": _loads(d["version_now"], None),
+                    "version_expected": _loads(d["version_expected"], None),
+                    "ts": d["ts"],
                 }
             )
         return out
@@ -368,6 +436,15 @@ class JournalReader:
             verdict_rows = self._conn.execute(
                 "SELECT COUNT(*) FROM verdicts"
             ).fetchone()[0]
+        # Prong #2: the headline conflict count. Zero — not absent — when the
+        # journal predates conflict recording, so the dashboard always has a
+        # number to show and an old journal reads as "no conflicts seen"
+        # rather than erroring.
+        conflict_total = 0
+        if self._has_conflicts:
+            conflict_total = self._conn.execute(
+                "SELECT COUNT(*) FROM conflicts"
+            ).fetchone()[0]
         return {
             "txn_total": txn_total,
             "txns_by_state": by_state,
@@ -376,4 +453,188 @@ class JournalReader:
             "actors": actors,
             "tools": tools,
             "has_verdicts": verdict_rows > 0,
+            "conflict_total": conflict_total,
+        }
+
+    # --- reliability metrics (Prong #2) ------------------------------------
+
+    def reliability(self, *, include_dry_run: bool = False) -> dict:
+        """A pure GROUP-BY fold over the journal into reliability metrics.
+
+        Everything here is a traversal of the journal already on disk — no
+        engine import, no recomputation, no writes. The shape:
+
+        ``scope``
+            What was counted. ``include_dry_run`` (the caller's choice;
+            ``False`` by default — a dry-run touched nothing, so folding it
+            into "how often do real txns commit?" would lie). ``settled_states``
+            names the denominator the outcome rates are taken over. The denial
+            rollup is the one section computed over **all** verdicts
+            regardless of ``include_dry_run`` — a dry-run's denials are real
+            policy decisions worth surfacing — so its scope is stated
+            explicitly here (``denials_scope``) rather than left implicit.
+
+        ``outcomes``
+            Transaction-outcome rates over *settled* txns
+            (commit / rollback / partial / stuck). ``settled`` is the
+            denominator; ``rates`` divides each terminal count by it.
+            Zero-settled → all-zero rates (no division by zero).
+
+        ``effects``
+            Effect-outcome rates over every effect in the counted txns:
+            ``gate`` (GATED), ``failure`` (FAILED), ``compensated``
+            (COMPENSATED), each as a fraction of the effect total. Plus
+            ``gate_incidence`` — the fraction of counted txns carrying at
+            least one gated effect (txn-level, not effect-level).
+
+        ``top_failing_tools``
+            Tools ranked by how often they end FAILED or GATED — never
+            COMPENSATED (a compensated effect *succeeded* and was then cleanly
+            undone, which is the system working, not a tool failing).
+            Ranking: total desc, then *failed-before-gated* (a hard FAILED is
+            a worse signal than a policy GATE), then tool name for stable
+            ordering.
+
+        ``denials``
+            A rollup of every denied policy verdict (``allow = 0``) by reason,
+            commonest first. Computed over ALL verdicts (dry-run included) —
+            see ``scope.denials_scope``.
+
+        ``held_back``
+            Transactions currently held at the gate — in-flight (OPEN /
+            STAGED) txns that carry a GATED effect. The staged/gated chains an
+            operator still has to action.
+
+        ``conflict_total``
+            The Prong #2 conflict count from :meth:`get_conflicts` /
+            :meth:`stats`, surfaced here so reliability has the whole picture
+            in one payload. Zero on a journal predating conflict recording.
+        """
+        # Dry-run filter as a reusable WHERE fragment + params. Applied to the
+        # txn-scoped sections; the denial rollup deliberately ignores it.
+        if include_dry_run:
+            txn_where = ""
+            txn_filter = "1=1"
+        else:
+            txn_where = " WHERE t.dry_run = 0"
+            txn_filter = "t.dry_run = 0"
+
+        # --- outcomes: txn terminal-state histogram over settled txns -------
+        state_counts = {s: 0 for s in TXN_STATES}
+        for (state, n) in self._conn.execute(
+            "SELECT t.state, COUNT(*) FROM transactions t" + txn_where
+            + " GROUP BY t.state"
+        ).fetchall():
+            state_counts[state] = state_counts.get(state, 0) + n
+        settled = sum(state_counts[s] for s in SETTLED_STATES)
+        outcome_rates = {
+            "commit": _rate(state_counts["COMMITTED"], settled),
+            "rollback": _rate(state_counts["ROLLED_BACK"], settled),
+            "partial": _rate(state_counts["PARTIAL"], settled),
+            "stuck": _rate(state_counts["STUCK"], settled),
+        }
+
+        # --- effects: status histogram over the counted txns ----------------
+        # Effects join to their txn so the dry-run filter applies; without the
+        # join a dry-run's effects would leak into the effect rates.
+        eff_counts = {s: 0 for s in EFFECT_STATUSES}
+        for (status, n) in self._conn.execute(
+            "SELECT e.status, COUNT(*) FROM effects e "
+            "JOIN transactions t ON t.txn_id = e.txn_id "
+            "WHERE " + txn_filter + " GROUP BY e.status"
+        ).fetchall():
+            eff_counts[status] = eff_counts.get(status, 0) + n
+        eff_total = sum(eff_counts.values())
+        effect_rates = {
+            "gate": _rate(eff_counts["GATED"], eff_total),
+            "failure": _rate(eff_counts["FAILED"], eff_total),
+            "compensated": _rate(eff_counts["COMPENSATED"], eff_total),
+        }
+
+        # --- gate incidence: counted txns with >=1 gated effect -------------
+        counted_txns = self._conn.execute(
+            "SELECT COUNT(*) FROM transactions t" + txn_where
+        ).fetchone()[0]
+        gated_txns = self._conn.execute(
+            "SELECT COUNT(DISTINCT e.txn_id) FROM effects e "
+            "JOIN transactions t ON t.txn_id = e.txn_id "
+            "WHERE " + txn_filter + " AND e.status = 'GATED'"
+        ).fetchone()[0]
+        gate_incidence = _rate(gated_txns, counted_txns)
+
+        # --- top-failing tools: FAILED / GATED, never COMPENSATED -----------
+        tool_rows = self._conn.execute(
+            "SELECT e.tool, e.status, COUNT(*) AS n FROM effects e "
+            "JOIN transactions t ON t.txn_id = e.txn_id "
+            "WHERE " + txn_filter + " AND e.status IN ('FAILED', 'GATED') "
+            "GROUP BY e.tool, e.status"
+        ).fetchall()
+        per_tool: dict[str, dict] = {}
+        for r in tool_rows:
+            entry = per_tool.setdefault(
+                r["tool"], {"tool": r["tool"], "failed": 0, "gated": 0, "total": 0}
+            )
+            if r["status"] == "FAILED":
+                entry["failed"] += r["n"]
+            else:  # GATED
+                entry["gated"] += r["n"]
+            entry["total"] += r["n"]
+        # Rank: total desc, then failed-before-gated (more FAILED ranks
+        # higher among equal totals), then tool name for determinism.
+        top_failing_tools = sorted(
+            per_tool.values(),
+            key=lambda e: (-e["total"], -e["failed"], e["tool"]),
+        )
+
+        # --- denial-reason rollup: ALL verdicts, dry-run included -----------
+        denials: list[dict] = []
+        if self._has_verdicts:
+            denial_rows = self._conn.execute(
+                "SELECT reason, COUNT(*) AS n FROM verdicts "
+                "WHERE allow = 0 GROUP BY reason ORDER BY n DESC, reason"
+            ).fetchall()
+            denials = [
+                {"reason": r["reason"], "count": r["n"]} for r in denial_rows
+            ]
+
+        # --- held-back chains: in-flight txns holding a gated effect --------
+        held_rows = self._conn.execute(
+            "SELECT DISTINCT t.txn_id, t.state FROM transactions t "
+            "JOIN effects e ON e.txn_id = t.txn_id "
+            "WHERE " + txn_filter
+            + " AND t.state IN ('OPEN', 'STAGED') AND e.status = 'GATED' "
+            "ORDER BY t.txn_id"
+        ).fetchall()
+        held_back = [{"txn_id": r["txn_id"], "state": r["state"]} for r in held_rows]
+
+        # --- conflicts: the Prong #2 first-class record ---------------------
+        conflict_total = 0
+        if self._has_conflicts:
+            conflict_total = self._conn.execute(
+                "SELECT COUNT(*) FROM conflicts"
+            ).fetchone()[0]
+
+        return {
+            "scope": {
+                "include_dry_run": include_dry_run,
+                "settled_states": list(SETTLED_STATES),
+                # The denial rollup spans every verdict regardless of the
+                # dry-run choice above — stated, not implied.
+                "denials_scope": "all_verdicts",
+            },
+            "outcomes": {
+                "settled": settled,
+                "counts": {s: state_counts[s] for s in SETTLED_STATES},
+                "rates": outcome_rates,
+            },
+            "effects": {
+                "total": eff_total,
+                "counts": eff_counts,
+                "rates": effect_rates,
+                "gate_incidence": gate_incidence,
+            },
+            "top_failing_tools": top_failing_tools,
+            "denials": denials,
+            "held_back": held_back,
+            "conflict_total": conflict_total,
         }
