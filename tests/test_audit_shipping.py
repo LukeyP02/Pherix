@@ -59,20 +59,23 @@ def test_export_since_none_returns_whole_journal_in_dependency_order():
     rows_by_table, cursor = j.export_since(None)
 
     # All shippable tables present, in dependency order (a txn before its
-    # effects, effects before verdicts / conflicts) — a control plane
-    # validating FKs never sees an orphan. ``conflicts`` (Prong #2) is the
-    # newest journal record and ships alongside the rest; this txn recorded
-    # none, so its list is empty but the table is still present.
+    # effects, effects before verdicts / conflicts / approvals) — a control
+    # plane validating FKs never sees an orphan. ``conflicts`` (Prong #2) and
+    # ``approvals`` (over-the-wire human gate) are the newest journal records
+    # and ship alongside the rest; this txn recorded none of either, so their
+    # lists are empty but the tables are still present.
     assert list(rows_by_table.keys()) == [
         "transactions",
         "effects",
         "verdicts",
         "conflicts",
+        "approvals",
     ]
     assert len(rows_by_table["transactions"]) == 1
     assert len(rows_by_table["effects"]) == 1
     assert len(rows_by_table["verdicts"]) == 1
     assert rows_by_table["conflicts"] == []  # none recorded for this txn
+    assert rows_by_table["approvals"] == []  # none recorded for this txn
     # Every row carries its rowid (the cursor coordinate).
     assert all("rowid" in r for rows in rows_by_table.values() for r in rows)
     # The cursor sits at the high-water rowid of each table (conflicts has no

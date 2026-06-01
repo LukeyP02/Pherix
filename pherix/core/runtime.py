@@ -27,7 +27,13 @@ from typing import Any, Iterator
 
 from pherix.core.adapters.base import StateDiffable, TransactionalResourceAdapter
 from pherix.core.audit import AuditJournal
-from pherix.core.effects import Effect, EffectStatus, StagedResult
+from pherix.core.effects import (
+    Effect,
+    EffectStatus,
+    PendingApproval,
+    StagedResult,
+    compute_approval_token,
+)
 from pherix.core.isolation import (
     REGISTRY as ISOLATION_REGISTRY,
     Abort,
@@ -161,6 +167,14 @@ class TxnContext:
         # Pre-approval tokens for staged irreversibles, keyed by effect_id.
         # Recorded by approve_irreversible(); consumed by the commit-time gate.
         self._approvals: set[str] = set()
+        # Over-the-wire resume flag. Set by a ``commit(pending_approval=True)``
+        # that gate-blocked and yielded :class:`PendingApproval` handles
+        # instead of rolling back. While set, the txn is NOT finished and stays
+        # re-committable, and ``agent_txn``'s clean-exit auto-commit is
+        # suppressed (the operator drives the resume explicitly). Cleared the
+        # moment a subsequent commit either fires the effects or the txn is
+        # rolled back.
+        self._pending = False
         # Slice 6: a single PolicyContext per txn carries the journal-so-far
         # reference + per-cap running totals across every stage-time
         # evaluate() call. The same ctx is reused for the commit-time
@@ -343,7 +357,29 @@ class TxnContext:
 
     # --- finalisation ---
 
-    def commit(self) -> None:
+    def commit(self, *, pending_approval: bool = False) -> list[PendingApproval]:
+        """Fold the journal forward, firing staged irreversibles past the gate.
+
+        Returns the list of :class:`PendingApproval` handles the gate raised —
+        empty on a clean commit. The list is only ever non-empty when
+        ``pending_approval=True`` (the resumable, over-the-wire path); the
+        default ``pending_approval=False`` preserves the in-process hard gate
+        (a blocked effect raises :class:`GateBlocked` and the txn rolls back).
+
+        **The over-the-wire resume path** (``pending_approval=True``): the gate
+        unions the in-process pre-approvals with the *journalled* approvals
+        (``audit.approved_effect_ids`` — written by an out-of-process
+        ``approve(token)`` through the proxy). For every staged irreversible
+        that still lacks a compensator AND an approval, the runtime persists a
+        PENDING-APPROVAL record (keyed by ``txn_id`` + ``effect_id``, carrying
+        a stable token) and returns a handle — WITHOUT firing anything and
+        WITHOUT rolling back. The transaction stays open and re-committable. A
+        later ``commit(pending_approval=True)``, after the approval has landed
+        in the journal, sees it and fires the effect. Policy is re-evaluated on
+        every such resumed commit (the twice-evaluated bracket below runs each
+        time), so a revocation between request and approval still blocks —
+        TOCTOU safety survives the resume.
+        """
         self._guard_thread()
         self._guard_open()
 
@@ -399,22 +435,78 @@ class TxnContext:
 
         if staged:
             # D3: the gate — every staged irreversible must be
-            # compensator-backed OR pre-approved.
+            # compensator-backed OR approved. "Approved" is the union of the
+            # in-process pre-approvals (``approve_irreversible``) and the
+            # *journalled* approvals an out-of-process ``approve(token)`` wrote
+            # (``audit.approved_effect_ids``). Reading the journal here is what
+            # makes approval work over the wire: the resumed commit folds the
+            # persisted APPROVED records and the gate passes for effects a
+            # different process cleared. The read happens at commit-time, after
+            # the policy re-eval above — so a revocation between approval and
+            # resume still wins (TOCTOU).
+            approved = set(self._approvals) | self.audit.approved_effect_ids(
+                self.txn.txn_id
+            )
             needs_approval = [
                 e.effect_id
                 for e in staged
-                if e.compensator is None and e.effect_id not in self._approvals
+                if e.compensator is None and e.effect_id not in approved
             ]
             if needs_approval:
+                if pending_approval:
+                    # Resumable path: persist a PENDING record per blocked
+                    # effect and hand back handles. Do NOT roll back — the txn
+                    # stays open and re-committable so a later commit (after
+                    # the approval lands in the journal) fires the effect. The
+                    # PENDING write is idempotent on (txn_id, effect_id), so a
+                    # second resume that re-gates the same effect refreshes
+                    # rather than duplicates.
+                    handles: list[PendingApproval] = []
+                    for e in staged:
+                        if (
+                            e.compensator is None
+                            and e.effect_id not in approved
+                        ):
+                            token = compute_approval_token(
+                                self.txn.txn_id, e.effect_id
+                            )
+                            self.audit.record_pending_approval(
+                                self.txn.txn_id, e.effect_id, token
+                            )
+                            handles.append(
+                                PendingApproval(
+                                    txn_id=self.txn.txn_id,
+                                    effect_id=e.effect_id,
+                                    token=token,
+                                )
+                            )
+                    # The txn transitioned OPEN -> STAGED above (staged
+                    # irreversibles present). Return to OPEN so the journal can
+                    # still be appended to / re-committed and the state machine
+                    # admits the resume; the staged effects keep status STAGED
+                    # (nothing fired, nothing gated — they are merely awaiting
+                    # an out-of-process decision).
+                    if self.txn.state is TxnState.STAGED:
+                        self.txn.state = TxnState.OPEN
+                        self.audit.update_transaction_state(
+                            self.txn.txn_id, TxnState.OPEN.name
+                        )
+                    self._pending = True
+                    return handles
+                # Default in-process hard gate: mark blocked effects GATED,
+                # unwind, and raise.
                 for e in staged:
                     if (
                         e.compensator is None
-                        and e.effect_id not in self._approvals
+                        and e.effect_id not in approved
                     ):
                         e.status = EffectStatus.GATED
                         self.audit.update_effect(e)
                 self._partial_unwind()
                 raise GateBlocked(needs_approval)
+            # Past the gate (clean or resumed): clear the pending flag so a
+            # subsequent state read sees a finishing txn.
+            self._pending = False
 
             # D5: forward fold over staged irreversibles. A mid-fire failure
             # triggers the mixed-fold backward unwind.
@@ -465,6 +557,7 @@ class TxnContext:
         if durable:
             flush_increments(pending_increments(durable, self.txn.effects))
         self._finished = True
+        return []
 
     # --- Slice 7: dry-run finalise ----------------------------------------
 
@@ -802,10 +895,19 @@ def agent_txn(
             # conflict raised by commit() falls into the except branch
             # below — the runtime rolls back cleanly via the existing
             # machinery before propagating the exception.
-            if not ctx._finished:
+            #
+            # ``_pending`` suppresses the clean-exit auto-commit: the operator
+            # ran ``commit(pending_approval=True)``, it gate-blocked and handed
+            # back :class:`PendingApproval` handles, and the txn is deliberately
+            # held open awaiting an out-of-process ``approve(token)``. Driving
+            # the default hard-gate commit here would raise + roll the pending
+            # txn back, destroying exactly the state the resume depends on. The
+            # block exits with the txn open; the operator resumes it (same
+            # process, same live connections) once the approval has landed.
+            if not ctx._finished and not ctx._pending:
                 ctx.commit()
         except Exception:
-            if not ctx._finished:
+            if not ctx._finished and not ctx._pending:
                 ctx.rollback()
             raise
         finally:
