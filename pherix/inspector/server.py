@@ -15,6 +15,7 @@ Routes:
 ``GET /api/transactions``       list + filter (query params below)
 ``GET /api/transactions/<id>``  one transaction's full timeline
 ``GET /api/reliability``        reliability metrics (Prong #2) over the journal
+``GET /api/lineage``            causal read→write provenance (``?txn=<id>``)
 ==============================  ===========================================
 
 ``/api/transactions`` accepts ``state``, ``client_id``, ``tool``, ``since``,
@@ -23,6 +24,10 @@ Routes:
 ``/api/reliability`` accepts ``include_dry_run`` (``0``/``1``, default ``0``
 — a dry-run touched nothing, so it is excluded from reliability rates by
 default; pass ``include_dry_run=1`` to fold dry-runs back in).
+
+``/api/lineage`` accepts an optional ``txn`` — present scopes the focus to one
+transaction (upstream producers still resolved across the whole journal),
+absent folds the entire journal.
 
 The reader is shared across request threads behind a lock — SQLite reads are
 fast and the console is single-operator, so serialising them is simpler and
@@ -137,6 +142,11 @@ class InspectorHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/transactions":
                 self._json(200, self._list(parse_qs(parsed.query)))
+                return
+            if path == "/api/lineage":
+                q = parse_qs(parsed.query)
+                txn = (q.get("txn") or [None])[0]
+                self._json(200, self._read(self.srv.reader.lineage, txn))
                 return
             if path.startswith("/api/transactions/"):
                 txn_id = path[len("/api/transactions/"):]

@@ -119,6 +119,57 @@ def _rate(numerator: int, denominator: int) -> float:
     return (numerator / denominator) if denominator else 0.0
 
 
+# --- lineage (action-provenance) primitives ---------------------------------
+#
+# A read/write key persisted in the journal is ``[resource, key, version]``
+# (or ``[resource, key]`` for an adapter whose writes carry no version, e.g.
+# the filesystem). These helpers normalise that shape for the lineage fold.
+
+# The honest-scope statement. It travels *with* the lineage payload (returned
+# as ``caveat``) so any consumer — the inspector, an exported report, a buyer's
+# own tool — sees exactly what the relation does and does not claim. This is
+# the action/data-lineage boundary the spec demands be explicit.
+LINEAGE_CAVEAT = (
+    "Action provenance only. Edges are folded from the journal's recorded "
+    "read/write keys and the resources' own version counters. A 'produces' "
+    "edge is version-grounded — a read observed the exact version a write "
+    "produced, a fact the journal can prove. An 'informs' edge is "
+    "co-transactional ordering — a read preceded a write inside the same "
+    "atomic transaction — NOT proven value-flow. Pherix does NOT trace data "
+    "lineage through the agent/LLM's context: it cannot see that a value a "
+    "tool read actually shaped a value the agent later wrote, only that the "
+    "journal records the read before the write. Full data lineage through the "
+    "model is out of scope and not claimed."
+)
+
+
+def _lineage_key(entry: Any) -> dict:
+    """Normalise a persisted key triple into ``{resource, key, version}``.
+
+    Tolerates the two-element ``[resource, key]`` form (no version, as the
+    filesystem adapter writes) and anything malformed (degrades to a best-
+    effort dict rather than raising — the reader renders what it finds).
+    """
+    if not isinstance(entry, (list, tuple)) or not entry:
+        return {"resource": None, "key": entry, "version": None}
+    resource = entry[0]
+    key = entry[1] if len(entry) > 1 else None
+    version = entry[2] if len(entry) > 2 else None
+    return {"resource": resource, "key": key, "version": version}
+
+
+def _freeze(value: Any) -> Any:
+    """Recursively convert lists to tuples so a parsed key is hashable.
+
+    Keys arrive from JSON as lists (``["releases", "current"]``); the producer
+    index keys on ``(resource, frozen_key, version)`` so two reads/writes of the
+    same logical key collide regardless of which transaction wrote them.
+    """
+    if isinstance(value, list):
+        return tuple(_freeze(v) for v in value)
+    return value
+
+
 class JournalReader:
     """Read-only window onto a Pherix audit journal.
 
@@ -637,4 +688,234 @@ class JournalReader:
             "denials": denials,
             "held_back": held_back,
             "conflict_total": conflict_total,
+        }
+
+    # --- lineage (causal read→write provenance) ----------------------------
+
+    def lineage(self, txn_id: str | None = None) -> dict:
+        """Fold the journal's read/write keys into causal read→write chains.
+
+        This answers the provenance question — *"this write was informed by
+        these reads, with these verdicts"* — as a pure traversal of the same
+        append-only journal everything else folds over. Nothing is recomputed
+        from the live world; the relation is read entirely off the persisted
+        ``read_keys`` / ``write_keys`` and the resources' version counters.
+
+        Two relations, both derived (never stored):
+
+        - **produces** (version-grounded, the strong claim): a read that
+          observed ``(resource, key, version)`` is *produced by* the write
+          whose recorded post-version is exactly that ``version``. The version
+          counter ties reader to writer, so this is provable from the journal
+          — a genuine read-after-write data edge, even across transactions.
+        - **informs** (co-transactional ordering, the weaker claim): inside one
+          transaction, a read at index *i* informs every write at index *j ≥ i*
+          — the read happened before the write in the same atomic unit. Honest
+          ordering, **not** proven value-flow (see :data:`LINEAGE_CAVEAT`).
+
+        ``txn_id`` scopes the *focus* (which writers get a chain, which effects
+        are nodes); upstream producers are still resolved against the **whole**
+        journal, so a chain shows when one transaction's write fed another's
+        read. ``txn_id=None`` folds the entire journal.
+
+        Returns a render-ready dict — ``scope`` (counts), ``nodes`` (effects
+        that read/write, each tagged ``in_focus``), ``edges`` (the causal
+        graph, every endpoint present in ``nodes``), ``chains`` (per-writer
+        provenance, the headline view) and ``caveat`` (the scope statement,
+        carried with the data). Everything is plain JSON-serialisable.
+        """
+        rows = self._conn.execute(
+            "SELECT txn_id, idx, tool, resource, status, read_keys, write_keys "
+            "FROM effects ORDER BY txn_id, idx"
+        ).fetchall()
+
+        # Normalise every effect once: parsed reads/writes + a stable node id.
+        effects: list[dict] = []
+        for r in rows:
+            d = dict(r)
+            effects.append(
+                {
+                    "node": f"{d['txn_id']}#{d['idx']}",
+                    "txn_id": d["txn_id"],
+                    "idx": d["idx"],
+                    "tool": d["tool"],
+                    "resource": d["resource"],
+                    "status": d["status"],
+                    "reads": [_lineage_key(k) for k in _loads(d["read_keys"], [])],
+                    "writes": [_lineage_key(k) for k in _loads(d["write_keys"], [])],
+                }
+            )
+        node_meta = {e["node"]: e for e in effects}
+
+        # Producer index: which write produced each (resource, key, version).
+        # Versionless writes (filesystem) can't anchor a version-grounded edge,
+        # so they're skipped here — they still appear as writers in chains.
+        producers: dict[tuple, str] = {}
+        for e in effects:
+            for w in e["writes"]:
+                if w["version"] is None:
+                    continue
+                sig = (w["resource"], _freeze(w["key"]), w["version"])
+                producers.setdefault(sig, e["node"])
+
+        by_txn: dict[str, list[dict]] = {}
+        for e in effects:  # already idx-ordered within each txn by the query
+            by_txn.setdefault(e["txn_id"], []).append(e)
+
+        focus = {
+            e["node"]
+            for e in effects
+            if txn_id is None or e["txn_id"] == txn_id
+        }
+        focus_txns = {node_meta[n]["txn_id"] for n in focus}
+
+        # Per-effect policy verdicts for the focus transactions (the "with
+        # these verdicts" half of the provenance claim).
+        verdicts_by_node: dict[str, list[dict]] = {}
+        if self._has_verdicts:
+            for tid in focus_txns:
+                for idx, vs in self._verdicts_by_index(tid).items():
+                    verdicts_by_node[f"{tid}#{idx}"] = vs
+
+        edges: list[dict] = []
+        referenced: set[str] = set()
+
+        def _producer_of(rd: dict) -> str | None:
+            return producers.get((rd["resource"], _freeze(rd["key"]), rd["version"]))
+
+        # Pass A — produces edges (read-after-write) for every focus read, so a
+        # read whose value came from an earlier write shows that provenance even
+        # if the reading effect writes nothing itself.
+        for e in effects:
+            if e["node"] not in focus:
+                continue
+            for rd in e["reads"]:
+                producer = _producer_of(rd)
+                if producer is not None and producer != e["node"]:
+                    edges.append(
+                        {
+                            "from": producer,
+                            "to": e["node"],
+                            "kind": "produces",
+                            "resource": rd["resource"],
+                            "key": rd["key"],
+                            "version": rd["version"],
+                            "detail": (
+                                f"{node_meta[producer]['tool']} wrote "
+                                f"{rd['resource']}:{rd['key']} v{rd['version']}, "
+                                f"read by {e['tool']}"
+                            ),
+                        }
+                    )
+                    referenced.add(producer)
+                    referenced.add(e["node"])
+
+        # Pass B — chains + informs edges, one chain per focus writer.
+        chains: list[dict] = []
+        for e in effects:
+            if e["node"] not in focus or not e["writes"]:
+                continue
+            informed_by: list[dict] = []
+            for other in by_txn[e["txn_id"]]:
+                if other["idx"] > e["idx"]:
+                    break  # idx-ordered: nothing past the writer can precede it
+                for rd in other["reads"]:
+                    producer = _producer_of(rd)
+                    same_effect = other["node"] == e["node"]
+                    informed_by.append(
+                        {
+                            "node": other["node"],
+                            "txn_id": other["txn_id"],
+                            "idx": other["idx"],
+                            "tool": other["tool"],
+                            "resource": rd["resource"],
+                            "key": rd["key"],
+                            "version": rd["version"],
+                            "same_effect": same_effect,
+                            "produced_by": producer,
+                            # No producer in this journal → the value's origin
+                            # predates it or lives elsewhere. Honest, not a gap.
+                            "produced_by_external": producer is None,
+                        }
+                    )
+                    if not same_effect:
+                        edges.append(
+                            {
+                                "from": other["node"],
+                                "to": e["node"],
+                                "kind": "informs",
+                                "resource": rd["resource"],
+                                "key": rd["key"],
+                                "version": rd["version"],
+                                "detail": (
+                                    f"{other['tool']} read {rd['resource']}:"
+                                    f"{rd['key']} before {e['tool']} wrote"
+                                ),
+                            }
+                        )
+                        referenced.add(other["node"])
+            referenced.add(e["node"])
+            v = effect_verdict(e["status"])
+            chains.append(
+                {
+                    "node": e["node"],
+                    "txn_id": e["txn_id"],
+                    "idx": e["idx"],
+                    "tool": e["tool"],
+                    "resource": e["resource"],
+                    "status": e["status"],
+                    "verdict": v["verdict"],
+                    "tone": v["tone"],
+                    "writes": e["writes"],
+                    "informed_by": informed_by,
+                    "policy_verdicts": verdicts_by_node.get(e["node"], []),
+                }
+            )
+
+        # Dedupe edges (a reader→writer pair repeats per shared key; keep one
+        # per (from, to, kind, resource, key)).
+        seen: set[tuple] = set()
+        unique_edges: list[dict] = []
+        for ed in edges:
+            sig = (ed["from"], ed["to"], ed["kind"], ed["resource"],
+                   json.dumps(ed["key"], sort_keys=True))
+            if sig in seen:
+                continue
+            seen.add(sig)
+            unique_edges.append(ed)
+
+        # Nodes = focus effects + any external producer feeding them, so every
+        # edge endpoint resolves to a node the UI can draw.
+        node_ids = focus | referenced
+        nodes = []
+        for nid in sorted(node_ids):
+            e = node_meta[nid]
+            v = effect_verdict(e["status"])
+            nodes.append(
+                {
+                    "node": nid,
+                    "txn_id": e["txn_id"],
+                    "idx": e["idx"],
+                    "tool": e["tool"],
+                    "resource": e["resource"],
+                    "status": e["status"],
+                    "verdict": v["verdict"],
+                    "tone": v["tone"],
+                    "in_focus": nid in focus,
+                    "reads": e["reads"],
+                    "writes": e["writes"],
+                }
+            )
+
+        return {
+            "scope": {
+                "txn_id": txn_id,
+                "node_count": len(nodes),
+                "edge_count": len(unique_edges),
+                "chain_count": len(chains),
+            },
+            "nodes": nodes,
+            "edges": unique_edges,
+            "chains": chains,
+            "caveat": LINEAGE_CAVEAT,
         }
