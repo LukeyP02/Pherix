@@ -131,3 +131,28 @@ def test_api_timeline_missing_is_404(server: str):
 
 def test_api_unknown_route_is_404(server: str):
     assert _status_of(server + "/api/whatever") == 404
+
+
+# --- reliability (Prong #2) -------------------------------------------------
+
+
+def test_api_reliability_default_excludes_dry_run(server: str):
+    status, data = _get_json(server + "/api/reliability")
+    assert status == 200
+    assert data["scope"]["include_dry_run"] is False
+    # Settled over the 6 non-dry-run txns: COMMITTED 3 + ROLLED_BACK 1 + STUCK 1.
+    assert data["outcomes"]["settled"] == 5
+    assert data["effects"]["total"] == 12
+    assert data["conflict_total"] == 0
+    # failed-before-gated ranking surfaces over the wire.
+    assert [t["tool"] for t in data["top_failing_tools"]] == [
+        "notify_vendor",
+        "charge_card",
+    ]
+
+
+def test_api_reliability_include_dry_run_flag(server: str):
+    _, excl = _get_json(server + "/api/reliability?include_dry_run=0")
+    _, incl = _get_json(server + "/api/reliability?include_dry_run=1")
+    assert incl["effects"]["total"] == excl["effects"]["total"] + 2
+    assert incl["scope"]["include_dry_run"] is True

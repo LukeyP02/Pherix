@@ -10,13 +10,17 @@
 <div class="app">
   <header>
     <span class="brand">pherix<span class="dot">·</span>inspector<small>governance console</small></span>
+    <nav class="views" id="views">
+      <button class="view-btn on" id="viewJournal" data-view="journal">journal</button>
+      <button class="view-btn" id="viewReliability" data-view="reliability">reliability</button>
+    </nav>
     <div class="stats" id="stats">—</div>
     <span class="live-toggle" id="liveToggle" title="Poll the journal so a live run animates">
       <span class="live-dot"></span><span id="liveLabel">live: off</span>
     </span>
   </header>
 
-  <div class="cols">
+  <div class="cols" id="journalView">
     <div class="list-col">
       <div class="filters">
         <select id="fState" title="transaction state">
@@ -47,6 +51,17 @@
     <div class="detail-col" id="detail">
       <div class="empty">select a transaction to see its effect timeline</div>
     </div>
+  </div>
+
+  <div class="reliability hidden" id="reliabilityView">
+    <div class="rel-head">
+      <h2>reliability</h2>
+      <label class="rel-drytoggle" title="fold dry-runs back into the rates (off = the honest default)">
+        <input type="checkbox" id="relDry" /> include dry-runs
+      </label>
+      <span class="rel-scope" id="relScope"></span>
+    </div>
+    <div class="rel-grid" id="relGrid"><div class="empty">loading…</div></div>
   </div>
 </div>
 <script src="/static/app.js"></script>

@@ -6,6 +6,8 @@
 const $ = (sel) => document.querySelector(sel);
 const state = {
   selected: null,        // selected txn_id
+  view: "journal",       // "journal" | "reliability"
+  relDry: false,         // reliability: include dry-runs (off = honest default)
   live: false,
   timer: null,
   seenTxns: new Set(),   // for the "fresh row" flash in live mode
@@ -293,6 +295,88 @@ function stopPlay() {
   if (btn) { btn.textContent = "▶"; btn.classList.remove("active"); }
 }
 
+/* --- reliability view --- */
+
+const pct = (r) => `${(Number(r) * 100).toFixed(1)}%`;
+
+function bar(tone, rate, label) {
+  const w = Math.max(0, Math.min(100, Number(rate) * 100));
+  return `<div class="rel-bar">
+    <div class="rel-bar-label">${esc(label)} <b>${pct(rate)}</b></div>
+    <div class="rel-bar-track"><div class="rel-bar-fill t-${esc(tone)}" style="width:${w}%"></div></div>
+  </div>`;
+}
+
+function card(title, inner) {
+  return `<section class="rel-card"><h3>${esc(title)}</h3>${inner}</section>`;
+}
+
+async function loadReliability() {
+  const grid = $("#relGrid");
+  let d;
+  try {
+    d = await getJSON("/api/reliability?include_dry_run=" + (state.relDry ? "1" : "0"));
+  } catch (e) {
+    grid.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    return;
+  }
+  $("#relScope").textContent =
+    `outcomes over ${d.outcomes.settled} settled txn(s)` +
+    ` · effects over ${d.effects.total}` +
+    ` · denials: ${d.scope.denials_scope}` +
+    ` · dry-runs ${d.scope.include_dry_run ? "included" : "excluded"}`;
+
+  const o = d.outcomes.rates;
+  const outcomes = card("transaction outcomes",
+    bar("ok", o.commit, "commit") +
+    bar("undone", o.rollback, "rollback") +
+    bar("error", o.partial, "partial") +
+    bar("error", o.stuck, "stuck"));
+
+  const e = d.effects.rates;
+  const effects = card("effect outcomes",
+    bar("blocked", e.gate, "gate") +
+    bar("error", e.failure, "failure") +
+    bar("undone", e.compensated, "compensated") +
+    `<div class="rel-stat">gate incidence (txns w/ a gate): <b>${pct(d.effects.gate_incidence)}</b></div>` +
+    `<div class="rel-stat">isolation conflicts recorded: <b>${d.conflict_total}</b></div>`);
+
+  const tools = d.top_failing_tools.length
+    ? d.top_failing_tools.map((t) =>
+        `<div class="rel-row"><span class="rel-tool">${esc(t.tool)}</span>
+          <span class="rel-counts">${t.failed ? `<span class="t-error">${t.failed} failed</span>` : ""}
+          ${t.gated ? `<span class="t-blocked">${t.gated} gated</span>` : ""}</span></div>`).join("")
+    : `<div class="empty small">no failing tools</div>`;
+
+  const denials = d.denials.length
+    ? d.denials.map((x) =>
+        `<div class="rel-row"><span class="rel-count">${x.count}×</span>
+          <span class="rel-reason">${esc(x.reason == null ? "(no reason given)" : x.reason)}</span></div>`).join("")
+    : `<div class="empty small">no denials</div>`;
+
+  const held = d.held_back.length
+    ? d.held_back.map((h) =>
+        `<div class="rel-row"><span class="rel-tool">${esc(h.txn_id)}</span>
+          ${pill("blocked", h.state)}</div>`).join("")
+    : `<div class="empty small">nothing held at the gate</div>`;
+
+  grid.innerHTML =
+    outcomes + effects +
+    card("top-failing tools (failed / gated, never compensated)", tools) +
+    card("denial reasons (all verdicts incl. dry-run)", denials) +
+    card("held back at the gate", held);
+}
+
+/* --- view switching --- */
+function setView(view) {
+  state.view = view;
+  $("#journalView").classList.toggle("hidden", view !== "journal");
+  $("#reliabilityView").classList.toggle("hidden", view !== "reliability");
+  document.querySelectorAll(".view-btn").forEach((b) =>
+    b.classList.toggle("on", b.dataset.view === view));
+  refresh();
+}
+
 /* --- live mode --- */
 function setLive(on) {
   state.live = on;
@@ -305,8 +389,12 @@ function setLive(on) {
 async function refresh() {
   try {
     await loadStats();
-    await loadList();
-    if (state.selected) await loadDetail();
+    if (state.view === "reliability") {
+      await loadReliability();
+    } else {
+      await loadList();
+      if (state.selected) await loadDetail();
+    }
   } catch (e) { /* transient during a live run; next tick retries */ }
 }
 
@@ -315,6 +403,12 @@ function init() {
   ["#fState", "#fClient", "#fTool", "#fNoDry"].forEach((s) =>
     $(s).addEventListener("change", loadList));
   $("#liveToggle").addEventListener("click", () => setLive(!state.live));
+  document.querySelectorAll(".view-btn").forEach((b) =>
+    b.addEventListener("click", () => setView(b.dataset.view)));
+  $("#relDry").addEventListener("change", (ev) => {
+    state.relDry = ev.target.checked;
+    loadReliability();
+  });
   refresh();
 }
 document.addEventListener("DOMContentLoaded", init);

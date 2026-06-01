@@ -14,10 +14,15 @@ Routes:
 ``GET /api/stats``              headline counts + the filter vocabulary
 ``GET /api/transactions``       list + filter (query params below)
 ``GET /api/transactions/<id>``  one transaction's full timeline
+``GET /api/reliability``        reliability metrics (Prong #2) over the journal
 ==============================  ===========================================
 
 ``/api/transactions`` accepts ``state``, ``client_id``, ``tool``, ``since``,
 ``until``, ``include_dry_run`` (``0``/``1``), and ``limit``.
+
+``/api/reliability`` accepts ``include_dry_run`` (``0``/``1``, default ``0``
+— a dry-run touched nothing, so it is excluded from reliability rates by
+default; pass ``include_dry_run=1`` to fold dry-runs back in).
 
 The reader is shared across request threads behind a lock — SQLite reads are
 fast and the console is single-operator, so serialising them is simpler and
@@ -115,6 +120,20 @@ class InspectorHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/stats":
                 self._json(200, self._read(self.srv.reader.stats))
+                return
+            if path == "/api/reliability":
+                q = parse_qs(parsed.query)
+                vals = q.get("include_dry_run")
+                # Default excludes dry-runs (reliability() default); the param
+                # only flips it ON when explicitly "1".
+                include_dry_run = bool(vals) and vals[0] == "1"
+                self._json(
+                    200,
+                    self._read(
+                        self.srv.reader.reliability,
+                        include_dry_run=include_dry_run,
+                    ),
+                )
                 return
             if path == "/api/transactions":
                 self._json(200, self._list(parse_qs(parsed.query)))

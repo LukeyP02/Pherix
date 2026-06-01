@@ -578,6 +578,21 @@ class TxnContext:
         conflicts = check_conflicts(self.txn.effects, self._adapters)
         if not conflicts:
             return
+        # Prong #2: persist the conflict as a first-class journal record
+        # BEFORE handing to the resolution policy. The diff fires only at
+        # commit, after the body's effects are all journalled, so the txn_id
+        # row already exists — no orphan. Writing here (not inside resolve)
+        # means the record survives both Abort/Serialize (resolve raises,
+        # the conflict is already durable) AND Retry (resolve raises the
+        # internal _RetrySignal, the txn rolls back and the body replays — so
+        # every attempt that conflicts leaves its own record, and the journal
+        # can finally count what it used to swallow). Best-effort and
+        # append-only like the verdict record: a write failure must never
+        # change the txn's fate, which the resolution policy decides next.
+        try:
+            self.audit.record_conflicts(self.txn.txn_id, conflicts)
+        except Exception:
+            pass
         # Hands off to the policy. Abort raises IsolationConflict; Retry
         # raises _RetrySignal; Serialize raises IsolationConflict as the
         # last-resort fallback (the pre-diff wait already happened).

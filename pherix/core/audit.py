@@ -56,6 +56,17 @@ CREATE TABLE IF NOT EXISTS verdicts (
     reason       TEXT,
     PRIMARY KEY (txn_id, seq)
 );
+CREATE TABLE IF NOT EXISTS conflicts (
+    txn_id            TEXT NOT NULL,
+    seq               INTEGER NOT NULL,
+    resource          TEXT NOT NULL,
+    key               TEXT NOT NULL,   -- JSON: the (resource-local) key tuple
+    version_at_read   TEXT,            -- JSON: version observed at read time
+    version_now       TEXT,            -- JSON: version the adapter reports at commit
+    version_expected  TEXT,            -- JSON: what version_now was compared against
+    ts                TEXT NOT NULL,
+    PRIMARY KEY (txn_id, seq)
+);
 """
 
 
@@ -346,12 +357,66 @@ class AuditJournal:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    # --- isolation conflicts (Prong #2 — the recorded non-commutativity) ----
+
+    def record_conflicts(self, txn_id: str, conflicts: list) -> None:
+        """Persist the commit-time isolation conflicts for a transaction.
+
+        A conflict is the non-commutativity event the diff finds at commit:
+        another transaction committed a write to a key this txn read between
+        its read and its commit. Until now it lived only as a raised
+        :class:`~pherix.core.isolation.IsolationConflict` — the journal went
+        silent on it, so conflicts were uncountable. This makes a conflict a
+        first-class journal record, same append-only shape as ``verdicts``.
+
+        Each item is a :class:`~pherix.core.isolation.Conflict` dataclass (the
+        runtime passes the diff's output straight through), but this method
+        only reads attribute names (``resource``, ``key``, ``version_at_read``,
+        ``version_now``, ``version_expected``) so it stays decoupled from the
+        isolation module's type — a plain object with those attributes works
+        too. ``seq`` preserves the diff's emission order. Versions are stored
+        as JSON because a version can be an int (SQLite counter) or any
+        JSON-able opaque token an adapter chooses.
+
+        Append-only and best-effort like the rest of the journal: this records
+        that a conflict was *detected*; it never decides the txn's fate. The
+        resolution policy (Abort / Retry / Serialize) does that — and this is
+        written BEFORE the policy runs so the record survives both the raise
+        (Abort / Serialize) and the rollback-and-replay (Retry).
+        """
+        now = _now()
+        for seq, c in enumerate(conflicts):
+            self._conn.execute(
+                "INSERT INTO conflicts (txn_id, seq, resource, key, "
+                "version_at_read, version_now, version_expected, ts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    txn_id,
+                    seq,
+                    c.resource,
+                    _dump(list(c.key)) or "[]",
+                    _dump(c.version_at_read),
+                    _dump(c.version_now),
+                    _dump(getattr(c, "version_expected", None)),
+                    now,
+                ),
+            )
+        self._conn.commit()
+
+    def get_conflicts(self, txn_id: str) -> list[dict]:
+        """Recorded isolation conflicts for ``txn_id``, in diff-emission order."""
+        rows = self._conn.execute(
+            "SELECT * FROM conflicts WHERE txn_id = ? ORDER BY seq",
+            (txn_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     # --- shipping (forward-read the journal past a cursor) ------------------
 
-    # The three journalled tables, in dependency order (a txn row before its
-    # effects, effects before their verdicts) so a control plane that validates
-    # foreign keys never sees an orphan.
-    _SHIPPABLE_TABLES = ("transactions", "effects", "verdicts")
+    # The journalled tables, in dependency order (a txn row before its
+    # effects, effects before their verdicts / conflicts) so a control plane
+    # that validates foreign keys never sees an orphan.
+    _SHIPPABLE_TABLES = ("transactions", "effects", "verdicts", "conflicts")
 
     def export_since(self, cursor: dict | None) -> tuple[dict, dict]:
         """Read journal rows newer than ``cursor`` for shipping to the control plane.
