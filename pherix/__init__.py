@@ -52,6 +52,7 @@ from pherix.frontends.library import (
     run_txn,
     tombstone_compensator,
     tool,
+    acting_as,
 )
 
 # The MCP gateway front-end (Slice 8) lives in its own package and surfaces at
@@ -77,6 +78,7 @@ __all__ = [
     "ReplayDivergence",
     "EffectOutcome",
     "tool",
+    "acting_as",
     "Policy",
     "PolicyContext",
     "PolicyRule",

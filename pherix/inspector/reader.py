@@ -123,6 +123,12 @@ class JournalReader:
             )
         self._conn.row_factory = sqlite3.Row
         self._has_verdicts = self._table_exists("verdicts")
+        # NULL-tolerance: a journal written before the ``actor`` column existed
+        # has an ``effects`` table without it. The reader opens read-only and
+        # cannot migrate, so it probes once at open and degrades gracefully —
+        # the timeline's per-effect ``actor`` falls back to ``None`` and the
+        # ``stats`` actor roll-up is simply empty for a pre-actor journal.
+        self._has_actor = self._column_exists("effects", "actor")
 
     # --- introspection ------------------------------------------------------
 
@@ -132,6 +138,14 @@ class JournalReader:
             (name,),
         ).fetchone()
         return row is not None
+
+    def _column_exists(self, table: str, column: str) -> bool:
+        # ``table`` is a code constant, never agent input — safe to interpolate
+        # into the PRAGMA (which cannot be parameterised regardless).
+        return any(
+            row["name"] == column
+            for row in self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        )
 
     def close(self) -> None:
         self._conn.close()
@@ -262,6 +276,13 @@ class JournalReader:
                     "tone": v["tone"],
                     "undone": v["undone"],
                     "blurb": v["blurb"],
+                    # ``actor`` (on-whose-authority) — NULL-tolerant: a journal
+                    # written before the column existed simply lacks the key,
+                    # so ``.get`` degrades to ``None`` rather than KeyError-ing.
+                    # The reader opens read-only and never migrates, so this
+                    # graceful default is the *only* protection against an old
+                    # journal here.
+                    "actor": e.get("actor"),
                     "args": _loads(e["args"], {}),
                     "result": _loads(e["result"], None),
                     "read_keys": _loads(e["read_keys"], []),
@@ -327,6 +348,18 @@ class JournalReader:
                 "SELECT DISTINCT tool FROM effects ORDER BY tool"
             ).fetchall()
         ]
+        # Distinct actors (on-whose-authority principals) seen in the journal —
+        # the actor-axis parallel to ``clients``. NULL-tolerant: empty for a
+        # pre-actor journal that has no such column (see ``_has_actor``).
+        actors: list[str] = []
+        if self._has_actor:
+            actors = [
+                row[0]
+                for row in self._conn.execute(
+                    "SELECT DISTINCT actor FROM effects "
+                    "WHERE actor IS NOT NULL ORDER BY actor"
+                ).fetchall()
+            ]
         # "has_verdicts" drives the console's per-rule indicator, so it means
         # "there is at least one verdict to show" — table present AND populated
         # — not merely that a (possibly empty) table exists.
@@ -340,6 +373,7 @@ class JournalReader:
             "txns_by_state": by_state,
             "effect_total": effect_total,
             "clients": clients,
+            "actors": actors,
             "tools": tools,
             "has_verdicts": verdict_rows > 0,
         }

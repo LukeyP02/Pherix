@@ -124,6 +124,21 @@ class Effect:
     snapshot: Any = None
     result: Any = None
     compensator: str | None = None
+    # The principal an action runs *on behalf of* — the authorizing party,
+    # as a free string (e.g. "alice", "role:admin"). This is **attribution,
+    # not identity**: Pherix records the *claimed* actor; it does NOT verify
+    # it. There is deliberately no auth here.
+    #
+    # Distinct from ``client_id`` (on the transaction): ``client_id`` is
+    # *which agent/session produced* the effect (the MCP client name at
+    # ``initialize`` — "claude-code", "aider"); ``actor`` is *on whose
+    # authority* it runs (the principal the agent is acting for). One agent
+    # session (one ``client_id``) can act for several principals across calls
+    # (several ``actor`` values) — which is exactly why ``actor`` lives
+    # per-effect and ``client_id`` per-transaction. NOT a structured identity
+    # object: a free string, because Pherix attributes, it does not
+    # authenticate.
+    actor: str | None = None
     ts: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self) -> None:

@@ -9,6 +9,7 @@ transaction-aware — there is no explicit ``txn.call()`` API.
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import functools
 import inspect
@@ -34,6 +35,48 @@ active_txn: contextvars.ContextVar[Any] = contextvars.ContextVar(
 active_effect: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "pherix_active_effect", default=None
 )
+
+# Holds the *actor* — the principal the current tool calls run *on behalf of*
+# (e.g. "alice", "role:admin"). Mirrors the ``active_effect`` mechanism: the
+# runtime seeds it with the transaction-level default at ``agent_txn(..,
+# actor=)`` time, and each Effect stamps the current context's value as it is
+# journalled. A per-call override is available via :func:`acting_as`, which
+# temporarily rebinds this contextvar so one agent can act for different
+# principals across calls without re-opening the transaction. ``None`` means
+# "no actor declared" — the column stays NULL, exactly as ``client_id`` does
+# for library callers. This is *attribution*, not auth: Pherix records the
+# claimed principal, it never verifies it. Typed ``str | None`` but held as a
+# bare contextvar (no Effect import) to match ``active_txn`` / ``active_effect``.
+active_actor: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "pherix_active_actor", default=None
+)
+
+
+@contextlib.contextmanager
+def acting_as(actor: str | None):
+    """Temporarily set the actor for tool calls made inside the block.
+
+    Per-effect / per-call override of the transaction-level actor default.
+    The common case sets the actor once on ``agent_txn(.., actor=...)`` and
+    every effect inherits it; ``acting_as`` is the natural seam for the less
+    common case where *one* agent acts for *different* principals across calls
+    within the same transaction::
+
+        with agent_txn(adapters, actor="system") as ctx:
+            do_thing()                 # actor = "system" (the txn default)
+            with acting_as("alice"):
+                do_thing_for_alice()   # actor = "alice"
+            do_thing()                 # actor = "system" again
+
+    Rebinds the :data:`active_actor` contextvar for the duration and restores
+    the prior value on exit (nests correctly). This is *attribution*, not
+    auth — declaring an actor asserts on-whose-behalf, it does not verify it.
+    """
+    token = active_actor.set(actor)
+    try:
+        yield
+    finally:
+        active_actor.reset(token)
 
 
 @dataclass
