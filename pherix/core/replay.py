@@ -160,6 +160,10 @@ def _load_source_effect(row: dict) -> dict:
         "result": _decode_bytes(json.loads(row["result"])) if row["result"] is not None else None,
         "read_keys": json.loads(row["read_keys"] or "[]"),
         "write_keys": json.loads(row["write_keys"] or "[]"),
+        # The on-whose-authority principal. NULL-tolerant via ``.get``: a
+        # journal written before the ``actor`` column existed yields a row
+        # without the key, which degrades to ``None`` rather than KeyError-ing.
+        "actor": row.get("actor"),
     }
 
 
@@ -353,6 +357,7 @@ def _walk(
             resource=src["resource"],
             reversible=True,
             compensator=spec.compensator,
+            actor=src.get("actor"),
         )
         replay_txn.add_effect(new_effect)
         target_audit.record_effect(new_effect)
@@ -419,6 +424,7 @@ def _handle_irreversible(
         args=src["args"],
         resource=src["resource"],
         reversible=False,
+        actor=src.get("actor"),
     )
     replay_txn.add_effect(new_effect)
 

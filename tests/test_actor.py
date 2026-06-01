@@ -407,3 +407,99 @@ def test_policy_rule_sees_per_call_actor_override(conn: sqlite3.Connection) -> N
     # own stamped actor through both passes, so the rule sees the per-call
     # override at stage AND at commit: stage[a,b] then commit[a,b].
     assert seen == ["default", "override", "default", "override"]
+
+
+# --- actor survives the replay fold (provenance-faithful replay) -----------
+
+
+def test_replay_preserves_actor_and_is_principal_faithful(
+    conn: sqlite3.Connection, tmp_path
+) -> None:
+    """Replaying a journal must reconstruct each effect's *original* actor.
+
+    The actor is the on-whose-authority principal; replay is a forward fold of
+    the journal against fresh state. If the fold drops ``actor`` (rebuilds each
+    ``Effect`` without it), replay silently erases provenance — and a
+    principal-aware policy that *would* deny on the original actor can no longer
+    fire on the replayed effects.
+
+    Failing-before guard: with the replay fold reconstructing ``Effect(...)``
+    *without* ``actor=src.get("actor")``, every replayed effect's actor reads
+    back as ``None``. The two assertions below — (1) the persisted replay-journal
+    rows carry the same actors as the source, and (2) an actor-deny rule still
+    fires when re-evaluated against the reconstructed effects — both fail until
+    the actor is threaded through both reconstruction sites in ``replay.py``.
+    """
+    from pherix.core.effects import Effect
+    from pherix.core.policy import PolicyContext
+    from pherix.core.replay import replay
+
+    insert_widget = _register_insert()
+
+    # Source journal on disk: distinct, non-default actors per effect.
+    source_audit = AuditJournal(str(tmp_path / "source.db"))
+    with agent_txn(
+        {"sql": SQLiteAdapter(conn)}, audit=source_audit, actor="alice"
+    ) as ctx:
+        insert_widget(name="a")                 # actor → "alice" (txn default)
+        with acting_as("mallory"):
+            insert_widget(name="b")             # actor → "mallory" (override)
+        src_txn_id = ctx.txn_id
+
+    # Sanity: the source journal recorded the two distinct actors.
+    src_effects = source_audit.get_effects(src_txn_id)
+    assert [e["actor"] for e in src_effects] == ["alice", "mallory"]
+
+    # Replay forward against a fresh DB; capture the replay's own journal.
+    fresh = sqlite3.connect(":memory:", isolation_level=None)
+    fresh.execute("CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT)")
+    target_audit = AuditJournal(str(tmp_path / "target.db"))
+    result = replay(
+        src_txn_id,
+        {"sql": SQLiteAdapter(fresh)},
+        source_audit=source_audit,
+        target_audit=target_audit,
+        mode="reconstruct",
+    )
+
+    # (1) The reconstructed journal carries the SAME actors as the source —
+    # replay is provenance-faithful, not provenance-erasing.
+    replay_effects = target_audit.get_effects(result.replay_txn_id)
+    assert [e["actor"] for e in replay_effects] == ["alice", "mallory"]
+
+    # (2) Principal-faithful: an actor-deny rule re-fires on the reconstructed
+    # effects exactly as it would have on the originals. Rebuild Effect objects
+    # from the replay journal (the surface a principal-aware policy sees) and
+    # evaluate the rule — the deny must fire on the "mallory" effect.
+    policy = Policy.allow_all()
+
+    @policy.rule
+    def only_alice_inserts(effect, ctx):
+        if effect.tool == "insert_widget" and effect.actor != "alice":
+            return Deny(f"insert requires actor 'alice', not {effect.actor!r}")
+        return Allow()
+
+    reconstructed = [
+        Effect(
+            txn_id=e["txn_id"],
+            index=int(e["idx"]),
+            tool=e["tool"],
+            args={},
+            resource=e["resource"],
+            reversible=bool(e["reversible"]),
+            actor=e["actor"],
+        )
+        for e in replay_effects
+    ]
+    pctx = PolicyContext(journal=reconstructed, where="commit")
+    # "alice" effect passes.
+    policy.evaluate(reconstructed[0], pctx)
+    # "mallory" effect re-fires the deny — only possible because the actor
+    # survived the replay fold.
+    with pytest.raises(PolicyViolation) as exc:
+        policy.evaluate(reconstructed[1], pctx)
+    assert "mallory" in str(exc.value)
+
+    source_audit.close()
+    target_audit.close()
+    fresh.close()
