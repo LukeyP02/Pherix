@@ -61,6 +61,8 @@ import {
   GitHandle,
   HttpAdapter,
   IsolationConflict,
+  MemoryAdapter,
+  type MemoryHandle,
   MongoAdapter,
   MqAdapter,
   MySQLAdapter,
@@ -539,6 +541,31 @@ async function mysqlCommit(): Promise<CanonJournal> {
   return out;
 }
 
+/** memory_commit — a governed-memory `remember` that commits (STAGED ->
+ *  APPLIED). The memory handle records a write key automatically, so this also
+ *  proves cross-SDK parity of the content-addressed version: `remember` of a
+ *  plain STRING value makes the write-key version the sha256 of the same bytes
+ *  on both sides (see the Python runner for why the value must be a string). */
+async function memoryCommit(): Promise<CanonJournal> {
+  REGISTRY.clear();
+  const db = new Database(":memory:");
+  const mem = new MemoryAdapter(db);
+  const remember = tool<{ key: string; value: string }>(
+    "memory",
+    (handle: MemoryHandle, args: { key: string; value: string }) => {
+      handle.remember(args.key, args.value);
+      return { ok: true };
+    },
+    { name: "remember" },
+  );
+  const ctx = await agentTxn({ memory: mem }, async () => {
+    await remember({ key: "fact", value: "hello" });
+  });
+  const out = canonical(ctx.txn, "ok");
+  db.close();
+  return out;
+}
+
 /** git_commit — a git op against a real temp repo that commits. Guarded: the
  *  Python half skips when git is absent, so this branch is only invoked with a
  *  git binary present (same machine runs both halves). */
@@ -635,6 +662,7 @@ const SCENARIOS: Record<string, () => Promise<CanonJournal>> = {
   gcs_commit: gcsCommit,
   elasticsearch_commit: elasticsearchCommit,
   mysql_commit: mysqlCommit,
+  memory_commit: memoryCommit,
   git_commit: gitCommit,
   // Irreversible adapters — one gate scenario each (GATED -> ROLLED_BACK).
   rest_gate: restGate,

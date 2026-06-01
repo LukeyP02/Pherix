@@ -94,6 +94,7 @@ from pherix.core.adapters.elasticsearch import ElasticsearchAdapter
 from pherix.core.adapters.gcs import GCSAdapter
 from pherix.core.adapters.git import GitAdapter
 from pherix.core.adapters.http import HTTPAdapter
+from pherix.core.adapters.memory import MemoryAdapter
 from pherix.core.adapters.messagequeue import MQAdapter, publish_tool
 from pherix.core.adapters.mongodb import MongoAdapter
 from pherix.core.adapters.mysql import MySQLAdapter
@@ -548,6 +549,28 @@ def _mysql_commit() -> tuple[list[Any], TxnState, str]:
     return list(ctx.txn.effects), ctx.txn.state, "ok"
 
 
+def _memory_commit() -> tuple[list[Any], TxnState, str]:
+    """Reversible: a governed-memory ``remember`` that commits (STAGED ->
+    APPLIED). Unlike the other per-adapter commit scenarios, the memory handle
+    records a write key automatically — so this also asserts cross-SDK parity of
+    the content-addressed version: ``remember`` of a plain STRING value makes the
+    write-key version the sha256 of the SAME bytes on both sides (a non-string
+    value would route through ``json.dumps`` vs ``JSON.stringify`` and their
+    key-spacing differs, so the value is deliberately a string)."""
+    REGISTRY.clear()
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    mem = MemoryAdapter(conn)
+
+    @tool("memory", name="remember")
+    def remember(handle, key: str, value: str):  # noqa: ANN001
+        handle.remember(key, value)
+        return {"ok": True}
+
+    with agent_txn({"memory": mem}) as ctx:
+        remember(key="fact", value="hello")
+    return list(ctx.txn.effects), ctx.txn.state, "ok"
+
+
 def _git_commit() -> tuple[list[Any], TxnState, str]:
     """Reversible: a git op against a real temp repo that commits.
 
@@ -659,6 +682,7 @@ SCENARIOS = [
     Scenario("gcs_commit", _gcs_commit),
     Scenario("elasticsearch_commit", _elasticsearch_commit),
     Scenario("mysql_commit", _mysql_commit),
+    Scenario("memory_commit", _memory_commit),
     Scenario("git_commit", _git_commit),
     # Irreversible adapters — one gate scenario each (GATED -> ROLLED_BACK).
     Scenario("rest_gate", _rest_gate),
