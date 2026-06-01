@@ -146,6 +146,37 @@ header {
   min-width: 4.5rem; text-align: right;
 }
 
+/* --- provenance / lineage --- */
+.lineage-slot { margin-top: 0.9rem; }
+.lineage {
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 5px;
+  padding: 0.4rem 0.7rem;
+}
+.lineage > summary {
+  cursor: pointer; color: var(--ink); font-weight: 600; letter-spacing: 0.02em;
+  list-style: none; user-select: none;
+}
+.lineage > summary::-webkit-details-marker { display: none; }
+.lineage > summary::before { content: "▸ "; color: var(--accent); }
+.lineage[open] > summary::before { content: "▾ "; }
+.ln-count { color: var(--ink-3); font-weight: 400; font-size: 0.74rem; margin-left: 0.4rem; }
+.ln-body { margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.ln-chain { padding: 0.5rem 0.6rem; background: var(--bg); border: 1px solid var(--rule); border-radius: 4px; border-left: 3px solid var(--accent); }
+.ln-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.ln-wrote { margin-left: auto; font-size: 0.74rem; color: var(--ink-2); }
+.ln-w { color: var(--accent); }
+.wk { color: var(--accent); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.rk { color: var(--unknown); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.ln-informed { margin-top: 0.4rem; padding-left: 0.6rem; border-left: 1px dashed var(--rule); display: flex; flex-direction: column; gap: 0.2rem; }
+.ln-read { font-size: 0.74rem; color: var(--ink-2); display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }
+.ln-by { color: var(--ink-3); }
+.ln-none { font-size: 0.74rem; color: var(--ink-3); font-style: italic; }
+.ln-tag { font-size: 0.64rem; padding: 0.03rem 0.35rem; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; }
+.ln-tag.same { color: var(--ok); }
+.ln-tag.prod { color: var(--accent); }
+.ln-tag.ext { color: var(--ink-3); }
+.ln-caveat { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 0.68rem; line-height: 1.45; }
+
 /* effect states controlled by the scrubber playhead */
 .effect.scrub-past   { opacity: 1; }
 .effect.scrub-current {

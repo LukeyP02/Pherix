@@ -156,3 +156,23 @@ def test_api_reliability_include_dry_run_flag(server: str):
     _, incl = _get_json(server + "/api/reliability?include_dry_run=1")
     assert incl["effects"]["total"] == excl["effects"]["total"] + 2
     assert incl["scope"]["include_dry_run"] is True
+
+
+# --- lineage (action-provenance) -------------------------------------------
+
+
+def test_api_lineage_whole_journal(server: str):
+    status, data = _get_json(server + "/api/lineage")
+    assert status == 200
+    assert set(data) >= {"scope", "nodes", "edges", "chains", "caveat"}
+    assert data["scope"]["txn_id"] is None
+    # the seed's read_release → bump_version 'informs' edge survives the round trip
+    informs = [(e["from"], e["to"]) for e in data["edges"] if e["kind"] == "informs"]
+    assert ("txn-clean-deploy01#0", "txn-clean-deploy01#1") in informs
+    assert "action provenance" in data["caveat"].lower()
+
+
+def test_api_lineage_txn_scoped(server: str):
+    _, data = _get_json(server + "/api/lineage?txn=txn-clean-deploy01")
+    assert data["scope"]["txn_id"] == "txn-clean-deploy01"
+    assert {c["txn_id"] for c in data["chains"]} == {"txn-clean-deploy01"}

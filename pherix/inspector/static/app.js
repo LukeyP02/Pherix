@@ -161,10 +161,82 @@ async function loadDetail() {
     ${banners[t.state] || ""}
     ${renderScrubber(effects.length)}
     <div class="timeline">${effects.map(renderEffect).join("")}</div>
+    <div id="lineage" class="lineage-slot"></div>
   `;
 
   // wire up scrubber controls (must run after innerHTML is set)
   initScrubber();
+  // lineage is a second, independent fetch so a hiccup never blanks the
+  // timeline; it fills the slot above once it lands.
+  loadLineage(state.selected);
+}
+
+/* --- provenance / lineage --- */
+/** Fetch and render the causal read→write chains for the selected txn. */
+async function loadLineage(txnId) {
+  const slot = $("#lineage");
+  if (!slot) return;
+  let lin;
+  try {
+    lin = await getJSON("/api/lineage?txn=" + encodeURIComponent(txnId));
+  } catch (e) {
+    slot.innerHTML = "";  // provenance is a bonus view; stay silent on failure
+    return;
+  }
+  // guard against a stale response landing after the user moved on
+  if (state.selected !== txnId) return;
+  slot.innerHTML = renderLineage(lin);
+}
+
+function renderLineage(lin) {
+  const chains = lin.chains || [];
+  if (!chains.length) {
+    return `<details class="lineage"><summary>lineage <span class="ln-count">no writes to trace</span></summary>
+      <div class="ln-caveat">${esc(lin.caveat || "")}</div></details>`;
+  }
+  const rows = chains.map(renderChain).join("");
+  return `<details class="lineage">
+    <summary>lineage <span class="ln-count">${chains.length} write${chains.length === 1 ? "" : "s"} traced</span></summary>
+    <div class="ln-body">${rows}</div>
+    <div class="ln-caveat">${esc(lin.caveat || "")}</div>
+  </details>`;
+}
+
+function keyLabel(k) {
+  // k = {resource, key, version}; render resource:key (vN) compactly
+  const key = Array.isArray(k.key) ? k.key.join("/") : String(k.key);
+  const v = k.version == null ? "" : ` v${k.version}`;
+  return `${esc(k.resource)}:${esc(key)}${v}`;
+}
+
+function renderChain(c) {
+  const writes = (c.writes || []).map((w) =>
+    `<span class="ln-w">${keyLabel(w)}</span>`).join(" ");
+  let reads;
+  if (!(c.informed_by || []).length) {
+    reads = `<div class="ln-none">no recorded prior reads — provenance starts here</div>`;
+  } else {
+    reads = (c.informed_by || []).map((i) => {
+      // the strongest available claim, honestly tagged
+      let tag;
+      if (i.same_effect) tag = `<span class="ln-tag same">same call</span>`;
+      else if (i.produced_by_external) tag = `<span class="ln-tag ext">origin pre-journal</span>`;
+      else tag = `<span class="ln-tag prod">from ${esc(i.produced_by)}</span>`;
+      return `<div class="ln-read">
+        <span class="rk">read</span> ${keyLabel(i)}
+        <span class="ln-by">by ${esc(i.tool)}</span> ${tag}
+      </div>`;
+    }).join("");
+  }
+  return `<div class="ln-chain">
+    <div class="ln-head">
+      <span class="e-idx">[${c.idx}]</span>
+      <span class="e-tool">${esc(c.tool)}</span>
+      ${pill(c.tone, c.verdict)}
+      <span class="ln-wrote"><span class="wk">wrote</span> ${writes}</span>
+    </div>
+    <div class="ln-informed">${reads}</div>
+  </div>`;
 }
 
 function renderEffect(e) {
