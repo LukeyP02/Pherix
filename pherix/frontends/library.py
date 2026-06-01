@@ -9,7 +9,11 @@ roll back" adapter), ``StagedResult`` (the sentinel agents receive from
 staged tool calls), and the gate-related errors ``GateBlocked`` /
 ``CompensatorNotRegistered``. ``approve_irreversible`` lives on the
 ``TxnContext`` yielded by :func:`agent_txn`, not as a standalone function:
-approval is *per-transaction*, not global.
+approval is *per-transaction*, not global. For approval that arrives from
+*outside* the agent's process, ``TxnContext.commit(pending_approval=True)``
+yields :class:`PendingApproval` handles instead of blocking; the
+proxy/MCP gateway's ``approve(token, approver)`` records the approval to the
+shared journal and a resumed commit fires the effect.
 
 Slice 4 adds isolation: the resolution policies (:class:`Abort`,
 :class:`Retry`, :class:`Serialize`), the :class:`IsolationConflict`
@@ -54,7 +58,7 @@ from pherix.core.memory import (
 )
 from pherix.core.audit import AuditJournal
 from pherix.core.dry_run import DryRunResult, dry_run
-from pherix.core.effects import StagedResult
+from pherix.core.effects import PendingApproval, StagedResult
 from pherix.core.isolation import (
     REGISTRY as JournalRegistry,
     Abort,
@@ -210,6 +214,7 @@ __all__ = [
     "VersionedResourceAdapter",
     "SnapshotHandle",
     "StagedResult",
+    "PendingApproval",
     "GateBlocked",
     "CompensatorNotRegistered",
     "IrreversibleAdapterError",

@@ -115,6 +115,24 @@ class InProcessMCPClient:
             params["_pherix_dry_run"] = True
         return self._send("tools/call", params)
 
+    def approve(
+        self, token: str, approver: str | None = None
+    ) -> dict:
+        """Send ``pherix/approve``; record an over-the-wire approval.
+
+        ``token`` is the opaque handle a resumable, gate-blocked commit
+        produced for a staged irreversible. ``approver`` is the principal
+        clearing the gate (defaults server-side to the session identity).
+        Returns the full JSON-RPC envelope — a ``result`` carrying the recorded
+        approval row on success, or an ``error`` envelope with the
+        ``UNKNOWN_APPROVAL_TOKEN`` code if the token is unknown. Use
+        :meth:`result_of` to unwrap.
+        """
+        params: dict[str, Any] = {"token": token}
+        if approver is not None:
+            params["approver"] = approver
+        return self._send("pherix/approve", params)
+
     # -- convenience accessors ---------------------------------------------
 
     def tool_descriptors(self) -> list[dict]:

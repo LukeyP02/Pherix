@@ -78,6 +78,7 @@ ISOLATION_CONFLICT = -32003
 TOOL_NOT_FOUND = -32004
 COMPENSATOR_NOT_REGISTERED = -32005
 TOOL_RAISED = -32006
+UNKNOWN_APPROVAL_TOKEN = -32007
 
 
 class MCPError(Exception):
@@ -230,12 +231,20 @@ class MCPServer:
                 result = self._tools_list(params)
             elif method == "tools/call":
                 result = self._tools_call(params)
+            elif method == "pherix/approve":
+                # Over-the-wire human gate. Outside the MCP tool-call subset
+                # (it is a Pherix gateway operation, not a model-facing tool),
+                # so it lives under the ``pherix/`` method namespace. Records an
+                # APPROVED entry against the shared journal; the agent process's
+                # resumed commit reads it and fires the gated effect.
+                result = self._approve(params)
             else:
                 return self._error(
                     req_id,
                     METHOD_NOT_FOUND,
-                    f"method {method!r} is not in the Pherix gateway tool-call "
-                    f"subset (initialize, ping, tools/list, tools/call)",
+                    f"method {method!r} is not in the Pherix gateway method "
+                    f"set (initialize, ping, tools/list, tools/call, "
+                    f"pherix/approve)",
                 )
         except MCPError as exc:
             return self._error(req_id, exc.code, exc.message)
@@ -348,6 +357,51 @@ class MCPServer:
         if is_dry_run:
             return self._dispatch_dry_run(name, arguments, policy)
         return self._dispatch_commit(name, arguments, policy)
+
+    def _approve(self, params: dict) -> dict:
+        """Record an over-the-wire approval for a gate-blocked effect.
+
+        ``params = {"token": <str>, "approver": <str|None>}``. The token is the
+        opaque handle a resumable commit (``commit(pending_approval=True)``)
+        produced for a staged irreversible that had no compensator and no
+        approval. The approver defaults to the session identity declared at
+        ``initialize`` — the same principal the sidecar threads as ``actor`` /
+        ``client_id`` — so an approval is attributed to *who* cleared the gate
+        even when the client passes no explicit approver. (Like ``actor``, this
+        is *claimed*, not authenticated.)
+
+        Returns the recorded approval row (``token`` / ``txn_id`` /
+        ``effect_id`` / ``status`` / ``approver`` / timestamps). An unknown
+        token is a well-formed request the gateway could not satisfy, so it
+        surfaces as a JSON-RPC error with the ``UNKNOWN_APPROVAL_TOKEN`` code —
+        a typo or a stale token must not silently look like success.
+        """
+        token = params.get("token")
+        if not isinstance(token, str):
+            raise MCPError(
+                INVALID_PARAMS, "pherix/approve requires a string 'token'"
+            )
+        # Explicit approver wins; otherwise attribute to the session identity.
+        approver = params.get("approver")
+        if approver is None:
+            approver = self._identity
+        elif not isinstance(approver, str):
+            raise MCPError(
+                INVALID_PARAMS, "'approver' must be a string or omitted"
+            )
+        try:
+            row = self._gateway.approve(token, approver)
+        except KeyError as exc:
+            raise MCPError(UNKNOWN_APPROVAL_TOKEN, str(exc)) from exc
+        return {
+            "approved": True,
+            "token": row["token"],
+            "txn_id": row["txn_id"],
+            "effect_id": row["effect_id"],
+            "status": row["status"],
+            "approver": row["approver"],
+            "approved_at": row["approved_at"],
+        }
 
     # -- dispatch lanes ----------------------------------------------------
 
