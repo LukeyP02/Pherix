@@ -347,6 +347,16 @@ orchestrator, workers, reviewers. Adjust accordingly:
   Slice 8+ trilogy — **determinism, memory, audit** — must stay consistently
   reflected across `future.html`, `roadmap.html`, and the hub. Stale HTML is
   technical debt; flag and fix as part of every merge sweep, not later.
+- **Keep `roadmap.md`, `distribution.md`, `features.md` current — they are the
+  source of truth the schedules read.** These three files live in `notes/` — the private
+  `Pherix-ops` repo (a gitignored nested repo; never in this public repo) — and drive
+  the daily roadmap + distribution emails, the weekly plan, and the local HTML.
+  Update them in the same change whenever: an objective lands or the week rolls
+  (`roadmap.md`); a post goes out, a conversation happens, or the cadence shifts
+  (`distribution.md`); a user-facing capability ships (`features.md` — features ≠
+  PRs, and every feature wants a demo). The emails and HTML are *generated from*
+  these files, so if they are stale the emails lie. Big-picture owns these; coding
+  instances never edit them.
 
 ---
 

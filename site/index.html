@@ -14,7 +14,7 @@
     --panel: #121419;
     --panel-2: #181b22;
     --ink: #e8ebf1;
-    --ink-2: #99a2b2;
+    --ink-2: #b9c1d0;
     --ink-3: #5a6271;
     --ink-4: #383e49;
     --rule: #232730;
@@ -27,8 +27,8 @@
   html { scroll-behavior: smooth; margin: 0; padding: 0; background: var(--bg); }
   body { margin: 0; padding: 0; background: transparent; color: var(--ink); }
   body {
-    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-    font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+    font-size: 16.5px; line-height: 1.7; -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
   }
   a { color: var(--accent); text-decoration: none; }
@@ -37,7 +37,7 @@
   .bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
   .bg::before {
     content: ""; position: absolute; inset: 0;
-    background-image: radial-gradient(rgba(150,162,186,0.30) 1.1px, transparent 1.6px);
+    background-image: radial-gradient(rgba(150,162,186,0.10) 1.1px, transparent 1.6px);
     background-size: 30px 30px;
     -webkit-mask-image: radial-gradient(120% 90% at 50% 25%, #000 35%, transparent 90%);
             mask-image: radial-gradient(120% 90% at 50% 25%, #000 35%, transparent 90%);

@@ -1,8 +1,10 @@
-# Pherix — Auditable Agents
+# Pherix — nothing your agent does half-happens
 
-Database guarantees over an AI agent's real-world actions: **undo the reversible · gate the irreversible · audit everything.**
+**A transactional resource runtime for AI agents: undo the reversible · gate the irreversible — against your backend's own state.** Audit, replay, and isolation fall out for free.
 
-Pherix is a Python **library** that wraps your agent's tool-call layer and gives database-style guarantees — atomicity, isolation, capability enforcement, durability — over the *external side-effects* of the tool calls (DB writes, file writes, API calls). It does **not** run your agent or call any LLM. You keep your existing agent loop and model provider; Pherix sits underneath at the tool-call layer.
+Pherix is a Python **library** (+ TypeScript SDK) that wraps your agent's tool-call layer and gives database-style guarantees — atomicity, isolation, capability enforcement, durability — over the *external side-effects* of the tool calls (DB writes, file writes, API calls). It does **not** run your agent or call any LLM. You keep your existing agent loop and model provider; Pherix sits underneath at the tool-call layer. Every side-effecting call becomes an entry in one append-only journal — `commit()` folds it forward, `rollback()` folds it back.
+
+**What it is *not*:** not durable execution (Temporal replays your *code*; Pherix transacts your *resources*), not observability (LangSmith/Langfuse *watch*; Pherix *enforces and reverses*), not an agent framework (it wraps the tool calls of an agent you already have).
 
 ## How it works
 
@@ -36,16 +38,17 @@ Anyone shipping action-taking agents to production — where a tool call writes 
 
 ## Quickstart
 
-> Pre-release `0.0.0` — install from source. The wrap below is the real minimal one today; a sane-defaults, shorter wrap is coming.
+> Pre-release. The wrap below *is* the whole integration — no migration, no rewrite: declare your side-effecting tools, wrap the run.
 
 > **Using a coding assistant?** Point Claude Code / Cursor / Aider at [`llms-full.txt`](llms-full.txt) — a complete, executable integration recipe (with the gotchas spelled out) written so an LLM can wrap your agent in Pherix correctly without you fighting the API. [`llms.txt`](llms.txt) is the curated index of all docs.
 
 **Install**
 
 ```bash
-git clone https://github.com/LukeyP02/Pherix && cd Pherix
-pip install -e .
+pip install pherix
 ```
+
+<sub>Or from source: `git clone https://github.com/LukeyP02/Pherix && cd Pherix && pip install -e .`</sub>
 
 **Run it — 30 seconds, no API key, no network.** One reversible DB write that rolls back, one irreversible send that gates at commit:
 
@@ -159,4 +162,4 @@ Runs fully offline — no API key, no model. The seeded journal shows every stor
 
 ## Status
 
-Pre-release `0.0.0`, install from source. The engine is built; Pherix is **library-first** — a Python library plus a read-only audit console. No SaaS, no hosted service, no console-as-a-service. Source: [github.com/LukeyP02/Pherix](https://github.com/LukeyP02/Pherix).
+Pre-release. The engine is built — both lanes, MVCC isolation, replay, dry-run, crash recovery, policy, the MCP gateway, the flight recorder; 16 Python / 14 TS adapters; ~940 Python + 210 TS tests, fully offline. **Open-core:** the library and the read-only audit console are MIT and free forever; a hosted control plane (the journal as a fleet-wide system of record) is the eventual paid layer — nothing you run on one machine is ever paywalled. Source: [github.com/LukeyP02/Pherix](https://github.com/LukeyP02/Pherix).

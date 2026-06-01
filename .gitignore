@@ -35,3 +35,14 @@ tests/test_demo_session.py
 recovered-session-*.txt
 *-vo.txt
 TASK.md
+
+# Internal strategy / ops — THIS REPO IS PUBLIC, so these stay LOCAL ONLY (the ops
+# dashboard + strategy live in a separate PRIVATE repo). Never commit to the public repo.
+roadmap.md
+distribution.md
+features.md
+distribution/drafts/
+tasks/
+ops/
+site/*.mp4
+site/*poster*.jpg
