@@ -324,7 +324,10 @@ class JournalReader:
 
         Returns the transaction summary plus an ordered list of effects, each
         with parsed args / read-keys / write-keys, the derived effective
-        verdict, and any per-rule policy verdicts attached to that effect.
+        verdict, any per-rule policy verdicts attached to that effect, and
+        ``informed_by`` — the explicit per-effect result→inputs provenance: the
+        reads (this effect's own + every earlier read in this txn) that informed
+        this effect's result. See :meth:`_informed_by`.
         """
         trow = self._conn.execute(
             "SELECT * FROM transactions WHERE txn_id = ?", (txn_id,)
@@ -337,9 +340,13 @@ class JournalReader:
         erows = self._conn.execute(
             "SELECT * FROM effects WHERE txn_id = ? ORDER BY idx", (txn_id,)
         ).fetchall()
+        rows = [dict(r) for r in erows]
+        # Per-effect result→inputs provenance: the specific reads (this effect's
+        # own + every earlier one in this txn) that informed this effect's
+        # RESULT, attached where the result actually lives. See ``_informed_by``.
+        informed_by_index = self._informed_by(rows)
         effects = []
-        for r in erows:
-            e = dict(r)
+        for e in rows:
             v = effect_verdict(e["status"])
             effects.append(
                 {
@@ -364,6 +371,10 @@ class JournalReader:
                     "result": _loads(e["result"], None),
                     "read_keys": _loads(e["read_keys"], []),
                     "write_keys": _loads(e["write_keys"], []),
+                    # The explicit per-effect read→result edge: which reads
+                    # informed THIS effect's result, never implicit in journal
+                    # order. Empty for an effect that read nothing before it.
+                    "informed_by": informed_by_index.get(e["idx"], []),
                     "ts": e["ts"],
                     "policy_verdicts": verdicts_by_index.get(e["idx"], []),
                 }
@@ -377,6 +388,96 @@ class JournalReader:
             "effects": effects,
             "conflicts": self.get_conflicts(txn_id),
         }
+
+    # --- per-effect result→inputs provenance -------------------------------
+
+    def _producer_index(self) -> dict[tuple, str]:
+        """``(resource, frozen_key, version) → node`` over the whole journal.
+
+        The version counter ties a read to the exact write that produced the
+        value it observed. We resolve producers against the *entire* journal —
+        not just the focus transaction — so a read whose value was written by
+        an earlier transaction still names its origin. Versionless writes
+        (filesystem) can't anchor a version-grounded edge, so they are skipped
+        here; they still appear as plain reads/writes everywhere else.
+        """
+        producers: dict[tuple, str] = {}
+        rows = self._conn.execute(
+            "SELECT txn_id, idx, write_keys FROM effects ORDER BY txn_id, idx"
+        ).fetchall()
+        for r in rows:
+            d = dict(r)
+            for w in (_lineage_key(k) for k in _loads(d["write_keys"], [])):
+                if w["version"] is None:
+                    continue
+                sig = (w["resource"], _freeze(w["key"]), w["version"])
+                producers.setdefault(sig, f"{d['txn_id']}#{d['idx']}")
+        return producers
+
+    def _informed_by(self, rows: list[dict]) -> dict[int, list[dict]]:
+        """Per-effect read→result provenance for one transaction's effects.
+
+        For each effect, ``informed_by`` is the explicit list of reads — this
+        effect's own reads plus every read by an earlier effect in the same
+        atomic transaction (idx-ordered) — that informed this effect's
+        *result*. This is the result→inputs annotation the spec asks for:
+        per-effect and explicit, not implicit in journal order. It is a thin
+        reader convenience over the same intra-transaction fold ``lineage()``
+        does for its writer chains — here keyed on *every* effect (so a
+        read-only effect that returns a value also shows what it observed),
+        attached beside the ``result`` field it explains.
+
+        Each informing read carries ``same_effect`` (the read happened in this
+        very tool call — a read-modify / read-then-return), and, when the value
+        is version-grounded to an earlier write anywhere in the journal,
+        ``produced_by`` (that writer's node) — else ``produced_by_external``
+        (the value's origin predates this journal or lives elsewhere: honest,
+        not a gap). ``rows`` are the already-parsed effect rows for one txn,
+        idx-ordered; an effect with no preceding read maps to an empty list.
+        """
+        rows = sorted(rows, key=lambda e: e["idx"])
+        producers = self._producer_index()
+        out: dict[int, list[dict]] = {}
+        # accumulate reads in idx order; effect i is informed by all reads at
+        # idx <= i (the happens-before prefix within this atomic transaction).
+        prefix: list[dict] = []
+        for e in rows:
+            own = [_lineage_key(k) for k in _loads(e["read_keys"], [])]
+            for rd in own:
+                producer = producers.get(
+                    (rd["resource"], _freeze(rd["key"]), rd["version"])
+                )
+                prefix.append(
+                    {
+                        "idx": e["idx"],
+                        "tool": e["tool"],
+                        "resource": rd["resource"],
+                        "key": rd["key"],
+                        "version": rd["version"],
+                        # filled in per-target below: whether the read was in
+                        # the target effect itself.
+                        "_source_idx": e["idx"],
+                        "produced_by": producer,
+                        "produced_by_external": producer is None,
+                    }
+                )
+            # snapshot the prefix for this effect, tagging same_effect relative
+            # to *this* target. A copy per target keeps each effect's list
+            # independent and JSON-safe.
+            out[e["idx"]] = [
+                {
+                    "idx": rd["_source_idx"],
+                    "tool": rd["tool"],
+                    "resource": rd["resource"],
+                    "key": rd["key"],
+                    "version": rd["version"],
+                    "same_effect": rd["_source_idx"] == e["idx"],
+                    "produced_by": rd["produced_by"],
+                    "produced_by_external": rd["produced_by_external"],
+                }
+                for rd in prefix
+            ]
+        return out
 
     # --- per-rule policy verdicts (optional table) -------------------------
 

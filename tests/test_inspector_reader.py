@@ -235,6 +235,136 @@ def test_timeline_dry_run_flag_on_summary(reader: JournalReader):
     assert tl["transaction"]["dry_run"] is True
 
 
+# --- per-effect result→inputs provenance (informed_by) ----------------------
+#
+# The remaining provenance item: each effect's RESULT is annotated with the
+# read_keys that informed it — explicit, per-effect, not implicit in journal
+# order. ``lineage()`` carries this only for *writer* effects, in a separate
+# graph; the timeline (where the ``result`` lives) gets the same intra-txn fold
+# attached per effect. These tests fail against origin/main, which has no
+# ``informed_by`` key on a timeline effect.
+
+
+def test_timeline_effect_carries_informed_by_for_its_result(reader: JournalReader):
+    """The seed's clean deploy is a real read→write: read_release (idx 0) reads
+    releases/current v11, then bump_version (idx 1) writes v12. The write's
+    result must be annotated with the read that informed it — explicitly, not
+    left implicit in journal order."""
+    tl = reader.get_timeline("txn-clean-deploy01")
+    by_tool = {e["tool"]: e for e in tl["effects"]}
+
+    # the writer is informed by the earlier read of the same key
+    bump = by_tool["bump_version"]
+    informers = [(i["tool"], i["resource"], i["key"], i["version"],
+                  i["same_effect"]) for i in bump["informed_by"]]
+    assert ("read_release", "sql", ["releases", "current"], 11, False) in informers
+
+    # the reading effect itself lists its own read, flagged same_effect
+    read = by_tool["read_release"]
+    own = next(i for i in read["informed_by"] if i["tool"] == "read_release")
+    assert own["same_effect"] is True
+    assert (own["resource"], own["key"], own["version"]) == \
+        ("sql", ["releases", "current"], 11)
+    # v11's producing write predates this journal → external, honestly flagged
+    assert own["produced_by"] is None
+    assert own["produced_by_external"] is True
+
+
+def test_timeline_informed_by_accumulates_prefix(reader: JournalReader):
+    """informed_by is the happens-before prefix: an effect later in the txn
+    inherits every earlier read. write_manifest (idx 2) reads nothing itself
+    but still carries the read_release read that preceded it."""
+    tl = reader.get_timeline("txn-clean-deploy01")
+    by_tool = {e["tool"]: e for e in tl["effects"]}
+
+    read = by_tool["read_release"]      # idx 0: one read, its own
+    bump = by_tool["bump_version"]      # idx 1: no read of its own, inherits #0
+    manifest = by_tool["write_manifest"]  # idx 2: still inherits #0
+
+    assert len(read["informed_by"]) == 1
+    assert [i["tool"] for i in bump["informed_by"]] == ["read_release"]
+    assert [i["tool"] for i in manifest["informed_by"]] == ["read_release"]
+
+
+def test_timeline_informed_by_empty_when_no_prior_read(reader: JournalReader):
+    """A first effect that is itself a write with no read carries an empty
+    informed_by — the fold invents no provenance. txn-rollback-rel02#0 is a
+    bare write."""
+    tl = reader.get_timeline("txn-rollback-rel02")
+    first = tl["effects"][0]
+    assert first["tool"] == "bump_version"
+    assert first["informed_by"] == []
+
+
+def test_timeline_informed_by_version_grounded_producer(tmp_path: Path):
+    """When the value a read observed was written earlier IN THIS JOURNAL, the
+    informing read names its producer (version-grounded), not 'external'. One
+    txn writes prices/sku1 v5; a later txn reads v5 then writes a derived row —
+    that derived write's result is informed by a read with produced_by set."""
+    writer = Transaction(txn_id="t-writer", state=TxnState.COMMITTED)
+    writer.effects = [
+        Effect(txn_id="t-writer", index=0, tool="set_price", args={"sku": "sku1"},
+               resource="sql", reversible=True, status=EffectStatus.APPLIED,
+               write_keys=[["sql", ["prices", "sku1"], 5]],
+               ts=datetime.now(timezone.utc)),
+    ]
+    consumer = Transaction(txn_id="t-consumer", state=TxnState.COMMITTED)
+    consumer.effects = [
+        Effect(txn_id="t-consumer", index=0, tool="read_price", args={"sku": "sku1"},
+               resource="sql", reversible=True, status=EffectStatus.APPLIED,
+               result={"price": 99}, read_keys=[["sql", ["prices", "sku1"], 5]],
+               ts=datetime.now(timezone.utc)),
+        Effect(txn_id="t-consumer", index=1, tool="set_margin", args={"sku": "sku1"},
+               resource="sql", reversible=True, status=EffectStatus.APPLIED,
+               write_keys=[["sql", ["margins", "sku1"], 1]],
+               ts=datetime.now(timezone.utc)),
+    ]
+    path = str(tmp_path / "produced.db")
+    j = AuditJournal(path)
+    try:
+        for t in (writer, consumer):
+            j.record_transaction(t)
+            for e in t.effects:
+                j.record_effect(e)
+    finally:
+        j.close()
+
+    with JournalReader(path) as r:
+        tl = r.get_timeline("t-consumer")
+        margin = next(e for e in tl["effects"] if e["tool"] == "set_margin")
+        info = next(i for i in margin["informed_by"] if i["tool"] == "read_price")
+        # the read of prices/sku1 v5 is grounded to the earlier txn's write
+        assert info["produced_by"] == "t-writer#0"
+        assert info["produced_by_external"] is False
+        assert info["version"] == 5
+
+
+def test_timeline_informed_by_tolerates_empty_read_keys(tmp_path: Path):
+    """An effect with no reads (empty read_keys — the on-disk default) yields an
+    empty informed_by, never a crash — the additive surface degrades cleanly on
+    a journal whose effects recorded no read-set."""
+    path = str(tmp_path / "noreads.db")
+    AuditJournal(path).close()
+    con = sqlite3.connect(path)
+    con.execute(
+        "INSERT INTO transactions (txn_id, state, created_at, updated_at, dry_run) "
+        "VALUES ('t1', 'COMMITTED', ?, ?, 0)",
+        (datetime.now(timezone.utc).isoformat(),) * 2,
+    )
+    # read_keys at its schema default '[]' — an effect that recorded no read-set
+    con.execute(
+        "INSERT INTO effects (txn_id, idx, effect_id, tool, resource, reversible, "
+        "status, args, read_keys, write_keys, ts) "
+        "VALUES ('t1', 0, 'e', 'w', 'sql', 1, 'APPLIED', '{}', '[]', '[]', ?)",
+        (datetime.now(timezone.utc).isoformat(),),
+    )
+    con.commit()
+    con.close()
+    with JournalReader(path) as r:
+        tl = r.get_timeline("t1")
+        assert tl["effects"][0]["informed_by"] == []
+
+
 # --- mid-flight (OPEN txn, effects part-applied) ----------------------------
 
 
