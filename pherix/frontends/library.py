@@ -79,8 +79,12 @@ from pherix.core.policy import (
     PolicyRule,
     PolicyVerdict,
     PolicyViolation,
+    TrustTiers,
+    admin_auto_approves,
+    per_actor_count_cap,
     refund_if_paid,
     sql_reader,
+    untrusted_gates_irreversible,
 )
 from pherix.core.recovery import (
     EffectRecovery,
@@ -227,6 +231,11 @@ __all__ = [
     # #7 world-state-aware policy
     "sql_reader",
     "refund_if_paid",
+    # authority policy — actor trust tiers over the existing stage+commit eval
+    "TrustTiers",
+    "untrusted_gates_irreversible",
+    "admin_auto_approves",
+    "per_actor_count_cap",
     # #10 longitudinal envelope
     "DurableCap",
     "EnvelopeStore",
