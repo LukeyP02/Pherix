@@ -59,3 +59,29 @@ class PherixGateway:
         if identity is not None and identity in self.policies:
             return self.policies[identity]
         return self.default_policy
+
+    def approve(self, token: str, approver: str | None) -> dict:
+        """Record an over-the-wire approval against the shared journal.
+
+        This is the *write* side of the human gate, reached from outside the
+        agent's process: a reviewer (or a higher-trust service) hands the proxy
+        the opaque ``token`` a gate-blocked commit produced, and the gateway
+        flips that journal record to APPROVED — stamping ``approver`` (the
+        on-whose-authority principal, the #40 actor model). It writes ONLY the
+        approvals table; it never touches a resource, never reimplements the
+        gate, and never fires the effect. The agent process's resumed
+        ``commit(pending_approval=True)`` reads the APPROVED record and fires.
+
+        Requires a shared :attr:`audit` journal — the whole point is that the
+        approver and the agent see the *same* append-only log. A gateway with
+        no audit journal cannot carry approvals across the process boundary, so
+        this raises rather than silently dropping the approval on the floor.
+        """
+        if self.audit is None:
+            raise RuntimeError(
+                "PherixGateway.approve requires a shared audit journal: "
+                "over-the-wire approval is a journal write, and with no journal "
+                "the approving process and the agent process share nothing. "
+                "Construct the gateway with audit=AuditJournal(<shared path>)."
+            )
+        return self.audit.record_approval(token, approver)

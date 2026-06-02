@@ -67,6 +67,17 @@ CREATE TABLE IF NOT EXISTS conflicts (
     ts                TEXT NOT NULL,
     PRIMARY KEY (txn_id, seq)
 );
+CREATE TABLE IF NOT EXISTS approvals (
+    txn_id      TEXT NOT NULL,
+    effect_id   TEXT NOT NULL,
+    token       TEXT NOT NULL,   -- stable opaque handle, the over-the-wire key
+    status      TEXT NOT NULL,   -- 'PENDING' | 'APPROVED'
+    approver    TEXT,            -- the principal who approved (#40 actor model); NULL while PENDING
+    requested_at TEXT NOT NULL,  -- when the gate persisted the PENDING record
+    approved_at  TEXT,           -- when approve() recorded the APPROVED entry; NULL while PENDING
+    PRIMARY KEY (txn_id, effect_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_approvals_token ON approvals (token);
 """
 
 
@@ -411,12 +422,119 @@ class AuditJournal:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    # --- approvals (over-the-wire human gate) -------------------------------
+    #
+    # The in-process gate (``approve_irreversible``) lives only in process
+    # memory: the human who clears it must hold the live ``TxnContext``. To
+    # approve from OUTSIDE the agent's process — a reviewer, a higher-trust
+    # service — the approval has to be a *journal record*, the same append-only
+    # substrate everything else folds over. A gated commit persists a PENDING
+    # row keyed by ``(txn_id, effect_id)`` carrying a stable ``token``; an
+    # out-of-process ``approve(token)`` flips that row to APPROVED and stamps
+    # the approver; a resumed ``commit()`` reads the APPROVED rows and lets the
+    # gate pass. The token is the only thing the approver needs — it never has
+    # to reconstruct the txn or its effects.
+
+    def record_pending_approval(
+        self, txn_id: str, effect_id: str, token: str
+    ) -> None:
+        """Persist (or refresh) a PENDING approval request for one staged effect.
+
+        Idempotent on ``(txn_id, effect_id)``: a re-gated commit (the operator
+        ran the body again, or a second resume attempt) refreshes the
+        ``requested_at`` timestamp and reasserts PENDING, but only if the row
+        is not *already* APPROVED — an approval that has landed out-of-process
+        between two gate evaluations must NOT be clobbered back to PENDING.
+        The ON CONFLICT clause is the whole TOCTOU-safety of the write: it is
+        the journal equivalent of compare-and-set on the approval status.
+        """
+        now = _now()
+        self._conn.execute(
+            "INSERT INTO approvals "
+            "(txn_id, effect_id, token, status, approver, requested_at, "
+            "approved_at) "
+            "VALUES (?, ?, ?, 'PENDING', NULL, ?, NULL) "
+            "ON CONFLICT(txn_id, effect_id) DO UPDATE SET "
+            "requested_at = excluded.requested_at "
+            "WHERE approvals.status != 'APPROVED'",
+            (txn_id, effect_id, token, now),
+        )
+        self._conn.commit()
+
+    def record_approval(self, token: str, approver: str | None) -> dict:
+        """Flip a PENDING approval to APPROVED, stamping the approver (#40 actor).
+
+        This is the over-the-wire write — called by the proxy/MCP gateway's
+        ``approve`` operation, in a *different* process from the one holding
+        the transaction. Resolves the opaque ``token`` to its
+        ``(txn_id, effect_id)``, records ``approver`` (the on-whose-authority
+        principal) and ``approved_at``, and returns the updated row so the
+        caller can echo what was approved.
+
+        Idempotent: approving an already-APPROVED token is a no-op that returns
+        the existing row (the first approver/timestamp stand — re-approval
+        never rewrites who authorised it). An unknown token raises
+        :class:`KeyError` — a typo must not silently succeed and let a gate
+        pass on an approval that was never recorded.
+        """
+        row = self._conn.execute(
+            "SELECT * FROM approvals WHERE token = ?", (token,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(
+                f"no pending approval for token {token!r} — the token is "
+                f"unknown or the gate never persisted it"
+            )
+        if row["status"] != "APPROVED":
+            self._conn.execute(
+                "UPDATE approvals SET status = 'APPROVED', approver = ?, "
+                "approved_at = ? WHERE token = ? AND status != 'APPROVED'",
+                (approver, _now(), token),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM approvals WHERE token = ?", (token,)
+            ).fetchone()
+        return dict(row)
+
+    def get_approvals(self, txn_id: str) -> list[dict]:
+        """All approval records for ``txn_id`` — PENDING and APPROVED alike.
+
+        Ordered by ``requested_at`` then ``effect_id`` for a stable read. The
+        resumed commit folds this list to learn which staged effects have an
+        APPROVED record waiting; the inspector reads it (read-only) to render
+        who is waiting on whom.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM approvals WHERE txn_id = ? "
+            "ORDER BY requested_at, effect_id",
+            (txn_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def approved_effect_ids(self, txn_id: str) -> set[str]:
+        """The set of ``effect_id``s for ``txn_id`` with an APPROVED record.
+
+        The exact shape the commit-time gate needs: it unions this with the
+        in-process pre-approvals before deciding whether any staged effect
+        still needs approval. A pure read of the journal — the resume path is,
+        like everything else, a fold over the persisted log.
+        """
+        rows = self._conn.execute(
+            "SELECT effect_id FROM approvals "
+            "WHERE txn_id = ? AND status = 'APPROVED'",
+            (txn_id,),
+        ).fetchall()
+        return {r["effect_id"] for r in rows}
+
     # --- shipping (forward-read the journal past a cursor) ------------------
 
     # The journalled tables, in dependency order (a txn row before its
     # effects, effects before their verdicts / conflicts) so a control plane
     # that validates foreign keys never sees an orphan.
-    _SHIPPABLE_TABLES = ("transactions", "effects", "verdicts", "conflicts")
+    _SHIPPABLE_TABLES = (
+        "transactions", "effects", "verdicts", "conflicts", "approvals"
+    )
 
     def export_since(self, cursor: dict | None) -> tuple[dict, dict]:
         """Read journal rows newer than ``cursor`` for shipping to the control plane.

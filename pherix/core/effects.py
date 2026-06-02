@@ -87,6 +87,50 @@ class StagedResult:
         return f"StagedResult(effect_id={self.effect_id!r})"
 
 
+@dataclass(frozen=True)
+class PendingApproval:
+    """Handle yielded by a resumable commit for one gate-blocked effect.
+
+    When :meth:`pherix.core.runtime.TxnContext.commit` is called with
+    ``pending_approval=True`` and a staged irreversible has neither a
+    compensator nor an approval, the runtime persists a PENDING-APPROVAL
+    record to the journal and hands back one of these per blocked effect
+    instead of rolling back. The ``token`` is the stable, opaque key an
+    out-of-process approver passes to the proxy's ``approve`` operation; the
+    transaction stays re-committable, so a later ``commit()`` that sees the
+    journalled approval fires the effect.
+    """
+
+    txn_id: str
+    effect_id: str
+    token: str
+
+    def __repr__(self) -> str:
+        return (
+            f"PendingApproval(effect_id={self.effect_id!r}, "
+            f"token={self.token!r})"
+        )
+
+
+def compute_approval_token(txn_id: str, effect_id: str) -> str:
+    """Stable approval token for one staged effect — the over-the-wire key.
+
+    A deterministic hash of ``(txn_id, effect_id)`` so the same gated effect
+    always yields the same token: a second resume attempt that re-gates the
+    effect persists the *same* PENDING row rather than a fresh one, and an
+    approver can be handed the token once and use it after a process restart.
+    It is *opaque* (the approver never parses it back into a txn/effect) and
+    *unguessable enough* for an attribution surface — but it is NOT a
+    capability secret: like ``actor``, Pherix records the claimed approver, it
+    does not authenticate the holder. A deployment that needs the token to be
+    an auth bearer wraps the proxy with real auth (flagged for the operator).
+    """
+    payload = json.dumps(
+        {"txn_id": txn_id, "effect_id": effect_id}, sort_keys=True
+    )
+    return "apr-" + hashlib.sha256(payload.encode()).hexdigest()[:24]
+
+
 def compute_effect_id(txn_id: str, index: int, tool: str, args: dict) -> str:
     """Idempotency key = stable hash of (txn_id, index, tool, sorted args).
 
