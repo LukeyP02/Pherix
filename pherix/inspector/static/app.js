@@ -19,6 +19,14 @@ const state = {
     playing: false,
     playTimer: null,
   },
+  // replay: a screen-recordable walk of the journal as a state-transition movie
+  replay: {
+    txn: null,           // the transaction summary being replayed
+    effects: [],         // the effects array
+    conflicts: [],       // txn-level isolation conflicts (drives the clash flash)
+    running: false,
+    timers: [],          // pending setTimeout handles, cleared on stop
+  },
 };
 
 const esc = (s) =>
@@ -146,6 +154,12 @@ async function loadDetail() {
   state.scrub.effects = effects;
   state.scrub.head = -1;
 
+  // reset replay state for this transaction (drives the state-transition movie)
+  stopReplay();
+  state.replay.txn = t;
+  state.replay.effects = effects;
+  state.replay.conflicts = data.conflicts || [];
+
   detail.innerHTML = `
     <div class="detail-head">
       <h2>${esc(t.txn_id)} ${pill(t.tone, t.state)} ${t.dry_run ? pill("unknown", "dry-run") : ""}</h2>
@@ -159,6 +173,7 @@ async function loadDetail() {
       </div>
     </div>
     ${banners[t.state] || ""}
+    ${renderReplayBar(t, effects.length)}
     ${renderScrubber(effects.length)}
     <div class="timeline">${effects.map(renderEffect).join("")}</div>
     <div id="lineage" class="lineage-slot"></div>
@@ -166,6 +181,7 @@ async function loadDetail() {
 
   // wire up scrubber controls (must run after innerHTML is set)
   initScrubber();
+  initReplay();
   // lineage is a second, independent fetch so a hiccup never blanks the
   // timeline; it fills the slot above once it lands.
   loadLineage(state.selected);
@@ -239,11 +255,37 @@ function renderChain(c) {
   </div>`;
 }
 
+/** Normalise a read/write key (tuple [res,key,ver] or {resource,key,version})
+ *  to a `resource|key` signature so it can be matched against a conflict. */
+function keySig(k) {
+  let res, key;
+  if (Array.isArray(k)) { res = k[0]; key = k[1]; }
+  else if (k && typeof k === "object") { res = k.resource; key = k.key; }
+  else { return String(k); }
+  const keyStr = Array.isArray(key) ? key.join("/") : String(key);
+  return `${res}|${keyStr}`;
+}
+
+/** The set of `resource|key` signatures that an isolation conflict touches,
+ *  built from the currently-loaded transaction's conflicts. */
+function conflictSigs() {
+  const sigs = new Set();
+  (state.replay.conflicts || []).forEach((c) => sigs.add(keySig(c)));
+  return sigs;
+}
+
 function renderEffect(e) {
   const toneVar = `--tone: var(--${e.tone});`;
+  const clashes = conflictSigs();
   const keys = [];
-  (e.read_keys || []).forEach((k) => keys.push(`<div class="keyline"><span class="rk">read</span> ${esc(JSON.stringify(k))}</div>`));
-  (e.write_keys || []).forEach((k) => keys.push(`<div class="keyline"><span class="wk">write</span> ${esc(JSON.stringify(k))}</div>`));
+  (e.read_keys || []).forEach((k) => {
+    const cls = clashes.has(keySig(k)) ? " clash" : "";
+    keys.push(`<div class="keyline${cls}"><span class="rk">read</span> ${esc(JSON.stringify(k))}</div>`);
+  });
+  (e.write_keys || []).forEach((k) => {
+    const cls = clashes.has(keySig(k)) ? " clash" : "";
+    keys.push(`<div class="keyline${cls}"><span class="wk">write</span> ${esc(JSON.stringify(k))}</div>`);
+  });
   const args = (e.args && Object.keys(e.args).length)
     ? `<div class="args"><pre>${esc(JSON.stringify(e.args, null, 2))}</pre></div>` : "";
   const verdicts = (e.policy_verdicts || []).map((v) =>
@@ -253,7 +295,7 @@ function renderEffect(e) {
       <span class="rn">${esc(v.rule || v.kind || "")}</span>
       ${v.reason ? `<span class="rsn">— ${esc(v.reason)}</span>` : ""}
     </div>`).join("");
-  return `<div class="effect ${e.undone ? "undone" : ""}" style="${toneVar}">
+  return `<div class="effect ${e.undone ? "undone" : ""}" data-eidx="${esc(e.idx)}" style="${toneVar}">
     <div class="e-top">
       <span class="e-idx">[${e.idx}]</span>
       <span class="e-tool">${esc(e.tool)}</span>
@@ -365,6 +407,243 @@ function stopPlay() {
   if (s.playTimer) { clearInterval(s.playTimer); s.playTimer = null; }
   const btn = $("#sBtnPlay");
   if (btn) { btn.textContent = "▶"; btn.classList.remove("active"); }
+}
+
+/* --- state-transition REPLAY ------------------------------------------------
+   The journal is a time series; commit is a forward fold, rollback a backward
+   fold. The replay *animates* that fold on a screen-recordable timer, reading
+   purely off the data already returned for the selected transaction — no new
+   endpoints, no write paths. The inspector stays read-only.
+
+   The walk:
+     1. forward fold — each effect lands (`.applying`); a GATED effect BLOCKS
+        with an amber barrier (`.blocked`); an effect whose key collides with a
+        recorded isolation conflict flashes red (`.conflict-hit`).
+     2. resolution — if the txn ultimately COMMITTED, a held gate CLEARS
+        (`.cleared`); if it ROLLED_BACK / went PARTIAL / STUCK, the applied
+        effects visibly UNWIND in reverse (`.unwinding`, settle to 'restored').
+   Every transition is derived from the effect's persisted status + the txn
+   state — never invented. ------------------------------------------------- */
+
+// the per-step cadence (ms) — slow enough to read, paced for a screen capture
+const REPLAY_STEP = 760;
+const REPLAY_UNWIND = 620;
+
+/** Build the replay control bar. Hidden when the txn has no effects. */
+function renderReplayBar(t, count) {
+  if (count === 0) return "";
+  const unwinds = t.state === "ROLLED_BACK" || t.state === "PARTIAL" || t.state === "STUCK";
+  const caption = unwinds
+    ? "watch the forward fold land, then the backward fold unwind it"
+    : "watch the journal fold forward, effect by effect";
+  return `
+    <div class="replay-bar" id="replayBar">
+      <button class="replay-btn" id="replayBtn" type="button">
+        <span class="glyph">▶</span><span class="lbl">Replay</span>
+      </button>
+      <span class="replay-caption">${esc(caption)}</span>
+      <span class="replay-now" id="replayNow"></span>
+    </div>`;
+}
+
+/** Wire the Replay button. Called once after loadDetail re-renders. */
+function initReplay() {
+  const btn = $("#replayBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    if (state.replay.running) stopReplay();
+    else runReplay();
+  });
+}
+
+/** Schedule a step on the replay clock, recording the handle so stopReplay
+ *  can cancel everything still pending. */
+function replayAt(ms, fn) {
+  const h = setTimeout(fn, ms);
+  state.replay.timers.push(h);
+}
+
+function replayNow(html) {
+  const el = $("#replayNow");
+  if (el) el.innerHTML = html;
+}
+
+function effectNode(idx) {
+  return document.querySelector(`.timeline .effect[data-eidx="${idx}"]`);
+}
+
+/** Clear every replay-driven animation class so the timeline returns to its
+ *  resting (data-faithful) render. */
+function clearReplayClasses() {
+  document.querySelectorAll(".timeline .effect").forEach((el) => {
+    el.classList.remove("applying", "unwinding", "blocked", "cleared", "conflict-hit");
+  });
+  document.querySelectorAll(".timeline .replay-tag").forEach((el) => el.remove());
+  document.querySelectorAll(".replay-conflict").forEach((el) => el.remove());
+}
+
+/** Does this effect collide with a recorded isolation conflict? */
+function effectConflicts(e) {
+  if (!(state.replay.conflicts || []).length) return false;
+  const clashes = conflictSigs();
+  const keys = [].concat(e.read_keys || [], e.write_keys || []);
+  return keys.some((k) => clashes.has(keySig(k)));
+}
+
+/** Drop a small "restored / cleared / held" tag next to a tool name. */
+function tagEffect(idx, kind, label) {
+  const node = effectNode(idx);
+  if (!node) return;
+  const tool = node.querySelector(".e-tool");
+  if (!tool || tool.parentElement.querySelector(`.replay-tag.${kind}`)) return;
+  const tag = document.createElement("span");
+  tag.className = `replay-tag ${kind}`;
+  tag.textContent = label;
+  tool.insertAdjacentElement("afterend", tag);
+}
+
+function setReplayRunning(on) {
+  state.replay.running = on;
+  const btn = $("#replayBtn");
+  if (btn) {
+    btn.querySelector(".glyph").textContent = on ? "⏸" : "▶";
+    btn.querySelector(".lbl").textContent = on ? "Stop" : "Replay";
+    btn.classList.toggle("active", on);
+  }
+  const detail = $("#detail");
+  if (detail) detail.classList.toggle("replaying", on);
+}
+
+/** Cancel a running replay and reset the timeline to its resting render. */
+function stopReplay() {
+  state.replay.timers.forEach((h) => clearTimeout(h));
+  state.replay.timers = [];
+  if (state.replay.running) {
+    clearReplayClasses();
+    replayNow("");
+  }
+  setReplayRunning(false);
+}
+
+/** Run the state-transition movie for the loaded transaction. */
+function runReplay() {
+  const { txn, effects } = state.replay;
+  if (!effects.length) return;
+  stopReplay();              // idempotent reset before we start
+  clearReplayClasses();
+  setReplayRunning(true);
+
+  const unwinds = txn.state === "ROLLED_BACK" || txn.state === "PARTIAL" || txn.state === "STUCK";
+  const committed = txn.state === "COMMITTED";
+
+  let clock = 0;
+  // track which indices we actually *applied* (so the unwind reverses the
+  // right ones), and any index left held at the gate.
+  const applied = [];
+  let gatedIdx = null;
+
+  // --- phase 1: the forward fold ---
+  effects.forEach((e) => {
+    const idx = e.idx;
+    const conflict = effectConflicts(e);
+    clock += REPLAY_STEP;
+    replayAt(clock, () => {
+      const node = effectNode(idx);
+      if (!node) return;
+      node.classList.remove("applying", "blocked", "conflict-hit");
+      void node.offsetWidth;   // restart the animation if re-triggered
+
+      if (conflict) {
+        node.classList.add("conflict-hit");
+        node.querySelectorAll(".keyline.clash").forEach((kl) => void kl.offsetWidth);
+        injectConflictBanner();
+        replayNow(`<b>[${idx}] ${esc(e.tool)}</b> — isolation conflict: the version it read no longer matches the world`);
+      } else if (e.status === "GATED") {
+        node.classList.add("blocked");
+        gatedIdx = idx;
+        replayNow(`<b>[${idx}] ${esc(e.tool)}</b> — held at the gate (irreversible, needs approval)`);
+      } else {
+        node.classList.add("applying");
+        if (e.reversible || e.status === "APPLIED" || e.status === "COMPENSATED") applied.push(idx);
+        replayNow(`<b>[${idx}] ${esc(e.tool)}</b> — ${esc(e.blurb)}`);
+      }
+      node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  });
+
+  // --- phase 2: the resolution ---
+  clock += REPLAY_STEP;
+  replayAt(clock, () => {
+    if (gatedIdx !== null) {
+      const node = effectNode(gatedIdx);
+      if (committed && node) {
+        // the human approved → the gate clears and the held effect lands
+        node.classList.remove("blocked");
+        void node.offsetWidth;
+        node.classList.add("cleared");
+        tagEffect(gatedIdx, "cleared", "cleared");
+        replayNow(`<b>[${gatedIdx}]</b> approved at the gate — the irreversible step fires`);
+      } else if (node) {
+        // never approved → it stays held; nothing irreversible happened
+        tagEffect(gatedIdx, "held", "held");
+        replayNow(`<b>[${gatedIdx}]</b> never approved — the irreversible step never fired`);
+      }
+    }
+  });
+
+  if (unwinds && applied.length) {
+    // the backward fold: reverse the applied effects, newest first
+    const order = applied.slice().reverse();
+    clock += REPLAY_STEP;
+    order.forEach((idx) => {
+      clock += REPLAY_UNWIND;
+      replayAt(clock, () => {
+        const node = effectNode(idx);
+        if (!node) return;
+        node.classList.remove("applying", "cleared");
+        void node.offsetWidth;
+        node.classList.add("unwinding");
+        tagEffect(idx, "restored", "restored");
+        node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        replayNow(`unwinding <b>[${idx}]</b> — the backward fold restores the prior state`);
+      });
+    });
+    clock += REPLAY_UNWIND;
+    replayAt(clock, () => {
+      const verb = txn.state === "STUCK" ? "STUCK — the unwind could not complete"
+        : txn.state === "PARTIAL" ? "partial — unwinding after a mid-fire failure"
+        : "rolled back — nothing took effect";
+      replayNow(`<b>${esc(verb)}</b>`);
+    });
+  } else {
+    clock += REPLAY_STEP;
+    replayAt(clock, () => {
+      const verb = committed ? "committed cleanly — the forward fold completed"
+        : txn.state === "STAGED" ? "staged — irreversibles awaiting the gate"
+        : esc(txn.state.toLowerCase());
+      replayNow(`<b>${verb}</b>`);
+    });
+  }
+
+  // hand back the controls once the movie ends
+  clock += REPLAY_STEP;
+  replayAt(clock, () => setReplayRunning(false));
+}
+
+/** Surface a one-line conflict banner above the timeline (idempotent). */
+function injectConflictBanner() {
+  if ($(".replay-conflict")) return;
+  const c = (state.replay.conflicts || [])[0];
+  if (!c) return;
+  const key = Array.isArray(c.key) ? c.key.join("/") : String(c.key);
+  const banner = document.createElement("div");
+  banner.className = "replay-conflict";
+  banner.innerHTML =
+    `⚡ Isolation conflict on <b>${esc(c.resource)}:${esc(key)}</b> — ` +
+    `read at v${esc(c.version_at_read)}, world now at v${esc(c.version_now)}` +
+    (c.version_expected != null ? ` (expected v${esc(c.version_expected)})` : "");
+  const timeline = $(".timeline");
+  if (timeline) timeline.parentNode.insertBefore(banner, timeline);
 }
 
 /* --- reliability view --- */

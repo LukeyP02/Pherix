@@ -3,13 +3,18 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pherix · inspector</title>
+<title>pherix · inspector</title>
+<meta name="description" content="The governance console over a Pherix audit journal — the effect journal as a colour-coded, replayable state-transition movie." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+<div class="bg" aria-hidden="true"></div>
 <div class="app">
   <header>
-    <span class="brand">pherix<span class="dot">·</span>inspector<small>governance console</small></span>
+    <span class="brand">pherix<span class="dot">.</span>inspector<small>governance console</small></span>
     <nav class="views" id="views">
       <button class="view-btn on" id="viewJournal" data-view="journal">journal</button>
       <button class="view-btn" id="viewReliability" data-view="reliability">reliability</button>
@@ -49,7 +54,7 @@
     </div>
 
     <div class="detail-col" id="detail">
-      <div class="empty">select a transaction to see its effect timeline</div>
+      <div class="empty">select a transaction to see its effect timeline — then hit Replay</div>
     </div>
   </div>
 
