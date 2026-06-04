@@ -195,7 +195,7 @@
 
       <div class="cta">
         <a class="btn" href="demos.html">Watch the demo</a>
-        <span class="install"><span class="p">$</span><span class="cmd">pip install -e .</span><button class="cp" type="button">copy</button></span>
+        <span class="install"><span class="p">$</span><span class="cmd">pip install pherix</span><button class="cp" type="button">copy</button></span>
         <a class="btn ghost" href="get-started.html">Get started</a>
       </div>
     </section>
@@ -271,7 +271,7 @@
     "use strict";
     [].forEach.call(document.querySelectorAll(".install .cp"), function (btn) {
       btn.addEventListener("click", function () {
-        if (navigator.clipboard) navigator.clipboard.writeText("pip install -e .");
+        if (navigator.clipboard) navigator.clipboard.writeText("pip install pherix");
         var prev = btn.textContent;
         btn.textContent = "copied"; btn.classList.add("done");
         setTimeout(function () { btn.textContent = prev; btn.classList.remove("done"); }, 1200);
