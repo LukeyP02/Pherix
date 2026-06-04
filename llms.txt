@@ -25,24 +25,16 @@ fetch, see [llms-full.txt](llms-full.txt).
 
 ## Concepts & architecture
 
-- [Architecture, drawn](docs/architecture.html): the stack, the journal and its three folds, the reversible/irreversible lanes, the two undo mechanisms (adapter restore vs compensator), the module map.
-- [North star](docs/north-star.html): the essence — make being wrong cheap, via four orthogonal axes (interception, policy, adapters, compensators) over a journal.
-- [Roadmap](docs/ROADMAP.md): slice-by-slice build status, the interception ladder, the over-containment tuning system.
-- [Code roadmap](docs/code-roadmap.html): what is built vs next vs engineering debt, reconciled against the code.
-
-## Position & strategy
-
-- [Position](docs/position.html): who it is for, why they pay, the honest privacy-bounded moat, the open-core pricing model.
-- [Distribution](docs/distribution.html): the watch/enforce/reverse message, the hook→trust→moat adoption ladder, channel cadence, the heavy-tailed ICP.
-- [Verdict](docs/verdict.html): an honest scored read on code quality, market positioning, and feasibility.
+- [How it works, end to end](site/docs.html): the stack, the journal and its folds, the reversible/irreversible lanes, the two undo mechanisms (adapter restore vs compensator). Served by `python -m http.server` from the repo root.
+- [Project spec (CLAUDE.md)](CLAUDE.md): the canonical system definition — the journal, the four axes (interception · policy · adapters · compensators), the execution model.
+- [Replay recipe](docs/replay-recipe.md): folding the journal forward against fresh state to re-derive or verify a run.
 
 ## Examples
 
 - examples/quickstart.py: the smallest correct integration, verified end-to-end in a fresh venv.
-- examples/slice1_demo.py … slice8_demo.py: one runnable demo per engine capability.
-- examples/demo: the watchable three-act demo (reversible unwind, gated irreversible, audit readback).
+- examples/demos/undo.py: the flagship — a wrong-but-allowed bulk write rolled back live via `ROLLBACK TO SAVEPOINT` (40k rows restored, 0 lost).
+- examples/demos/{gate,isolation,authority,lineage}.py: one runnable demo per engine capability — gated irreversible + approve-over-the-wire, MVCC conflict rejection, authority tiers over the same purge, read→write provenance from the journal.
 
 ## Optional
 
-- [Pressure test](docs/pressure-test.html): what was tested and fixed in the Phase 1 audit.
 - TypeScript SDK (pherix-ts/): 14 adapters at semantic + field-name parity with Python; a parity suite proves both engines produce structurally identical journals.

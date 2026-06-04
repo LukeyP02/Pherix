@@ -143,10 +143,14 @@ Reversible effects run live and roll back via the backend's own savepoints. Irre
 ## See it / explore
 
 ```bash
-python -m examples.demo                    # the narrated 3-act demo, governed vs ungoverned
+python examples/demos/undo.py        # a wrong-but-allowed bulk write, rolled back live — 40k rows restored, 0 lost
+python examples/demos/gate.py        # an irreversible wire, held at the gate then cleared on approval
+python examples/demos/isolation.py   # two agents race the same row — the stale read is rejected
+python examples/demos/authority.py   # the same irreversible purge, two actors, opposite fate
+python examples/demos/lineage.py     # which reads informed a write — provenance, read back from the journal
 ```
 
-Three acts, side by side, deterministic and offline: a WHERE-less `DELETE` **contained** by rollback; a $480k wire **gated** before it can fire; and the **audit** journal both runs wrote, read back. It ends by pointing you at the journal it produced:
+Each is self-contained, deterministic, and offline — the flagship is `undo.py`: a plausible, policy-allowed `UPDATE` with an over-broad `WHERE` runs live against real SQLite behind a `SAVEPOINT`, then one `rollback()` does `ROLLBACK TO SAVEPOINT` and every row is restored — exact, by the backend, not a guessed inverse. Every demo ends by pointing you at the journal it produced:
 
 ```bash
 python -m pherix.inspector.seed demo.db   # generate a representative audit journal
