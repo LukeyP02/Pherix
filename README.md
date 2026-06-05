@@ -1,10 +1,14 @@
-# Pherix — nothing your agent does half-happens
+# Pherix
 
-**A transactional resource runtime for AI agents: undo the reversible · gate the irreversible — against your backend's own state.** Audit, replay, and isolation fall out for free.
+**Contain the blast radius of your AI agent.** Wrap your agent's tool calls so the reversible ones roll back against your backend's own state, and the irreversible ones wait for your yes — so you can put agents on **prod, payments, and customer data** without the fear.
 
-Pherix is a Python **library** (+ TypeScript SDK) that wraps your agent's tool-call layer and gives database-style guarantees — atomicity, isolation, capability enforcement, durability — over the *external side-effects* of the tool calls (DB writes, file writes, API calls). It does **not** run your agent or call any LLM. You keep your existing agent loop and model provider; Pherix sits underneath at the tool-call layer. Every side-effecting call becomes an entry in one append-only journal — `commit()` folds it forward, `rollback()` folds it back.
+[![PyPI](https://img.shields.io/pypi/v/pherix)](https://pypi.org/project/pherix/) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) ![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg) ![deps: zero](https://img.shields.io/badge/dependencies-0-brightgreen.svg)
 
-**What it is *not*:** not durable execution (Temporal replays your *code*; Pherix transacts your *resources*), not observability (LangSmith/Langfuse *watch*; Pherix *enforces and reverses*), not an agent framework (it wraps the tool calls of an agent you already have).
+Pherix is a Python **library** (+ TypeScript SDK) that gives database-style guarantees — atomicity, isolation, capability enforcement, durability — over the *external side-effects* of an agent's tool calls (DB writes, file writes, API calls). It does **not** run your agent or call an LLM: you keep your existing loop and model provider, and Pherix sits underneath at the tool-call layer. Zero dependencies — the kernel imports nothing; each adapter lazy-imports its own driver.
+
+> **Blast radius** is the area a failure damages. Today an agent calls a tool and the effect just *happens* — a wiped table, a wrong payment, a clobbered file — with no undo, no approval, no record. Pherix makes that **contained, not catastrophic**: every side-effecting call becomes an entry in one append-only journal — `commit()` folds it forward, `rollback()` folds it back.
+
+**What it is *not*:** not durable execution (Temporal replays your *code*; Pherix transacts your *resources*), not observability (LangSmith / Langfuse *watch*; Pherix *contains and reverses*), not an agent framework (it wraps the tool calls of an agent you already have).
 
 ## How it works
 
@@ -38,9 +42,7 @@ Anyone shipping action-taking agents to production — where a tool call writes 
 
 ## Quickstart
 
-> Pre-release. The wrap below *is* the whole integration — no migration, no rewrite: declare your side-effecting tools, wrap the run.
-
-> **Using a coding assistant?** Point Claude Code / Cursor / Aider at [`llms-full.txt`](llms-full.txt) — a complete, executable integration recipe (with the gotchas spelled out) written so an LLM can wrap your agent in Pherix correctly without you fighting the API. [`llms.txt`](llms.txt) is the curated index of all docs.
+> **Using a coding assistant?** Point Claude Code / Cursor / Aider at [`llms-full.txt`](llms-full.txt) — a complete, executable integration recipe (with the gotchas spelled out) written so an LLM can wrap your agent in Pherix correctly. [`llms.txt`](llms.txt) is the curated index of all docs.
 
 **Install**
 
@@ -71,7 +73,7 @@ python examples/quickstart.py
   users persisted:  ['grace']     # approved → both go through
 ```
 
-That's the whole idea in one run: the reversible effect is undone exactly, the irreversible one is held until a human says yes. The [40-line source](examples/quickstart.py) is the minimal real wrap; the rest of this section walks through each piece.
+That's the whole idea in one run: the reversible effect is undone exactly, the irreversible one is held until a human says yes. The [~40-line source](examples/quickstart.py) is the minimal real wrap; the rest of this section walks through each piece.
 
 **1 — Declare your tools with `@tool`.** Mark each side-effecting function with the resource it touches. The agent body that calls them stays transaction-unaware — just a plain loop.
 
@@ -136,30 +138,37 @@ Reversible effects run live and roll back via the backend's own savepoints. Irre
 
 ## What you get
 
-- **Undo the reversible** — DB and file writes roll back via the backend's own savepoints.
-- **Gate the irreversible** — un-undoable effects stage and block at commit until approved.
+- **Undo the reversible** — DB and file writes roll back via the backend's own savepoints. Exact, not best-effort.
+- **Gate the irreversible** — un-undoable effects (a charge, an email) stage and block at commit until a human approves.
 - **Audit everything** — every effect, its arguments, and its outcome lands in the journal; the journal *is* the audit log.
 
-## See it / explore
+## See it run
+
+Five focused demos — each a real scenario, fully offline (no API key, no model):
 
 ```bash
-python -m examples.demo                    # the narrated 3-act demo, governed vs ungoverned
+python examples/demos/undo.py        # a wiped table rolled back to the exact prior state
+python examples/demos/gate.py        # a $48k charge held at the gate until a human approves
+python examples/demos/authority.py   # the same irreversible purge, two actors, opposite fate
+python examples/demos/isolation.py   # two agents race one row; the stale read is rejected
+python examples/demos/lineage.py     # real reads inform a write — the whole chain journalled
 ```
 
-Three acts, side by side, deterministic and offline: a WHERE-less `DELETE` **contained** by rollback; a $480k wire **gated** before it can fire; and the **audit** journal both runs wrote, read back. It ends by pointing you at the journal it produced:
+Then open the read-only audit console over a representative journal:
 
 ```bash
 python -m pherix.inspector.seed demo.db   # generate a representative audit journal
 python -m pherix.inspector --db demo.db   # open the read-only audit console over it
 ```
 
-Runs fully offline — no API key, no model. The seeded journal shows every story the console renders: a clean commit, a rollback, a gated irreversible, a STUCK transaction, and a dry-run.
+## Adapters
 
-## Learn more
-
-- [`site/docs.html`](site/docs.html) — how it works, end to end.
-- The rest of the static site (`site/index.html`, `site/get-started.html`, `site/demos.html`) is served by `python -m http.server` from the repo root.
+Reversible-state rollback against the backend's own semantics — 16 in Python, 14 mirrored in TypeScript: SQLite · Postgres · MySQL · MongoDB · Redis · S3 · GCS · DynamoDB · Elasticsearch · filesystem · HTTP · REST · message queues · git · in-memory. Each lazy-imports its driver, so `import pherix` stays dependency-free (`pip install pherix[postgres]` pulls only what that adapter needs).
 
 ## Status
 
-Pre-release. The engine is built — both lanes, MVCC isolation, replay, dry-run, crash recovery, policy, the MCP gateway, the flight recorder; 16 Python / 14 TS adapters; ~940 Python + 210 TS tests, fully offline. **Open-core:** the library and the read-only audit console are MIT and free forever; a hosted control plane (the journal as a fleet-wide system of record) is the eventual paid layer — nothing you run on one machine is ever paywalled. Source: [github.com/LukeyP02/Pherix](https://github.com/LukeyP02/Pherix).
+Pre-release (`0.1.0`, on PyPI). The engine is built — both lanes, MVCC isolation, replay, dry-run, crash recovery, policy, the MCP gateway — with 900+ Python and 200+ TypeScript tests, fully offline. A TypeScript parity suite drives the same scenarios through both engines and asserts structurally identical journals.
+
+**Open-core:** the library and the read-only audit console are MIT and free forever — nothing you run on your own machine is ever paywalled.
+
+License: [MIT](LICENSE).

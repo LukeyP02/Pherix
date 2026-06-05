@@ -44,5 +44,8 @@ features.md
 distribution/drafts/
 tasks/
 ops/
+# CLAUDE.md — internal agent/operator guide (operator notes, strategy, slice roadmap);
+# kept LOCAL for our own tooling, never shipped to the public repo.
+/CLAUDE.md
 site/*.mp4
 site/*poster*.jpg
