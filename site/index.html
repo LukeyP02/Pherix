@@ -3,280 +3,1085 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pherix — guardrails for AI agents</title>
-<meta name="description" content="A self-hosted library that wraps your agent's tool calls. Undo the reversible, gate the irreversible, audit everything. A mistake is one rollback away." />
+<title>Pherix — Contain the blast radius of your AI agent</title>
+<meta name="description" content="Pherix contains the blast radius of your AI agent's tool calls: reversible actions roll back against your backend’s own state, irreversible ones wait for your yes. Put agents on prod, payments, and customer data without the fear." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
+  /* =====================================================================
+     PHERIX — final Swiss
+     A single unified system: sw1's oversized poster hero settling into
+     sw5's ruled engineering data-sheet. One type system, one accent.
+     ===================================================================== */
+
   :root {
-    --bg: #0a0b0e;
-    --panel: #121419;
-    --panel-2: #181b22;
-    --ink: #e8ebf1;
-    --ink-2: #b9c1d0;
-    --ink-3: #5a6271;
-    --ink-4: #383e49;
-    --rule: #232730;
-    --green: #5ad17f;
-    --amber: #e0b341;
-    --red: #e56854;
-    --accent: #6ea8fe;
+    /* paper + ink */
+    --paper:   #f4f3ef;   /* off-white sheet */
+    --paper-2: #eceae3;   /* faint inset fill — used sparingly, no cards */
+    --ink:     #111111;   /* near-black */
+    --ink-2:   #3c3a35;   /* body — 10.2:1 */
+    --ink-3:   #6c6a62;   /* secondary / readable labels — 4.88:1, AA pass */
+    --ink-4:   #9a9890;   /* DECORATIVE ONLY — tiny coordinate / REV ticks, NOT read */
+
+    /* lines */
+    --hair:  #cfcdc4;     /* fine internal hairline */
+    --rule:  #111111;     /* full structural rule */
+
+    /* the ONE accent — clean Swiss red */
+    --red:     #c8342a;
+    --red-ink: #f4f3ef;
+
+    /* blast-radius orange — GRAPHICAL ONLY (logo + diagram), never small text */
+    --orange:   #e8743a;
+    --orange-2: #f0a878;
+
+    --maxw:   1120px;
+    --gutter: clamp(1.1rem, 4vw, 2.75rem);
+
+    /* systematic H3 scale — exactly two steps */
+    --h3:     clamp(1.2rem, 2.1vw, 1.5rem);    /* mechanism / use-case headings */
+    --h3-sub: clamp(1.02rem, 1.6vw, 1.18rem);  /* subordinate "On the record" */
   }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:   #131310;
+      --paper-2: #1c1b17;
+      --ink:     #f1efe8;
+      --ink-2:   #cbc9c0;   /* body — 11.2:1 */
+      --ink-3:   #9a988f;   /* readable labels — 6.44:1, AA pass */
+      --ink-4:   #76746c;   /* DECORATIVE ONLY — tiny ticks */
+      --hair:    #36352f;
+      --rule:    #f1efe8;
+      --red:     #ff5a45;
+      --red-ink: #131310;
+      --orange:   #ff9e4d;
+      --orange-2: #d97a3a;
+    }
+  }
+
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; margin: 0; padding: 0; background: var(--bg); }
-  body { margin: 0; padding: 0; background: transparent; color: var(--ink); }
+
+  html {
+    scroll-behavior: smooth;
+    background: var(--paper);
+    -webkit-text-size-adjust: 100%;
+    font-size: 75%;          /* whole rem-based type+spacing system scaled to 75% */
+  }
+
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
-    font-size: 16.5px; line-height: 1.7; -webkit-font-smoothing: antialiased;
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-size: 1.0625rem;    /* was 17px — now rem so it scales with the root */
+    line-height: 1.55;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
     overflow-x: hidden;
   }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
 
-  .bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
-  .bg::before {
-    content: ""; position: absolute; inset: 0;
-    background-image: radial-gradient(rgba(150,162,186,0.10) 1.1px, transparent 1.6px);
-    background-size: 30px 30px;
-    -webkit-mask-image: radial-gradient(120% 90% at 50% 25%, #000 35%, transparent 90%);
-            mask-image: radial-gradient(120% 90% at 50% 25%, #000 35%, transparent 90%);
+  a { color: var(--ink); text-decoration: none; cursor: pointer; }
+  ::selection { background: var(--red); color: var(--red-ink); }
+
+  /* keyboard focus — visible red ring on every interactive element.
+     :focus-visible only, so mouse clicks stay clean. Never bare outline:none. */
+  a:focus-visible,
+  button:focus-visible,
+  .btn:focus-visible,
+  .install .cp:focus-visible {
+    outline: 2px solid var(--red);
+    outline-offset: 3px;
+    border-radius: 1px;
+  }
+  /* the copy button sits flush inside the ruled pill — inset the ring so it stays visible */
+  .install .cp:focus-visible { outline-offset: -3px; }
+
+  .mono { font-family: 'Space Mono', ui-monospace, 'SF Mono', monospace; }
+
+  /* figures align in columns — engineering-sheet discipline */
+  .metabar, .row-coord, .pillar .pnum, .use .uno, .not .x,
+  .nav-ver, .footer-meta, .install .cmd, .code, .code .code-bar {
+    font-variant-numeric: tabular-nums;
   }
 
-  main { max-width: 980px; margin: 0 auto; padding: 0 1.5rem; }
+  /* ---------- the data-sheet frame ----------
+     One ruled container with visible vertical edges so the whole page
+     reads as a single engineering sheet — hero included. */
+  .sheet {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    border-left: 1px solid var(--rule);
+    border-right: 1px solid var(--rule);
+    background: var(--paper);
+  }
+  .pad { padding-left: var(--gutter); padding-right: var(--gutter); }
 
+  /* ---------- top meta strip: coordinates / labels ---------- */
+  .metabar {
+    display: flex; align-items: stretch; justify-content: space-between;
+    border-bottom: 1px solid var(--hair);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.66rem; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--ink-4);
+  }
+  .metabar > span {
+    padding: 0.5rem var(--gutter);
+    display: inline-flex; align-items: center; gap: 0.5rem;
+  }
+  .metabar .mb-r { margin-left: auto; text-align: right; }
+  .metabar .tick { color: var(--red); }
+
+  /* ============ NAV ============ */
   nav {
+    position: sticky; top: 0; z-index: 50;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+  }
+  .nav-inner {
     display: flex; align-items: center; justify-content: space-between;
-    max-width: 980px; margin: 0 auto; padding: 1.15rem 1.5rem;
+    padding-top: 0.15rem; padding-bottom: 0.1rem;
   }
-  nav .brand { font-weight: 700; letter-spacing: 0.04em; font-size: 1.02rem; color: var(--ink); }
-  nav .brand .dot { color: var(--green); }
-  nav .links { display: flex; align-items: center; gap: 1.3rem; flex-wrap: wrap; }
-  nav .links a { color: var(--ink-2); font-size: 0.84rem; }
-  nav .links a:hover { color: var(--ink); text-decoration: none; }
-  nav .links a.here { color: var(--green); }
+  .brand {
+    font-weight: 700; font-size: 1.18rem; letter-spacing: -0.02em;
+    display: inline-flex; align-items: center; gap: 0.05em;
+    min-height: 44px; cursor: pointer;
+  }
+  /* the mark IS a blast radius: red ground-zero core, orange ring, faint outer shockwave */
+  .brand .mark {
+    display: inline-block; width: 0.92em; height: 0.92em;
+    margin-left: 0.42em; transform: translateY(0.04em);
+    border-radius: 50%;
+    background: radial-gradient(circle at center,
+      var(--red) 0 30%,
+      var(--orange) 37% 56%,
+      color-mix(in srgb, var(--orange) 32%, transparent) 62% 100%);
+    box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--orange) 26%, transparent);
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+  .brand:hover .mark {
+    transform: translateY(0.04em) scale(1.12);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 16%, transparent);
+  }
+  .nav-right { display: flex; align-items: center; gap: clamp(1rem, 3vw, 2.2rem); }
+  .nav-links { display: flex; gap: clamp(1rem, 3vw, 2.1rem); }
+  .nav-links a {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-3); position: relative; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px;
+  }
+  .nav-links a::after {
+    content: ""; position: absolute; left: 0; bottom: calc(50% - 0.78em); width: 0; height: 1.5px;
+    background: var(--red); transition: width .2s ease;
+  }
+  .nav-links a:hover { color: var(--ink); }
+  .nav-links a:hover::after { width: 100%; }
+  .nav-ver {
+    font-family: 'Space Mono', monospace; font-size: 0.66rem; letter-spacing: 0.1em;
+    color: var(--ink-4); display: none;
+  }
+  @media (min-width: 720px) { .nav-ver { display: inline; } }
 
+  /* ============ HERO — sw1's oversized poster, inside the sheet ============ */
   .hero {
-    min-height: calc(100vh - 64px);
-    display: flex; flex-direction: column; justify-content: center;
-    padding: 1.5rem 0 2rem; gap: 1.6rem;
+    border-bottom: 1px solid var(--rule);
+    min-height: 100vh; box-sizing: border-box;
+    padding: clamp(2.6rem, 7vw, 5.2rem) var(--gutter) clamp(2.4rem, 6vw, 4.6rem);
   }
-  .lead { text-align: center; }
-  .tag {
-    color: var(--green); font-size: 0.74rem; letter-spacing: 0.14em;
-    margin: 0 0 0.9rem; text-transform: uppercase;
-    opacity: 0; animation: rise .6s .05s ease forwards;
+  .hero .kicker {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.74rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--red); margin: 0 0 clamp(1.6rem, 5vw, 3rem);
+    display: inline-flex; align-items: center; gap: 0.7rem;
   }
-  h1 {
-    text-align: center; margin: 0;
-    font-size: clamp(1.9rem, 5vw, 3.6rem); line-height: 1.04;
-    font-weight: 800; letter-spacing: -0.035em;
-    opacity: 0; animation: rise .6s .12s ease forwards;
+  .hero .kicker::before {
+    content: ""; display: inline-block; width: 2.2rem; height: 1.5px; background: var(--red);
   }
-  h1 .dot { color: var(--green); }
-  .sub {
-    color: var(--ink-2); font-size: 1.05rem; max-width: 60ch; margin: 1.1rem auto 0;
-    letter-spacing: 0.01em;
-    opacity: 0; animation: rise .6s .2s ease forwards;
+  h1.hero-h1 {
+    margin: 0;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(3rem, 11.5vw, 8.6rem);
+    line-height: 0.92;
+    font-weight: 700;
+    letter-spacing: -0.045em;
+    max-width: 13ch;
+    text-wrap: balance;
   }
-  .sub b { color: var(--green); font-weight: 700; }
+  h1.hero-h1 .l2 { color: var(--red); }
 
-  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-
-  .cta {
-    display: flex; align-items: center; justify-content: center; gap: 0.8rem; flex-wrap: wrap;
-    opacity: 0; animation: rise .6s .3s ease forwards;
+  .hero-sub {
+    font-size: clamp(1.08rem, 1.75vw, 1.38rem);
+    line-height: 1.45;
+    color: var(--ink-2);
+    max-width: 48ch;
+    margin: clamp(1.9rem, 4vw, 2.8rem) 0 0;
+    font-weight: 400;
   }
+  .hero-sub b { color: var(--ink); font-weight: 600; }
+
+  .cta-row {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 0.9rem;
+    margin-top: clamp(2.1rem, 4vw, 3rem);
+  }
+
+  /* install pill — mono, ruled, with copy */
   .install {
     display: inline-flex; align-items: stretch; overflow: hidden;
-    background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px;
-    font-size: 0.92rem; color: var(--ink);
-    transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+    font-family: 'Space Mono', monospace; font-size: 0.9rem;
+    border: 1px solid var(--rule); background: var(--paper);
+    min-height: 44px;
   }
-  .install:hover { border-color: var(--green); transform: translateY(-2px); box-shadow: 0 10px 26px -14px var(--green); }
-  .install .p { color: var(--green); padding: 0.62rem 0.4rem 0.62rem 0.95rem; }
-  .install .cmd { padding: 0.62rem 0.85rem 0.62rem 0; }
+  .install .dollar { color: var(--red); font-weight: 700; padding: 0.7rem 0.2rem 0.7rem 0.95rem; user-select: none; display: inline-flex; align-items: center; }
+  .install .cmd { padding: 0.7rem 0.7rem 0.7rem 0.45rem; color: var(--ink); white-space: nowrap; display: inline-flex; align-items: center; font-variant-numeric: tabular-nums; }
   .install .cp {
-    display: inline-flex; align-items: center; font: inherit; cursor: pointer;
-    padding: 0 0.9rem; background: transparent; border: 0; border-left: 1px solid var(--rule);
-    color: var(--ink-3); letter-spacing: 0.02em;
+    cursor: pointer; font-family: 'Space Mono', monospace;
+    font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase;
+    border: 0; border-left: 1px solid var(--rule); background: var(--ink); color: var(--paper);
+    padding: 0 1.05rem; min-height: 44px;
     transition: background .15s ease, color .15s ease;
   }
-  .install .cp:hover { background: var(--green); color: #08130c; }
-  .install .cp.done { color: var(--green); }
+  .install .cp:hover { background: var(--red); color: var(--red-ink); }
+  .install .cp.done { background: var(--red); color: var(--red-ink); }
 
   .btn {
-    display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer;
-    background: var(--green); color: #08130c; border-radius: 8px;
-    padding: 0.64rem 1.25rem; font-weight: 700; font-size: 0.9rem;
-    box-shadow: 0 8px 24px -10px rgba(90,209,127,0.55);
-    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease, border-color .18s ease, color .18s ease;
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer;
+    font-family: 'Space Grotesk', sans-serif; font-size: 0.95rem; font-weight: 600;
+    letter-spacing: 0.005em; padding: 0.72rem 1.4rem; min-height: 44px;
+    border: 1px solid var(--rule);
+    transition: background .16s ease, color .16s ease, border-color .16s ease;
   }
-  .btn:hover { text-decoration: none; transform: translateY(-2px); filter: brightness(1.06); box-shadow: 0 13px 32px -10px rgba(90,209,127,0.7); }
-  .btn.ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--rule); box-shadow: none; }
-  .btn.ghost:hover { color: var(--green); border-color: var(--green); box-shadow: none; }
+  .btn.primary { background: var(--red); color: var(--red-ink); border-color: var(--red); }
+  .btn.primary:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .btn.ghost { background: transparent; color: var(--ink); }
+  .btn.ghost:hover { background: var(--ink); color: var(--paper); }
+  .btn .arr { transition: transform .16s ease; }
+  .btn:hover .arr { transform: translateX(3px); }
 
-  section.band { padding: 4.5rem 0 1rem; }
-  h2 { font-size: clamp(1.3rem, 3vw, 1.8rem); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 0.6rem; }
-  .value-lead {
-    font-size: clamp(1.1rem, 2.5vw, 1.5rem); line-height: 1.45; font-weight: 500;
-    color: var(--ink-2); max-width: 46ch; margin: 0 0 2.6rem; letter-spacing: -0.01em;
+  /* ============ section scaffold — a ruled row with a coordinate column ============ */
+  section.row {
+    border-bottom: 1px solid var(--rule);
+    min-height: 100vh; box-sizing: border-box;
+    display: flex; flex-direction: column; justify-content: center;
   }
-  .value-lead b { color: var(--ink); font-weight: 700; }
-  .value-lead code {
-    color: var(--green); background: rgba(90,209,127,0.10);
-    padding: 0 0.35em; border-radius: 4px; font-size: 0.92em;
+  .row-head {
+    display: block;
+    border-bottom: 1px solid var(--hair);
   }
-  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; }
-  @media (max-width: 720px) { .three { grid-template-columns: 1fr; } }
+  .row-coord { display: none; }   /* coordinate / label stripped — title carries the section */
+  @media (min-width: 820px) {
+    .row-coord {
+      border-right: 1px solid var(--hair);
+      padding-top: 1.2rem; padding-bottom: 1.2rem;
+      justify-content: flex-start;
+    }
+  }
+  .row-coord .secno { color: var(--red); font-weight: 700; }
+  .row-coord .seclbl { color: var(--ink-3); }
+  .row-title {
+    padding: 0.55rem var(--gutter) 0.95rem;
+    display: flex; align-items: flex-end;
+  }
+  @media (min-width: 820px) {
+    .row-title { padding-top: 1.1rem; padding-bottom: 1.1rem; }
+  }
+  h2 {
+    margin: 0; font-weight: 600; letter-spacing: -0.024em; line-height: 1.05;
+    font-size: clamp(1.9rem, 4vw, 3rem); text-wrap: balance;
+  }
+  h2 .accent { color: var(--red); }
+
+  /* ============ § 01 PROBLEM ============ */
+  .problem-body {
+    padding: clamp(1.3rem, 3vw, 2.1rem) var(--gutter) clamp(1.1rem, 2.4vw, 1.7rem);
+    font-size: clamp(1.1rem, 1.65vw, 1.4rem);
+    line-height: 1.4; letter-spacing: -0.008em; font-weight: 400;
+    max-width: 66ch; color: var(--ink-2);
+  }
+  .problem-body em { font-style: italic; color: var(--ink-3); }
+  .problem-body b { font-weight: 600; color: var(--red); }
+
+  /* ============ § 02 WHAT YOU GET — tabular cells ============ */
+  .pillars { display: grid; grid-template-columns: 1fr; }
+  @media (min-width: 860px) { .pillars { grid-template-columns: repeat(2, 1fr); } }
   .pillar {
-    position: relative; overflow: hidden;
-    padding: 1.5rem 1.4rem 1.6rem; border: 1px solid var(--rule);
-    border-top: 2px solid var(--c); border-radius: 10px; background: var(--panel);
-    transition: transform .2s ease, box-shadow .2s ease;
+    padding: clamp(1.6rem, 3.4vw, 2.5rem) var(--gutter) clamp(1.8rem, 3.8vw, 2.7rem);
+    border-bottom: 1px solid var(--hair);
   }
-  .pillar.undo { --c: var(--green); }
-  .pillar.gate { --c: var(--amber); }
-  .pillar.audit { --c: var(--accent); }
-  .pillar:hover { transform: translateY(-4px); box-shadow: 0 16px 34px -22px var(--c); }
-  .pillar .num {
-    position: absolute; top: 0.7rem; right: 1rem; font-size: 2.6rem; font-weight: 700;
-    color: var(--c); opacity: 0.14; letter-spacing: -0.04em; line-height: 1; pointer-events: none;
+  @media (min-width: 860px) {
+    .pillar:nth-child(odd) { border-right: 1px solid var(--hair); }
   }
-  .pillar .v { font-size: 1.2rem; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 0.55rem; color: var(--c); }
-  .pillar p { margin: 0; color: var(--ink-2); font-size: 0.9rem; line-height: 1.55; }
-
-  .uses { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; margin-top: 1.5rem; }
-  @media (max-width: 720px) { .uses { grid-template-columns: 1fr; } }
-  .use { padding: 1.3rem 1.3rem; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); }
-  .use h3 { font-size: 1rem; font-weight: 700; margin: 0 0 0.45rem; color: var(--ink); }
-  .use p { margin: 0; color: var(--ink-2); font-size: 0.88rem; line-height: 1.55; }
-
-  .fit { margin-top: 1.2rem; color: var(--ink-2); max-width: 64ch; }
-  .fit b { color: var(--ink); }
-  .fit code { color: var(--green); background: rgba(90,209,127,0.10); padding: 0 0.35em; border-radius: 4px; font-size: 0.92em; }
-
-  footer {
-    margin-top: 4.5rem; padding: 1.8rem 0 3rem; border-top: 1px solid var(--rule);
-    color: var(--ink-3); font-size: 0.78rem;
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  .pillar .pnum {
+    font-family: 'Space Mono', monospace; font-size: 0.7rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--ink-3);
+    display: flex; align-items: baseline; gap: 0.6rem;
+    font-variant-numeric: tabular-nums;
   }
-  footer .brand { font-weight: 700; color: var(--ink-2); }
-  footer .brand .dot { color: var(--green); }
-  footer a { color: var(--ink-3); }
-  footer a:hover { color: var(--ink-2); }
+  .pillar .pnum b { color: var(--red); }
+  .pillar .pnum .tag { margin-left: auto; color: var(--ink-3); }
+  .pillar h3 {
+    margin: 0.9rem 0 0.6rem; font-weight: 600; letter-spacing: -0.018em;
+    font-size: var(--h3); line-height: 1.12; text-wrap: balance;
+  }
+  .pillar p {
+    margin: 0; color: var(--ink-2); font-size: 1rem; line-height: 1.55; max-width: 44ch;
+  }
+  .pillar p em { font-style: italic; color: var(--ink); font-weight: 600; }
+
+  /* the proof — subordinate, quieter, spans full width, tabular */
+  .pillar.proof {
+    grid-column: 1 / -1; border-right: 0 !important;
+    border-bottom: 0;
+    display: grid; grid-template-columns: 1fr; gap: 0.5rem;
+    background: var(--paper-2);
+  }
+  @media (min-width: 860px) {
+    .pillar.proof { grid-template-columns: 13rem 1fr; column-gap: clamp(1.5rem, 3vw, 2.5rem); align-items: baseline; }
+  }
+  .pillar.proof .pnum { color: var(--ink-3); }
+  .pillar.proof .pnum b { color: var(--ink-2); }
+  .pillar.proof h3 {
+    font-size: var(--h3-sub); margin: 0; color: var(--ink-3); font-weight: 600; text-wrap: balance;
+  }
+  .pillar.proof p { color: var(--ink-3); font-size: 0.94rem; max-width: 64ch; }
+  .pillar.proof p em { color: var(--ink-2); font-weight: 600; }
+  .proof-head { display: flex; flex-direction: column; gap: 0.55rem; }
+
+  /* ============ § 03 USE CASES — icon cards ============ */
+  .uses { display: grid; grid-template-columns: 1fr; }
+  @media (min-width: 760px) { .uses { grid-template-columns: repeat(3, 1fr); } }
+  .use {
+    padding: clamp(1.6rem, 3.4vw, 2.5rem) var(--gutter) clamp(1.8rem, 3.8vw, 2.7rem);
+    border-bottom: 1px solid var(--hair);
+  }
+  @media (min-width: 760px) {
+    .use { border-bottom: 0; }
+    .use + .use { border-left: 1px solid var(--hair); }
+  }
+  .use .uno { display: none; }
+  .use h3 {
+    margin: 0.5rem 0 0.5rem; font-weight: 600; letter-spacing: -0.015em;
+    font-size: var(--h3); line-height: 1.15; text-wrap: balance;
+  }
+  .use p {
+    margin: 0; color: var(--ink-2); font-size: 1rem; line-height: 1.55; max-width: 42ch;
+  }
+
+  /* ============ § 04 WHAT IT'S NOT — three ruled columns ============ */
+  .nots { display: grid; grid-template-columns: 1fr; }
+  @media (min-width: 760px) { .nots { grid-template-columns: repeat(3, 1fr); } }
+  .not {
+    padding: clamp(1.5rem, 3.2vw, 2.3rem) var(--gutter) clamp(1.7rem, 3.6vw, 2.5rem);
+    border-bottom: 1px solid var(--hair);
+  }
+  @media (min-width: 760px) {
+    .not { border-bottom: 0; }
+    .not + .not { border-left: 1px solid var(--hair); }
+  }
+  .not .x {
+    font-family: 'Space Mono', monospace; font-weight: 700; color: var(--red);
+    font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase;
+    display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.8rem;
+  }
+  .not .x .glyph { font-size: 1rem; }
+  .not h3 {
+    margin: 0 0 0.6rem; font-weight: 600; letter-spacing: -0.012em;
+    font-size: var(--h3); line-height: 1.15; text-wrap: balance;
+  }
+  .not p { margin: 0; color: var(--ink-2); font-size: 0.96rem; line-height: 1.55; }
+  .not p em { font-style: italic; color: var(--ink); font-weight: 600; }
+
+  /* ============ § 05 HOW IT FITS ============ */
+  .fit-wrap { display: grid; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { .fit-wrap { grid-template-columns: 1fr 1.25fr; align-items: stretch; } }
+  .fit-copy-cell {
+    padding: clamp(1.7rem, 3.6vw, 2.8rem) var(--gutter);
+    border-bottom: 1px solid var(--hair);
+  }
+  @media (min-width: 900px) {
+    .fit-copy-cell { border-bottom: 0; border-right: 1px solid var(--hair); }
+  }
+  .fit-copy {
+    font-size: clamp(1.1rem, 1.65vw, 1.3rem); line-height: 1.5; color: var(--ink-2);
+    letter-spacing: -0.004em; max-width: 42ch; margin: 0;
+  }
+  .fit-copy b { color: var(--ink); font-weight: 600; }
+  .fit-copy code {
+    font-family: 'Space Mono', monospace; font-size: 0.84em; color: var(--red);
+    background: var(--paper-2); padding: 0.05em 0.4em; border: 1px solid var(--hair);
+  }
+  .fit-code-cell {
+    padding: clamp(1.7rem, 3.6vw, 2.8rem) var(--gutter);
+    display: flex; align-items: center;
+    min-width: 0;   /* let the code block's overflow-x: auto engage instead of pushing the page wide */
+  }
+  .code {
+    border: 1px solid var(--rule); background: var(--paper);
+    font-family: 'Space Mono', monospace; font-size: clamp(0.74rem, 1.25vw, 0.9rem);
+    line-height: 1.75; overflow-x: auto; width: 100%; min-width: 0;
+  }
+  .code .code-bar {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.55rem 0.95rem; border-bottom: 1px solid var(--rule);
+    font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3);
+  }
+  .code .code-bar .dot { width: 0.46rem; height: 0.46rem; border-radius: 50%; background: var(--red); }
+  .code .code-bar .barmeta { margin-left: auto; color: var(--ink-3); }
+  .code pre { margin: 0; padding: 1.15rem 1.05rem 1.25rem; white-space: pre; color: var(--ink); }
+  .code .kw { color: var(--red); font-weight: 700; }
+  .code .fn { color: var(--ink); font-weight: 700; }
+  .code .cm { color: var(--ink-3); }
+  .code .st { color: var(--ink-2); }
+
+  /* ============ FOOTER ============ */
+  footer { border-bottom: 0; }
+  .footer-inner {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 1.1rem;
+    padding: clamp(1.5rem, 3.6vw, 2.4rem) var(--gutter);
+    border-bottom: 1px solid var(--hair);
+  }
+  .footer-inner .brand { font-size: 1.05rem; }
+  .footer-links { display: flex; gap: clamp(0.9rem, 3vw, 1.8rem); }
+  .footer-links a {
+    font-family: 'Space Mono', monospace; font-size: 0.72rem;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3);
+    display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; cursor: pointer;
+  }
+  .footer-links a:hover { color: var(--red); }
+  .footer-meta {
+    font-family: 'Space Mono', monospace; font-size: 0.66rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3);
+    padding: 0.9rem var(--gutter);
+    display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  }
+
+  @media (max-width: 560px) {
+    body { font-size: 16px; }
+    .cta-row { gap: 0.7rem; }
+    .install { width: 100%; }
+    .install .cmd { width: 100%; }
+    .install .cp { margin-left: auto; }
+    .btn { flex: 1; justify-content: center; }
+  }
+
+  /* ============ FIG.01 — BLAST-RADIUS FIGURE BAND ============ */
+  .fig-wrap { display: grid; grid-template-columns: 1fr; }
+  @media (min-width: 840px) {
+    .fig-wrap { grid-template-columns: 0.92fr 1.08fr; align-items: center; }
+  }
+  .fig-diagram {
+    margin: 0; padding: clamp(2rem, 4.5vw, 3.4rem) var(--gutter);
+    display: flex; justify-content: center; align-items: center;
+    border-bottom: 1px solid var(--hair);
+  }
+  @media (min-width: 840px) {
+    .fig-diagram { border-bottom: 0; border-right: 1px solid var(--hair); }
+  }
+  .fig-legend { padding: clamp(2rem, 4.5vw, 3.4rem) var(--gutter); }
+  .fig-lead {
+    font-size: clamp(1.08rem, 1.55vw, 1.32rem); line-height: 1.42; color: var(--ink-2);
+    letter-spacing: -0.006em; margin: 0 0 1.5rem; max-width: 42ch;
+  }
+  .fig-lead b { color: var(--ink); font-weight: 600; }
+  .legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.95rem; }
+  .legend li {
+    display: grid; grid-template-columns: 1.25rem 1fr; gap: 0.75rem; align-items: start;
+    font-size: 1rem; line-height: 1.4; color: var(--ink-2); max-width: 50ch;
+  }
+  .legend li b { color: var(--ink); font-weight: 600; }
+  .legend .lk { width: 1rem; height: 1rem; margin-top: 0.16rem; border-radius: 50%; box-sizing: border-box; }
+  .legend .lk.core  { background: var(--red); }
+  .legend .lk.blast { background: var(--orange); }
+  .legend .lk.wall  { background: transparent; border: 2px solid var(--ink); }
+  .legend .lk.safe  { background: transparent; border: 1px dashed var(--ink-4); }
+
+  /* the diagram itself */
+  .blastmap { width: 100%; max-width: 340px; height: auto; display: block; }
+  .blastmap .wall  { fill: none; stroke: var(--ink); stroke-width: 2; }
+  .blastmap .ring1 { fill: none; stroke: var(--orange); stroke-width: 1.5; opacity: 0.85; }
+  .blastmap .ring2 { fill: none; stroke: var(--orange); stroke-width: 1.25; stroke-dasharray: 3 6; opacity: 0.55; }
+  .blastmap .field { fill: var(--orange); opacity: 0.09; }
+  .blastmap .core  { fill: var(--red); }
+  .blastmap .tick  { stroke: var(--ink-4); stroke-width: 1; }
+  .blastmap .blabel { fill: var(--ink-4); font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; }
+  .blastmap .pulse {
+    fill: none; stroke: var(--orange); stroke-width: 1.5;
+    transform-box: fill-box; transform-origin: center; opacity: 0;
+    animation: blastpulse 4.2s ease-out infinite;
+  }
+  .blastmap .p2 { animation-delay: 1.4s; }
+  .blastmap .p3 { animation-delay: 2.8s; }
+  @keyframes blastpulse {
+    0%   { transform: scale(0.8);  opacity: 0.6; }
+    72%  { opacity: 0.14; }
+    100% { transform: scale(4.3);  opacity: 0; }   /* 30·4.3 = 129 < 150 boundary → contained */
+  }
+
+  /* ============ per-section anchor icons — distinct, blast-family ============ */
+  .secicon { display: inline-flex; width: 1.2rem; height: 1.2rem; color: var(--ink-3); }
+  .secicon svg { width: 100%; height: 100%; display: block; }
+
+  /* ---- hero: poster copy + the live blast diagram, side by side ---- */
+  @media (min-width: 920px) {
+    .hero { display: grid; grid-template-columns: 1.15fr 0.85fr;
+            gap: clamp(2rem, 4vw, 3.5rem); align-items: center; align-content: center; }
+  }
+  .hero-copy { min-width: 0; }
+  .hero-fig { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
+  .hero-fig .blastmap { max-width: 300px; }
+  .fig-cap { display: grid; gap: 0.62rem; width: 100%; max-width: 320px; }
+  .fig-cap .fc {
+    display: grid; grid-template-columns: 0.9rem 1fr; gap: 0.65rem; align-items: start;
+    font-size: 0.92rem; line-height: 1.34; color: var(--ink-2);
+  }
+  .fig-cap .fc b { color: var(--ink); font-weight: 600; }
+  .fig-cap .lk { width: 0.85rem; height: 0.85rem; margin-top: 0.16rem; border-radius: 50%; box-sizing: border-box; }
+  .fig-cap .lk.core  { background: var(--red); }
+  .fig-cap .lk.blast { background: var(--orange); }
+  .fig-cap .lk.wall  { background: transparent; border: 2px solid var(--ink); }
+  .fig-cap .lk.safe  { background: transparent; border: 1px dashed var(--ink-4); }
+
+  /* ---- mechanism mini-diagrams (the two mechanisms) ---- */
+  .pmech { width: 2.9rem; height: 2.9rem; color: var(--ink-2); margin-bottom: 1rem; }
+  .pmech svg { width: 100%; height: 100%; display: block; }
+
+  /* ---- icons that make use-cases & scope visual, not listy ---- */
+  .use-ico { display: block; width: 1.7rem; height: 1.7rem; color: var(--ink-2); margin-bottom: 0.7rem; }
+  .not-ico { display: block; width: 1.7rem; height: 1.7rem; color: var(--ink-3); margin-bottom: 0.85rem; }
+  .use-ico svg, .not-ico svg { width: 100%; height: 100%; display: block; }
+
+  /* ============ DEMOS WALL — looping mini-demos, one per power ============ */
+  .demos { display: grid; grid-template-columns: 1fr; }
+  @media (min-width: 680px)  { .demos { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1040px) { .demos { grid-template-columns: repeat(3, 1fr); } }
+  .demo {
+    padding: clamp(1.4rem, 3vw, 2rem) var(--gutter) clamp(1.6rem, 3.2vw, 2.2rem);
+    border-bottom: 1px solid var(--hair);
+  }
+  @media (min-width: 680px) and (max-width: 1039px) {
+    .demo:nth-child(odd) { border-right: 1px solid var(--hair); }
+  }
+  @media (min-width: 1040px) {
+    .demo:not(:nth-child(3n)) { border-right: 1px solid var(--hair); }
+  }
+  .demo-screen {
+    position: relative; overflow: hidden; width: 100%; aspect-ratio: 16 / 10;
+    border: 1px solid var(--rule); background: var(--paper);
+    font-family: 'Space Mono', monospace; color: var(--ink);
+  }
+  .scr-bar {
+    display: flex; align-items: center; gap: 0.45rem; height: 1.7rem;
+    padding: 0 0.6rem; border-bottom: 1px solid var(--hair);
+    font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3);
+  }
+  .scr-bar .d { width: 0.42rem; height: 0.42rem; border-radius: 50%; background: var(--red); flex: none; }
+  .scr-bar .scr-meta { margin-left: auto; color: var(--ink-4); }
+  .demo-stage { position: absolute; left: 0.7rem; right: 0.7rem; top: 2.4rem; bottom: 0.8rem; font-size: 0.74rem; }
+  .demo-cap { margin-top: 1rem; }
+  .demo-cap .dlabel {
+    font-family: 'Space Mono', monospace; font-weight: 700; font-size: 0.74rem;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3);
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .demo-cap .dlabel b { color: var(--red); font-weight: 700; }
+  .demo-cap .dsub { margin: 0.5rem 0 0; color: var(--ink-2); font-size: 0.95rem; line-height: 1.42; max-width: 40ch; }
+  .stamp {
+    position: absolute; left: 0; right: 0; text-align: center; font-weight: 700;
+    letter-spacing: 0.12em; opacity: 0;
+  }
+
+  /* — 1 · UNDO: rows wiped, then snapped back — */
+  .und .r { display: block; height: 9%; margin-bottom: 7.5%; width: 100%; background: var(--ink-2); transform-origin: left center; animation: und-row 6.5s infinite; }
+  .und .r:nth-child(2){ animation-delay: 0.07s } .und .r:nth-child(3){ animation-delay: 0.14s }
+  .und .r:nth-child(4){ animation-delay: 0.21s } .und .r:nth-child(5){ animation-delay: 0.28s }
+  @keyframes und-row {
+    0%,30% { transform: scaleX(1); background: var(--ink-2); opacity: 1; }
+    38%    { transform: scaleX(1); background: var(--red); }
+    47%,57%{ transform: scaleX(0); background: var(--red); opacity: 0.25; }
+    67%    { transform: scaleX(1); background: var(--orange); opacity: 1; }
+    76%,100%{ transform: scaleX(1); background: var(--ink-2); opacity: 1; }
+  }
+  .und .s-wipe { top: 38%; color: var(--red); animation: und-wipe 6.5s infinite; }
+  @keyframes und-wipe { 0%,42%{opacity:0} 48%,56%{opacity:1} 61%,100%{opacity:0} }
+  .und .s-rb { top: 38%; color: var(--ink); animation: und-rb 6.5s infinite; }
+  @keyframes und-rb { 0%,63%{opacity:0} 69%,82%{opacity:1} 88%,100%{opacity:0} }
+
+  /* — 2 · GATE: irreversible action held at the wall, then approved — */
+  .gat .wallbar { position: absolute; left: 64%; top: 4%; bottom: 4%; width: 2px; background: var(--ink); }
+  .gat .gchip { position: absolute; top: 30%; padding: 0.18rem 0.4rem; border: 1px solid var(--red); color: var(--red); background: var(--paper); white-space: nowrap; animation: gat-move 6.5s infinite; }
+  @keyframes gat-move {
+    0%{ left: 2%; opacity: 0 } 9%{ opacity: 1 }
+    34%,66%{ left: 40%; opacity: 1 } 79%{ left: 80%; opacity: 1 }
+    88%,100%{ left: 80%; opacity: 0 }
+  }
+  .gat .g-held { top: 74%; color: var(--red); animation: gat-held 6.5s infinite; }
+  @keyframes gat-held { 0%,35%{opacity:0} 40%,64%{opacity:1} 69%,100%{opacity:0} }
+  .gat .g-ok { top: 74%; color: var(--ink); animation: gat-ok 6.5s infinite; }
+  @keyframes gat-ok { 0%,67%{opacity:0} 73%,88%{opacity:1} 93%,100%{opacity:0} }
+
+  /* — 3 · POLICY: out-of-bounds call gets a DENIED stamp — */
+  .pol .pchip { position: absolute; top: 26%; left: 50%; transform: translateX(-50%); padding: 0.2rem 0.45rem; border: 1px solid var(--ink-2); color: var(--ink); white-space: nowrap; animation: pol-chip 5.5s infinite; }
+  @keyframes pol-chip {
+    0%{opacity:0} 12%,40%{opacity:1; color:var(--ink); border-color:var(--ink-2)}
+    44%{transform:translateX(-52%)} 48%{transform:translateX(-48%)} 52%{transform:translateX(-50%)}
+    60%,100%{opacity:0.55; color:var(--ink-4); border-color:var(--ink-4)}
+  }
+  .pol .pstamp { position: absolute; top: 52%; left: 50%; color: var(--red); border: 2.5px solid var(--red); padding: 0.08rem 0.5rem; font-weight: 700; letter-spacing: 0.18em; opacity: 0; animation: pol-stamp 5.5s infinite; }
+  @keyframes pol-stamp {
+    0%,46%{ opacity:0; transform: translate(-50%,0) scale(2.4) rotate(-9deg) }
+    55%{ opacity:1; transform: translate(-50%,0) scale(1) rotate(-9deg) }
+    90%{ opacity:1 } 100%{ opacity:0 }
+  }
+
+  /* — 4 · ISOLATION: two agents, one shared row, no clobber — */
+  .iso .cell { position: absolute; top: 38%; left: 50%; transform: translateX(-50%); padding: 0.2rem 0.5rem; border: 1px solid var(--ink-2); color: var(--ink-2); animation: iso-cell 7s infinite; }
+  @keyframes iso-cell { 0%,32%{border-color:var(--ink-2);color:var(--ink-2)} 40%{border-color:var(--red);color:var(--red)} 70%{border-color:var(--orange);color:var(--orange)} 100%{border-color:var(--ink-2);color:var(--ink-2)} }
+  .iso .tok { position: absolute; top: 39%; width: 1.3rem; height: 1.3rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.66rem; color: var(--paper); }
+  .iso .a { background: var(--red); animation: iso-a 7s infinite; }
+  .iso .b { background: var(--ink-2); animation: iso-b 7s infinite; }
+  @keyframes iso-a { 0%{left:2%; opacity:0} 9%{opacity:1} 36%,100%{left:30%; opacity:1} }
+  @keyframes iso-b { 0%{right:2%; opacity:0} 9%{opacity:1} 36%{right:30%} 50%{right:26%} 64%{right:30%} 72%,100%{right:30%; opacity:1} }
+  .iso .i-status { top: 70%; color: var(--red); animation: iso-st 7s infinite; }
+  @keyframes iso-st { 0%,40%{opacity:0} 46%,66%{opacity:1} 72%,100%{opacity:0} }
+
+  /* — 5 · LINEAGE: the journal builds, entry by entry — */
+  .lin .le { display: block; white-space: nowrap; opacity: 0; transform: translateY(0.45rem); margin-bottom: 0.5rem; color: var(--ink-2); font-size: 0.7rem; }
+  .lin .le i { font-style: normal; color: var(--ink); }
+  .lin .le .ok  { color: var(--ink); } .lin .le .hl { color: var(--red); }
+  .lin .e1{ animation: lin-in 7s infinite 0.2s } .lin .e2{ animation: lin-in 7s infinite 1.1s }
+  .lin .e3{ animation: lin-in 7s infinite 2.0s } .lin .e4{ animation: lin-in 7s infinite 2.9s }
+  @keyframes lin-in { 0%{opacity:0; transform:translateY(0.45rem)} 5%{opacity:1; transform:none} 82%{opacity:1} 93%,100%{opacity:0} }
+
+  /* ============ PRICING — free library, paid control plane ============ */
+  .tiers { display: grid; grid-template-columns: 1fr; }
+  @media (min-width: 640px)  { .tiers { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1040px) { .tiers { grid-template-columns: repeat(4, 1fr); } }
+  .tier {
+    display: flex; flex-direction: column; position: relative;
+    padding: clamp(1.6rem, 3vw, 2.2rem) var(--gutter) clamp(1.7rem, 3.2vw, 2.4rem);
+    border-bottom: 1px solid var(--hair);
+  }
+  @media (min-width: 640px) and (max-width: 1039px) {
+    .tier:nth-child(odd) { border-right: 1px solid var(--hair); }
+  }
+  @media (min-width: 1040px) {
+    .tier:not(:nth-child(4n)) { border-right: 1px solid var(--hair); }
+  }
+  .tier.hot { background: var(--paper-2); }
+  .tier.hot::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--red); }
+  .tflag {
+    font-family: 'Space Mono', monospace; font-size: 0.6rem; font-weight: 700;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--red); margin-bottom: 0.6rem;
+  }
+  .tname {
+    font-family: 'Space Mono', monospace; font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3);
+  }
+  .tprice {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; letter-spacing: -0.03em;
+    font-size: clamp(1.9rem, 3vw, 2.5rem); line-height: 1; color: var(--ink); margin: 0.55rem 0 0;
+  }
+  .tprice .per { font-size: 0.8rem; font-weight: 400; letter-spacing: 0; color: var(--ink-3); }
+  .twho { color: var(--ink-2); font-size: 0.92rem; line-height: 1.4; margin: 0.8rem 0 1.2rem; }
+  @media (min-width: 1040px) { .twho { min-height: 3.8em; } }
+  .tfeat { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; gap: 0.6rem; flex: 1 0 auto; }
+  .tfeat li { position: relative; padding-left: 1.3rem; font-size: 0.92rem; line-height: 1.34; color: var(--ink-2); }
+  .tfeat li::before {
+    content: ""; position: absolute; left: 0; top: 0.42em; width: 0.62rem; height: 0.62rem; border-radius: 50%;
+    background: radial-gradient(circle at center, var(--red) 0 42%, var(--orange) 48% 100%);
+  }
+  .tfeat .soon { color: var(--ink-4); font-size: 0.72em; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+  .tcta { width: 100%; justify-content: center; }
+  .pricing-note {
+    padding: clamp(1.2rem, 2.6vw, 1.7rem) var(--gutter);
+    border-top: 1px solid var(--hair); color: var(--ink-3); font-size: 0.92rem; line-height: 1.5;
+    max-width: 78ch;
+  }
+  .pricing-note b { color: var(--ink-2); font-weight: 600; }
+
+  /* ---- mechanisms flow diagram (the substantial image) ---- */
+  .flow-fig { margin: 0; padding: clamp(1.8rem, 4vw, 3.2rem) var(--gutter) 0; }
+  .flow { width: 100%; max-width: 640px; height: auto; display: block; margin: 0 auto; }
+  .flow .f-core { fill: var(--red); }
+  .flow .f-line, .flow .f-arrow, .flow .f-arrowhead, .flow .f-box { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .flow .f-red { stroke: var(--red); }
+  .flow .f-gate { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; }
+  .flow .f-undo { fill: none; stroke: var(--orange); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .flow .f-journal { fill: none; stroke: var(--hair); stroke-width: 1.5; }
+  .flow .f-bx { fill: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 600; }
+  .flow .f-tag { fill: var(--ink-3); font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.14em; }
+  .flow .f-lab, .flow .f-out { fill: var(--ink-2); font-family: 'Space Mono', monospace; font-size: 12.5px; }
+  .flow .f-undo-lab { fill: var(--orange); font-family: 'Space Mono', monospace; font-size: 10.5px; letter-spacing: 0.06em; }
+  .flow .f-held { fill: var(--red); font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; }
+  .flow .f-jlab { fill: var(--ink-3); font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 0.07em; }
+  .pmech { display: none; }   /* flow diagram carries the visual now */
+
+  /* ---- divider inside the merged solutions section ---- */
+  .subhead { padding: clamp(1.6rem, 3.4vw, 2.4rem) var(--gutter) 0.9rem; border-top: 1px solid var(--hair); margin-top: 0.5rem; }
+  .subhead span { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+
+  /* ---- github icon in the nav ---- */
+  .nav-gh svg { width: 1.3rem; height: 1.3rem; display: block; }
 
   @media (prefers-reduced-motion: reduce) {
-    .tag, h1, .sub, .cta { animation: none; opacity: 1; transform: none; }
+    * { scroll-behavior: auto; transition: none !important; animation: none !important; }
+    .blastmap .pulse { opacity: 0; }
   }
 </style>
 </head>
 <body>
-  <div class="bg" aria-hidden="true"></div>
 
-  <nav>
-    <span class="brand">pherix<span class="dot">.</span></span>
-    <span class="links">
-      <a class="here" href="index.html">Home</a>
-      <a href="get-started.html">Get started</a>
-      <a href="docs.html">Docs</a>
-      <a href="features.html">Features</a>
-      <a href="demos.html">Demos</a>
-    </span>
-  </nav>
+  <div class="sheet">
 
-  <main>
-    <section class="hero">
-      <div class="lead">
-        <p class="tag">Guardrails for AI agents</p>
-        <h1>Let your agent run.<br>Undo the mistakes<span class="dot">.</span></h1>
-        <p class="sub">A self-hosted library that wraps your agent's tool calls. Every action is <b>reversible, gated, and audited</b> — so a bad run is one rollback away, not an incident.</p>
-      </div>
-
-      <div class="cta">
-        <a class="btn" href="demos.html">Watch the demo</a>
-        <span class="install"><span class="p">$</span><span class="cmd">pip install -e .</span><button class="cp" type="button">copy</button></span>
-        <a class="btn ghost" href="get-started.html">Get started</a>
-      </div>
-    </section>
-
-    <section class="band">
-      <h2>The problem</h2>
-      <p class="value-lead">An agent calls a tool and the effect just <b>happens</b> — a wiped table, a wrong payment, a clobbered file. No undo, no approval, no record. Pherix makes that <b>contained</b>, not catastrophic.</p>
-    </section>
-
-    <section class="band">
-      <h2>What you get</h2>
-      <div class="three">
-        <div class="pillar undo">
-          <span class="num">01</span>
-          <p class="v">Undo the reversible</p>
-          <p>DB and file writes roll back through the backend's own savepoints — exact, not best-effort.</p>
-        </div>
-        <div class="pillar gate">
-          <span class="num">02</span>
-          <p class="v">Gate the irreversible</p>
-          <p>A charge or email can't be un-sent — so it waits for a human to approve before it fires.</p>
-        </div>
-        <div class="pillar audit">
-          <span class="num">03</span>
-          <p class="v">Audit everything</p>
-          <p>Every tool call recorded — who did what, when, allowed or denied. Always on.</p>
+    <!-- ============ NAV ============ -->
+    <nav>
+      <div class="pad nav-inner">
+        <a class="brand" href="#top">Pherix<span class="mark" aria-hidden="true"></span></a>
+        <div class="nav-right">
+          <div class="nav-links">
+            <a href="https://github.com/LukeyP02/Pherix#readme">Docs</a>
+            <a href="#demos">Demos</a>
+            <a href="#solutions">Solutions</a>
+            <a class="nav-gh" href="https://github.com/LukeyP02/Pherix" aria-label="Pherix on GitHub"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+          </div>
+          <span class="nav-ver">PY · TS</span>
         </div>
       </div>
-    </section>
+    </nav>
 
-    <section class="band">
-      <h2>Where it earns its place</h2>
-      <div class="uses">
-        <div class="use">
-          <h3>Regulated data</h3>
-          <p>Agents on customer &amp; financial records — legal-hold rows can't be deleted, regulated data can't leave the boundary, every change audited.</p>
-        </div>
-        <div class="use">
-          <h3>Payments &amp; money movement</h3>
-          <p>Money moves only on human sign-off; a refund is its registered undo; the trail clears fraud and finance review.</p>
-        </div>
-        <div class="use">
-          <h3>Production systems</h3>
-          <p>Prod write access without the fear — a bad change rolls back to the exact prior state, with the gate and audit change-management needs.</p>
-        </div>
-      </div>
-    </section>
+    <main id="top">
 
-    <section class="band">
-      <h2>How it fits</h2>
-      <p class="fit">A <b>library</b> you <code>pip install</code> and wrap your agent's tool layer with — your loop and model unchanged. It doesn't run agents; it makes their actions behave like a database transaction. Self-hosted, pre-release.</p>
-      <div class="cta" style="justify-content:flex-start; margin-top:1.6rem;">
-        <a class="btn" href="get-started.html">Wrap your agent</a>
-        <a class="btn ghost" href="docs.html">Docs</a>
-      </div>
-    </section>
+      <!-- ============ HERO — oversized poster (sw1) ============ -->
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="kicker">Blast-radius containment for AI agents</p>
+          <h1 class="hero-h1">Let your agent run.<br><span class="l2">Undo the mistakes.</span></h1>
+          <p class="hero-sub">Every action your agent takes is contained — the reversible ones roll back against your backend’s own state, the irreversible ones wait for your yes. Put agents on <b>prod, payments, and customer data</b> — without the fear.</p>
+          <div class="cta-row">
+            <span class="install">
+              <span class="dollar">$</span><span class="cmd" id="install-cmd">pip install pherix</span><button class="cp" id="copy-btn" type="button" aria-label="Copy install command">Copy</button>
+            </span>
+            <a class="btn primary" href="https://pherix.dev/demos.html">Watch the demos <span class="arr">&rarr;</span></a>
+            <a class="btn ghost" href="https://pherix.dev/get-started.html">Get started</a>
+          </div>
+        </div>
+        <figure class="hero-fig">
+          <svg class="blastmap" viewBox="0 0 360 360" role="img" aria-label="Blast-radius diagram: the agent's tool call sits at ground zero, its effects radiate outward as the blast, and Pherix's containment boundary holds the whole blast inside — real systems outside the line stay untouched.">
+            <circle class="wall" cx="180" cy="180" r="150"/>
+            <line class="tick" x1="180" y1="22"  x2="180" y2="38"/>
+            <line class="tick" x1="180" y1="322" x2="180" y2="338"/>
+            <line class="tick" x1="22"  y1="180" x2="38"  y2="180"/>
+            <line class="tick" x1="322" y1="180" x2="338" y2="180"/>
+            <circle class="field" cx="180" cy="180" r="74"/>
+            <circle class="ring2" cx="180" cy="180" r="112"/>
+            <circle class="ring1" cx="180" cy="180" r="74"/>
+            <circle class="pulse p1" cx="180" cy="180" r="30"/>
+            <circle class="pulse p2" cx="180" cy="180" r="30"/>
+            <circle class="pulse p3" cx="180" cy="180" r="30"/>
+            <circle class="core" cx="180" cy="180" r="26"/>
+          </svg>
+          <figcaption class="fig-cap">
+            <span class="fc"><span class="lk core" aria-hidden="true"></span><span><b>Ground zero</b> — your agent’s tool call</span></span>
+            <span class="fc"><span class="lk blast" aria-hidden="true"></span><span><b>The blast</b> — its effects on real resources</span></span>
+            <span class="fc"><span class="lk wall" aria-hidden="true"></span><span><b>Containment</b> — roll back, or wait for your yes</span></span>
+            <span class="fc"><span class="lk safe" aria-hidden="true"></span><span><b>Outside the line</b> — prod, payments, data: untouched</span></span>
+          </figcaption>
+        </figure>
+      </header>
 
+      <!-- ============ DEMOS WALL — watch it in action ============ -->
+      <section class="row" id="demos">
+        <div class="row-head">
+          <div class="row-title"><h2>Watch it <span class="accent">in action</span>.</h2></div>
+        </div>
+        <p class="problem-body">An agent calls a tool and the effect just <em>happens</em> — a wiped table, a wrong payment, a clobbered file. That’s your blast radius, and nothing is holding it: no undo, no approval, no record. Pherix makes it <b>contained, not catastrophic</b>.</p>
+        <div class="demos">
+
+          <div class="demo">
+            <div class="demo-screen">
+              <div class="scr-bar"><span class="d"></span> undo.py <span class="scr-meta">reversible</span></div>
+              <div class="demo-stage und">
+                <span class="r"></span><span class="r"></span><span class="r"></span><span class="r"></span><span class="r"></span>
+                <span class="stamp s-wipe">TABLE WIPED</span>
+                <span class="stamp s-rb">RESTORED ✓</span>
+              </div>
+            </div>
+            <div class="demo-cap">
+              <span class="dlabel"><b>Undo</b> · wipe → snap back</span>
+              <p class="dsub">The agent deletes the whole table. Pherix rolls it back to the exact prior state.</p>
+            </div>
+          </div>
+
+          <div class="demo">
+            <div class="demo-screen">
+              <div class="scr-bar"><span class="d"></span> gate.py <span class="scr-meta">irreversible</span></div>
+              <div class="demo-stage gat">
+                <span class="wallbar"></span>
+                <span class="gchip">charge&nbsp;$48,000</span>
+                <span class="stamp g-held">HELD</span>
+                <span class="stamp g-ok">APPROVED ✓</span>
+              </div>
+            </div>
+            <div class="demo-cap">
+              <span class="dlabel"><b>Gate</b> · held for a human</span>
+              <p class="dsub">A charge can’t be un-sent — so it waits at the line until you approve it.</p>
+            </div>
+          </div>
+
+          <div class="demo">
+            <div class="demo-screen">
+              <div class="scr-bar"><span class="d"></span> policy.py <span class="scr-meta">capability</span></div>
+              <div class="demo-stage pol">
+                <span class="pchip">DROP TABLE users</span>
+                <span class="pstamp">DENIED</span>
+              </div>
+            </div>
+            <div class="demo-cap">
+              <span class="dlabel"><b>Policy</b> · only what you allow</span>
+              <p class="dsub">Out-of-bounds calls never run — the agent stays inside the capabilities you grant.</p>
+            </div>
+          </div>
+
+          <div class="demo">
+            <div class="demo-screen">
+              <div class="scr-bar"><span class="d"></span> isolation.py <span class="scr-meta">concurrent</span></div>
+              <div class="demo-stage iso">
+                <span class="cell">row 142</span>
+                <span class="tok a">A</span>
+                <span class="tok b">B</span>
+                <span class="stamp i-status">B WAITS</span>
+              </div>
+            </div>
+            <div class="demo-cap">
+              <span class="dlabel"><b>Isolation</b> · no clobbering</span>
+              <p class="dsub">Two agents, one row. Pherix serialises them so neither corrupts the other.</p>
+            </div>
+          </div>
+
+          <div class="demo">
+            <div class="demo-screen">
+              <div class="scr-bar"><span class="d"></span> lineage.py <span class="scr-meta">journal</span></div>
+              <div class="demo-stage lin">
+                <span class="le e1">&gt; write users <i class="ok">ok</i></span>
+                <span class="le e2">&gt; charge $48k <i class="hl">held</i></span>
+                <span class="le e3">&gt; delete rows <i class="hl">undone</i></span>
+                <span class="le e4">&gt; email sent <i class="ok">ok</i></span>
+              </div>
+            </div>
+            <div class="demo-cap">
+              <span class="dlabel"><b>Lineage</b> · every move on record</span>
+              <p class="dsub">An append-only journal: what ran, what was held, what was undone, and why.</p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ============ § 02 WHAT YOU GET ============ -->
+      <section class="row" id="what">
+        <div class="row-head">
+          <div class="row-coord">
+            <span class="secicon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9" style="stroke:var(--orange)"/><circle cx="12" cy="12" r="3.2" style="fill:var(--red);stroke:none"/></svg></span>
+            <span class="secno">§ 02</span>
+            <span class="seclbl">What you get</span>
+          </div>
+          <div class="row-title"><h2>The one thing, <span class="accent">two mechanisms.</span></h2></div>
+        </div>
+
+        <figure class="flow-fig">
+          <svg class="flow" viewBox="0 0 640 250" role="img" aria-label="Every effect takes one of two paths. Reversible effects run live and can roll back to the exact prior state. Irreversible effects are staged and held until you approve them. Both are written to an append-only journal.">
+            <circle class="f-core" cx="34" cy="118" r="12"/>
+            <text class="f-lab" x="34" y="144" text-anchor="middle">tool call</text>
+            <path class="f-line" d="M46 118 H80"/>
+            <path class="f-line" d="M80 118 V64 H102"/>
+            <path class="f-line" d="M80 118 V172 H102"/>
+
+            <text class="f-tag" x="102" y="42">REVERSIBLE</text>
+            <rect class="f-box" x="102" y="46" width="92" height="36" rx="1"/>
+            <text class="f-bx" x="148" y="69" text-anchor="middle">apply</text>
+            <path class="f-arrow" d="M194 64 H260"/>
+            <path class="f-arrowhead" d="M254 60 L262 64 L254 68"/>
+            <text class="f-out" x="274" y="68">exact prior state</text>
+            <path class="f-undo" d="M250 50 Q 172 4 146 42"/>
+            <path class="f-undo" d="M140 35 L146 44 L154 38"/>
+            <text class="f-undo-lab" x="190" y="14">rolls back</text>
+
+            <text class="f-tag" x="102" y="150">IRREVERSIBLE</text>
+            <rect class="f-box" x="102" y="154" width="92" height="36" rx="1"/>
+            <text class="f-bx" x="148" y="177" text-anchor="middle">stage</text>
+            <path class="f-arrow" d="M194 172 H242"/>
+            <line class="f-gate" x1="256" y1="152" x2="256" y2="192"/>
+            <text class="f-held" x="256" y="146" text-anchor="middle">HELD</text>
+            <path class="f-arrow f-red" d="M270 172 H336"/>
+            <path class="f-arrowhead f-red" d="M330 168 L338 172 L330 176"/>
+            <text class="f-out" x="350" y="176">your yes → fires</text>
+
+            <rect class="f-journal" x="102" y="214" width="436" height="30"/>
+            <text class="f-jlab" x="118" y="233">JOURNAL — what ran · held · undone · why</text>
+          </svg>
+        </figure>
+
+        <div class="pillars">
+          <div class="pillar">
+            <div class="pmech" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11 16 A 15 15 0 1 1 8 26"/><polyline points="5,9 11,16 17.5,10"/><circle cx="24" cy="24" r="6" style="fill:var(--red);stroke:none"/></svg></div>
+            <span class="pnum"><b>01</b> Contain <span class="tag">reversible</span></span>
+            <h3>Contain the reversible</h3>
+            <p>DB and file writes roll back through the backend’s own savepoints. <em>Exact, not best-effort.</em></p>
+          </div>
+          <div class="pillar">
+            <div class="pmech" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="28" y1="8" x2="28" y2="40" style="stroke:var(--ink)"/><line x1="8" y1="24" x2="20" y2="24" style="stroke:var(--red)"/><polyline points="15,19 20,24 15,29" style="stroke:var(--red)"/><line x1="36" y1="16" x2="36" y2="32"/><line x1="41" y1="16" x2="41" y2="32"/></svg></div>
+            <span class="pnum"><b>02</b> Hold <span class="tag">irreversible</span></span>
+            <h3>Hold the irreversible</h3>
+            <p>A charge or an email can’t be un-sent, so it waits for a human’s yes before it fires.</p>
+          </div>
+          <div class="pillar proof">
+            <div class="proof-head">
+              <span class="pnum"><b>03</b> &nbsp;the proof</span>
+              <h3>On the record</h3>
+            </div>
+            <p>Every action journalled: what ran, what was held, what was undone, and why. <em>The proof, kept subordinate.</em></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SOLUTIONS — use cases + what it's not ============ -->
+      <section class="row" id="solutions">
+        <div class="row-head">
+          <div class="row-title"><h2>Where you’d reach for it.</h2></div>
+        </div>
+
+        <div class="uses">
+          <div class="use">
+            <span class="use-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 L20 5.5 V11 C20 16 16.5 19.5 12 21.5 C7.5 19.5 4 16 4 11 V5.5 Z"/><polyline points="9,11.5 11,13.5 15,9" style="stroke:var(--red)"/></svg></span>
+            <span class="uno">3.1</span>
+            <h3>Regulated data</h3>
+            <p>Agents on customer &amp; financial records; legal-hold rows can’t be deleted, every change audited.</p>
+          </div>
+          <div class="use">
+            <span class="use-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 6.8 V17.2" style="stroke:var(--red)"/><path d="M14.5 9.2 C14.5 7.8 9.5 7.8 9.5 10 C9.5 12 14.5 12 14.5 14 C14.5 16.2 9.5 16.2 9.5 14.8" style="stroke:var(--red)"/></svg></span>
+            <span class="uno">3.2</span>
+            <h3>Payments &amp; money movement</h3>
+            <p>Money moves only on human sign-off; a refund is its registered undo.</p>
+          </div>
+          <div class="use">
+            <span class="use-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.2" rx="1.2"/><rect x="3.5" y="13.8" width="17" height="6.2" rx="1.2"/><circle cx="7" cy="7.1" r="0.9" style="fill:var(--red);stroke:none"/><circle cx="7" cy="16.9" r="0.9" style="fill:var(--red);stroke:none"/></svg></span>
+            <span class="uno">3.3</span>
+            <h3>Production systems</h3>
+            <p>Prod write access without the fear; a bad change rolls back to the exact prior state.</p>
+          </div>
+        </div>
+
+        <div class="subhead"><span>And what it’s not</span></div>
+
+        <div class="nots">
+          <div class="not">
+            <span class="not-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12 A 7.5 7.5 0 1 1 6.8 17.5"/><polyline points="4.5,6.5 4.5,12 10,12"/></svg></span>
+            <span class="x"><span class="glyph">&times;</span> not this</span>
+            <h3>Not durable execution</h3>
+            <p>Temporal replays your <em>code</em>; Pherix transacts your <em>resources</em>.</p>
+          </div>
+          <div class="not">
+            <span class="not-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12 C5 7.5 8.5 5.5 12 5.5 C15.5 5.5 19 7.5 21.5 12 C19 16.5 15.5 18.5 12 18.5 C8.5 18.5 5 16.5 2.5 12 Z"/><circle cx="12" cy="12" r="3"/></svg></span>
+            <span class="x"><span class="glyph">&times;</span> not this</span>
+            <h3>Not observability</h3>
+            <p>LangSmith / Langfuse <em>watch</em>; Pherix <em>contains</em>.</p>
+          </div>
+          <div class="not">
+            <span class="not-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,3 21,8 12,13 3,8"/><polyline points="3.5,12.5 12,17.5 20.5,12.5"/></svg></span>
+            <span class="x"><span class="glyph">&times;</span> not this</span>
+            <h3>Not an agent framework</h3>
+            <p>It wraps the tool calls of an agent you already have.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SET IT UP ============ -->
+      <section class="row" id="setup">
+        <div class="row-head">
+          <div class="row-title"><h2>Set it up.</h2></div>
+        </div>
+
+        <div class="fit-wrap">
+          <div class="fit-copy-cell">
+            <p class="fit-copy">A <b>library</b> you <code>pip install</code> and wrap your agent’s tool layer with — your loop and model unchanged. Self-hosted, no telemetry. It makes the agent’s actions behave like a database transaction.</p>
+          </div>
+          <div class="fit-code-cell">
+            <div class="code" role="img" aria-label="Code example wrapping a tool and rolling back a transaction">
+              <div class="code-bar"><span class="dot" aria-hidden="true"></span> agent.py <span class="barmeta">PYTHON</span></div>
+<pre><span class="cm"># wrap the tool, run inside a transaction</span>
+<span class="kw">@tool</span>
+<span class="kw">def</span> <span class="fn">delete_user</span>(uid):
+    db.execute(<span class="st">"DELETE FROM users WHERE id = ?"</span>, uid)
+
+<span class="kw">with</span> <span class="fn">agent_txn</span>() <span class="kw">as</span> txn:
+    agent.run(task)              <span class="cm"># tool calls journalled</span>
+    <span class="kw">if</span> txn.flagged:
+        txn.<span class="fn">rollback</span>()         <span class="cm"># exact prior state, restored</span></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ============ FOOTER ============ -->
     <footer>
-      <span class="brand">pherix<span class="dot">.</span></span>
-      <span>
-        <a href="index.html">Home</a> ·
-        <a href="get-started.html">Get started</a> ·
-        <a href="docs.html">Docs</a> ·
-        <a href="features.html">Features</a> ·
-        <a href="demos.html">Demos</a> ·
-        <a href="https://github.com/LukeyP02/Pherix">GitHub</a>
-      </span>
+      <div class="footer-inner">
+        <a class="brand" href="#top">Pherix<span class="mark" aria-hidden="true"></span></a>
+        <div class="footer-links">
+          <a href="https://github.com/LukeyP02/Pherix#readme">Docs</a>
+          <a href="#demos">Demos</a>
+          <a href="#solutions">Solutions</a>
+          <a href="https://github.com/LukeyP02/Pherix">GitHub</a>
+        </div>
+      </div>
+      <div class="footer-meta">
+        <span>PHERIX.DEV — BLAST-RADIUS CONTAINMENT FOR AI AGENTS</span>
+        <span>MIT-LICENSED &nbsp;·&nbsp; &#9632;</span>
+      </div>
     </footer>
-  </main>
+
+  </div>
 
   <script>
   (function () {
     "use strict";
-    [].forEach.call(document.querySelectorAll(".install .cp"), function (btn) {
-      btn.addEventListener("click", function () {
-        if (navigator.clipboard) navigator.clipboard.writeText("pip install -e .");
-        var prev = btn.textContent;
-        btn.textContent = "copied"; btn.classList.add("done");
-        setTimeout(function () { btn.textContent = prev; btn.classList.remove("done"); }, 1200);
-      });
+    var btn = document.getElementById("copy-btn");
+    var cmdEl = document.getElementById("install-cmd");
+    if (!btn || !cmdEl) return;
+    var cmd = cmdEl.textContent.trim();
+    btn.addEventListener("click", function () {
+      var restore = function () {
+        btn.textContent = "Copy";
+        btn.classList.remove("done");
+      };
+      var done = function () {
+        btn.textContent = "Copied";
+        btn.classList.add("done");
+        setTimeout(restore, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cmd).then(done, function () {
+          fallbackCopy(cmd); done();
+        });
+      } else {
+        fallbackCopy(cmd); done();
+      }
     });
+    function fallbackCopy(text) {
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = text; ta.setAttribute("readonly", "");
+        ta.style.position = "absolute"; ta.style.left = "-9999px";
+        document.body.appendChild(ta); ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch (e) {}
+    }
   })();
   </script>
 </body>
