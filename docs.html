@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pherix — Docs</title>
+<meta name="description" content="Pherix documentation: install, wrap your agent's tool calls, roll back the reversible, gate the irreversible." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper:   #f4f3ef;  --paper-2: #eceae3;
+    --ink:     #111111;  --ink-2: #3c3a35;  --ink-3: #6c6a62;  --ink-4: #9a9890;
+    --hair:    #cfcdc4;  --rule: #111111;
+    --red:     #c8342a;  --red-ink: #f4f3ef;  --orange: #e8743a;
+    --maxw: 1080px;
+    --gutter: clamp(1.1rem, 4vw, 2.4rem);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #131310; --paper-2: #1c1b17; --ink: #f1efe8; --ink-2: #cbc9c0;
+      --ink-3: #9a988f; --ink-4: #76746c; --hair: #36352f; --rule: #f1efe8;
+      --red: #ff5a45; --red-ink: #131310; --orange: #ff9e4d;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; background: var(--paper); -webkit-text-size-adjust: 100%; scroll-padding-top: 5rem; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink-2);
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.6; font-weight: 400;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  a { color: var(--ink); text-decoration: none; }
+  ::selection { background: var(--red); color: var(--red-ink); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; border-radius: 1px; }
+  .mono { font-family: 'Space Mono', ui-monospace, 'SF Mono', monospace; }
+
+  /* ---- nav ---- */
+  nav { position: sticky; top: 0; z-index: 50; background: var(--paper); border-bottom: 1px solid var(--rule); }
+  .nav-inner { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--gutter);
+    display: flex; align-items: center; justify-content: space-between; min-height: 3.4rem; }
+  .brand { font-weight: 700; font-size: 1.15rem; letter-spacing: -0.02em; color: var(--ink);
+    display: inline-flex; align-items: center; min-height: 44px; }
+  .brand .mark { display: inline-block; width: 0.85em; height: 0.85em; margin-left: 0.4em;
+    border-radius: 50%; transform: translateY(0.04em);
+    background: radial-gradient(circle at center, var(--red) 0 30%, var(--orange) 37% 56%, color-mix(in srgb, var(--orange) 32%, transparent) 62% 100%);
+    box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--orange) 26%, transparent); }
+  .nav-links { display: flex; align-items: center; gap: clamp(1rem, 3vw, 1.8rem); }
+  .nav-links a { font-family: 'Space Mono', monospace; font-size: 0.78rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3); display: inline-flex; align-items: center;
+    justify-content: center; min-height: 44px; min-width: 44px; position: relative; }
+  .nav-links a:hover, .nav-links a[aria-current="page"] { color: var(--ink); }
+  .nav-links a[aria-current="page"]::after { content: ""; position: absolute; left: 0; right: 0;
+    bottom: calc(50% - 0.82em); height: 1.5px; background: var(--red); }
+  .nav-gh svg { width: 1.25rem; height: 1.25rem; display: block; }
+
+  /* ---- layout ---- */
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--gutter);
+    display: grid; grid-template-columns: 1fr; gap: 2.5rem; }
+  @media (min-width: 860px) { .wrap { grid-template-columns: 12rem 1fr; gap: 3rem; align-items: start; } }
+
+  /* ---- sidebar TOC ---- */
+  .toc { display: none; }
+  @media (min-width: 860px) {
+    .toc { display: block; position: sticky; top: 4.6rem; padding-top: 3rem;
+      border-right: 1px solid var(--hair); align-self: start; }
+  }
+  .toc .tlabel { font-family: 'Space Mono', monospace; font-size: 0.62rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-4); margin: 0 0 0.9rem; }
+  .toc ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+  .toc a { font-size: 0.9rem; color: var(--ink-3); padding-right: 1rem; }
+  .toc a:hover { color: var(--red); }
+
+  /* ---- content ---- */
+  .content { min-width: 0; padding: clamp(2rem, 5vw, 3.4rem) 0 5rem; max-width: 46rem; }
+  .doc-kicker { font-family: 'Space Mono', monospace; font-size: 0.7rem; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--red); margin: 0 0 0.8rem; }
+  h1 { font-size: clamp(2.1rem, 5vw, 3rem); line-height: 1.02; letter-spacing: -0.035em;
+    font-weight: 700; color: var(--ink); margin: 0 0 0.7rem; }
+  .lead { font-size: 1.15rem; line-height: 1.5; color: var(--ink-2); margin: 0 0 1rem; max-width: 40ch; }
+  h2 { font-size: 1.5rem; letter-spacing: -0.022em; font-weight: 600; color: var(--ink);
+    margin: 3.4rem 0 0.4rem; padding-top: 1.5rem; border-top: 1px solid var(--hair); scroll-margin-top: 5rem; }
+  h2 .n { font-family: 'Space Mono', monospace; font-size: 0.7rem; font-weight: 700; color: var(--red);
+    letter-spacing: 0.1em; display: block; margin-bottom: 0.5rem; }
+  h3 { font-size: 1.08rem; font-weight: 600; color: var(--ink); margin: 2rem 0 0.3rem; letter-spacing: -0.01em; }
+  p { margin: 0.8rem 0; max-width: 64ch; }
+  .content a:not(.btn) { color: var(--red); text-decoration: underline; text-underline-offset: 2px;
+    text-decoration-thickness: 1px; text-decoration-color: color-mix(in srgb, var(--red) 40%, transparent); }
+  .content a:not(.btn):hover { text-decoration-color: var(--red); }
+  ul.list { margin: 0.8rem 0; padding: 0; list-style: none; display: grid; gap: 0.55rem; max-width: 64ch; }
+  ul.list li { position: relative; padding-left: 1.3rem; }
+  ul.list li::before { content: ""; position: absolute; left: 0; top: 0.5em; width: 0.6rem; height: 0.6rem;
+    border-radius: 50%; background: radial-gradient(circle at center, var(--red) 0 42%, var(--orange) 48% 100%); }
+  ul.list li b { color: var(--ink); font-weight: 600; }
+  strong { color: var(--ink); font-weight: 600; }
+  em { color: var(--ink-3); }
+
+  code { font-family: 'Space Mono', monospace; font-size: 0.86em; color: var(--red);
+    background: var(--paper-2); padding: 0.08em 0.4em; border: 1px solid var(--hair); border-radius: 2px; }
+  .code { border: 1px solid var(--rule); background: var(--paper); margin: 1.2rem 0;
+    font-family: 'Space Mono', monospace; font-size: 0.84rem; line-height: 1.7; overflow-x: auto; }
+  .code-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem;
+    border-bottom: 1px solid var(--rule); font-size: 0.6rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--ink-3); }
+  .code-bar .dot { width: 0.42rem; height: 0.42rem; border-radius: 50%; background: var(--red); }
+  .code-bar .bm { margin-left: auto; color: var(--ink-4); }
+  .code pre { margin: 0; padding: 1rem 1.05rem 1.15rem; white-space: pre; color: var(--ink); }
+  .code .kw { color: var(--red); font-weight: 700; }
+  .code .fn { color: var(--ink); font-weight: 700; }
+  .code .cm { color: var(--ink-3); }
+  .code .st { color: var(--ink-2); }
+  .code .out { color: var(--ink-3); }
+  .callout { border: 1px solid var(--hair); border-left: 3px solid var(--red); background: var(--paper-2);
+    padding: 0.9rem 1.1rem; margin: 1.4rem 0; font-size: 0.95rem; color: var(--ink-2); max-width: 64ch; }
+  .callout b { color: var(--ink); }
+  .grid2 { display: grid; grid-template-columns: 1fr; gap: 0; border: 1px solid var(--hair); margin: 1.2rem 0; max-width: 64ch; }
+  @media (min-width: 620px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+  .grid2 .cell { padding: 0.9rem 1.1rem; border-bottom: 1px solid var(--hair); }
+  @media (min-width: 620px) { .grid2 .cell:nth-child(odd) { border-right: 1px solid var(--hair); } }
+  .grid2 .cell h4 { margin: 0 0 0.3rem; font-size: 0.95rem; color: var(--ink); font-weight: 600; }
+  .grid2 .cell p { margin: 0; font-size: 0.9rem; }
+
+  footer { border-top: 1px solid var(--rule); margin-top: 3rem; }
+  .foot-inner { max-width: var(--maxw); margin: 0 auto; padding: 1.4rem var(--gutter);
+    display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: center;
+    font-family: 'Space Mono', monospace; font-size: 0.66rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3); }
+  .foot-inner a { color: var(--ink-3); } .foot-inner a:hover { color: var(--red); }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+  <nav>
+    <div class="nav-inner">
+      <a class="brand" href="index.html">Pherix<span class="mark" aria-hidden="true"></span></a>
+      <div class="nav-links">
+        <a href="docs.html" aria-current="page">Docs</a>
+        <a class="nav-gh" href="https://github.com/LukeyP02/Pherix" aria-label="Pherix on GitHub"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="wrap">
+
+    <aside class="toc">
+      <p class="tlabel">On this page</p>
+      <ul>
+        <li><a href="#install">Install</a></li>
+        <li><a href="#quickstart">Quickstart</a></li>
+        <li><a href="#model">How it works</a></li>
+        <li><a href="#tools">Declare your tools</a></li>
+        <li><a href="#transaction">Run a transaction</a></li>
+        <li><a href="#gate">Gate the irreversible</a></li>
+        <li><a href="#adapters">Adapters</a></li>
+        <li><a href="#audit">The audit journal</a></li>
+        <li><a href="#not">What it's not</a></li>
+      </ul>
+    </aside>
+
+    <main class="content">
+      <p class="doc-kicker">Documentation</p>
+      <h1>Contain the blast radius.</h1>
+      <p class="lead">Wrap your agent's tool calls so the reversible ones roll back and the irreversible ones wait for your yes.</p>
+      <p>Pherix is a Python library (with a TypeScript SDK) that gives database-style guarantees — atomicity, isolation, capability enforcement, durability — over the <em>external side-effects</em> of an agent's tool calls. It doesn't run your agent or call an LLM: you keep your loop and model provider, and Pherix sits underneath at the tool-call layer. Zero dependencies — the kernel imports nothing; each adapter lazy-imports its own driver.</p>
+
+      <h2 id="install"><span class="n">§ 01</span>Install</h2>
+      <p>Python 3.12+. The kernel is dependency-free.</p>
+      <div class="code"><div class="code-bar"><span class="dot"></span> shell <span class="bm">bash</span></div><pre>pip install pherix</pre></div>
+      <p>Each adapter pulls only its own driver when you need it — e.g. <code>pip install pherix[postgres]</code>. From source: <code>git clone https://github.com/LukeyP02/Pherix &amp;&amp; cd Pherix &amp;&amp; pip install -e .</code></p>
+
+      <h2 id="quickstart"><span class="n">§ 02</span>Quickstart</h2>
+      <p>Thirty seconds, no API key, no network — one reversible DB write that rolls back, one irreversible send that gates at commit:</p>
+      <div class="code"><div class="code-bar"><span class="dot"></span> shell <span class="bm">bash</span></div><pre>python examples/quickstart.py</pre></div>
+      <div class="code"><div class="code-bar"><span class="dot"></span> output <span class="bm">stdout</span></div><pre><span class="cm">=== rollback ===</span>
+  inside txn:       ['ada']
+  after rollback:   []            <span class="cm"># the write was undone — nothing persisted</span>
+
+<span class="cm">=== gate (not approved) ===</span>
+  commit blocked:   ... staged irreversible effects need approve_irreversible()
+  emails sent:      []            <span class="cm"># the un-undoable send never fired</span>
+  users persisted:  []            <span class="cm"># and the DB write rolled back with it</span>
+
+<span class="cm">=== gate (approved) ===</span>
+  emails sent:      [('grace@example.com', 'welcome')]
+  users persisted:  ['grace']     <span class="cm"># approved → both go through</span></pre></div>
+      <p>That's the whole idea in one run: the reversible effect is undone exactly, the irreversible one is held until a human says yes. The rest of this page walks through each piece.</p>
+
+      <h2 id="model"><span class="n">§ 03</span>How it works</h2>
+      <p>Every side-effecting tool call becomes an <strong>Effect</strong> appended to one append-only, ordered journal held by a <strong>Transaction</strong>. A per-resource <strong>adapter</strong> makes each entry executable and reversible — <code>snapshot → apply → restore</code>. Every capability is then just a traversal of that one log:</p>
+      <ul class="list">
+        <li><b>commit</b> — fold the journal forward, <code>apply</code> each effect.</li>
+        <li><b>rollback</b> — fold it backward, <code>restore</code> the snapshot (or run a compensator).</li>
+        <li><b>replay</b> — fold forward against fresh state, assert identical results.</li>
+        <li><b>dry-run</b> — fold forward against a snapshot, then discard.</li>
+        <li><b>isolation</b> — diff this transaction's read/write keys against the journal.</li>
+        <li><b>audit</b> — the journal <em>is</em> the audit log; just read it.</li>
+      </ul>
+      <p>Two lanes come off the same engine:</p>
+      <div class="grid2">
+        <div class="cell"><h4>Reversible</h4><p>DB and file writes run live and undo via the backend's own semantics — a real SQL <code>SAVEPOINT</code> / <code>ROLLBACK TO SAVEPOINT</code>, filesystem copy-on-write. Exact, not best-effort.</p></div>
+        <div class="cell"><h4>Irreversible</h4><p>A charge or an email can't be snapshotted, so it <em>stages</em> — it only fires at commit, and with no semantic inverse it gates: commit blocks until a human approves.</p></div>
+      </div>
+
+      <h2 id="tools"><span class="n">§ 04</span>Declare your tools</h2>
+      <p>Mark each side-effecting function with <code>@tool</code> and the resource it touches. The agent body that calls them stays transaction-unaware — just a plain loop.</p>
+      <div class="code"><div class="code-bar"><span class="dot"></span> tools.py <span class="bm">python</span></div><pre><span class="kw">import</span> sqlite3
+<span class="kw">from</span> pherix <span class="kw">import</span> AuditJournal, SQLiteAdapter, agent_txn, tool
+
+<span class="kw">@tool</span>(resource=<span class="st">"sql"</span>)
+<span class="kw">def</span> <span class="fn">insert_user</span>(conn, name, role):
+    conn.execute(<span class="st">"INSERT INTO users (name, role) VALUES (?, ?)"</span>, (name, role))
+    <span class="kw">return</span> name
+
+<span class="kw">def</span> <span class="fn">my_agent</span>(team):
+    <span class="cm"># a plain agent loop — never transaction-aware</span>
+    <span class="kw">for</span> name, role <span class="kw">in</span> team:
+        insert_user(name=name, role=role)</pre></div>
+      <p>The connection is injected as the first argument by the adapter; the agent never sees it. <code>resource="sql"</code> routes the effect to the SQLite adapter you pass in next.</p>
+
+      <h2 id="transaction"><span class="n">§ 05</span>Run a transaction</h2>
+      <p>Wrap the run in <code>agent_txn(...)</code> with your adapters. Reversible effects journal live and roll back on demand; leaving the block cleanly commits them.</p>
+      <div class="code"><div class="code-bar"><span class="dot"></span> run.py <span class="bm">python</span></div><pre>conn = sqlite3.connect(<span class="st">"app.db"</span>, isolation_level=<span class="kw">None</span>)
+audit = AuditJournal.in_memory()
+adapters = {<span class="st">"sql"</span>: SQLiteAdapter(conn)}
+
+<span class="kw">with</span> <span class="fn">agent_txn</span>(adapters, audit=audit) <span class="kw">as</span> txn:
+    my_agent([(<span class="st">"ada"</span>, <span class="st">"engineer"</span>), (<span class="st">"grace"</span>, <span class="st">"scientist"</span>)])
+    <span class="cm"># caught a problem? roll the whole step back — nothing persisted:</span>
+    <span class="cm"># txn.rollback()</span>
+<span class="cm"># left the block cleanly → commit. The writes are now durable.</span></pre></div>
+
+      <h2 id="gate"><span class="n">§ 06</span>Gate the irreversible</h2>
+      <p>Declare <code>reversible=False</code>. Add a <code>compensator</code> (a semantic inverse) if one exists; otherwise the effect blocks at commit until explicitly approved.</p>
+      <div class="code"><div class="code-bar"><span class="dot"></span> gate.py <span class="bm">python</span></div><pre><span class="kw">from</span> pherix <span class="kw">import</span> HTTPAdapter, GateBlocked
+
+<span class="kw">@tool</span>(resource=<span class="st">"http"</span>, reversible=<span class="kw">False</span>, injects_handle=<span class="kw">False</span>)
+<span class="kw">def</span> <span class="fn">refund_charge</span>(customer, amount):           <span class="cm"># the semantic inverse</span>
+    stripe.refund(customer, amount)
+
+<span class="kw">@tool</span>(resource=<span class="st">"http"</span>, reversible=<span class="kw">False</span>, injects_handle=<span class="kw">False</span>,
+      compensator=<span class="st">"refund_charge"</span>)
+<span class="kw">def</span> <span class="fn">charge_card</span>(customer, amount):             <span class="cm"># auto-commits; refunded on rollback</span>
+    <span class="kw">return</span> stripe.charge(customer, amount)
+
+<span class="kw">@tool</span>(resource=<span class="st">"http"</span>, reversible=<span class="kw">False</span>, injects_handle=<span class="kw">False</span>)
+<span class="kw">def</span> <span class="fn">send_email</span>(to, body):                      <span class="cm"># no inverse — an email can't be un-sent</span>
+    mailer.send(to, body)
+
+<span class="kw">with</span> <span class="fn">agent_txn</span>(adapters, audit=audit) <span class="kw">as</span> txn:
+    charge_card(customer=<span class="st">"alice"</span>, amount=4200)
+    receipt = send_email(to=<span class="st">"alice@example.com"</span>, body=<span class="st">"receipt"</span>)
+    <span class="cm"># send_email has no compensator → commit BLOCKS at the gate until a</span>
+    <span class="cm"># human (or a higher-trust policy) approves the un-undoable effect:</span>
+    txn.<span class="fn">approve_irreversible</span>(receipt.effect_id)
+<span class="cm"># no approval → GateBlocked is raised and the staged effects never fire.</span></pre></div>
+      <div class="callout"><b>The boundary is explicit.</b> Whether an effect can be rolled back is the adapter's <code>supports_rollback()</code> flag, not a guess. An HTTP POST adapter returns <code>False</code>, so the runtime forces that effect down the staged/gated path instead of pretending it can reverse it.</div>
+
+      <h2 id="adapters"><span class="n">§ 07</span>Adapters</h2>
+      <p>An adapter teaches Pherix how to snapshot, apply, and restore one class of resource. Sixteen ship in Python, fourteen mirrored in TypeScript:</p>
+      <ul class="list">
+        <li><b>Databases</b> — SQLite, Postgres, MySQL, MongoDB, Redis, DynamoDB, Elasticsearch.</li>
+        <li><b>Storage</b> — filesystem (copy-on-write), S3, GCS, git.</li>
+        <li><b>Network &amp; misc</b> — HTTP, REST, message queues, in-memory.</li>
+      </ul>
+      <p>Each lazy-imports its driver, so <code>import pherix</code> needs none of them. Pull a driver only to instantiate the matching adapter: <code>pip install pherix[postgres]</code>, <code>pherix[s3]</code>, <code>pherix[redis]</code>, … or <code>pherix[all-adapters]</code> for the lot.</p>
+
+      <h2 id="audit"><span class="n">§ 08</span>The audit journal</h2>
+      <p>You don't need a disaster to get value on day one. The append-only journal is a flight recorder for what your agent actually did — what ran, what was held, what was undone, and why. Point the read-only console at a run:</p>
+      <div class="code"><div class="code-bar"><span class="dot"></span> shell <span class="bm">bash</span></div><pre>python -m pherix.inspector.seed demo.db   <span class="cm"># a representative journal</span>
+python -m pherix.inspector --db demo.db   <span class="cm"># the read-only audit console</span></pre></div>
+
+      <h2 id="not"><span class="n">§ 09</span>What it's not</h2>
+      <ul class="list">
+        <li><b>Not durable execution.</b> Temporal replays your <em>code</em> to survive crashes; Pherix transacts your <em>resources</em>. Run both — Temporal keeps your code alive, Pherix makes the side-effects it triggers transactional.</li>
+        <li><b>Not observability.</b> LangSmith / Langfuse <em>watch</em> and log; Pherix <em>enforces</em> — it rolls back, gates, isolates. The audit log falls out for free, but it's the byproduct.</li>
+        <li><b>Not an agent framework.</b> It wraps the tool calls of an agent you already have.</li>
+      </ul>
+      <p>For the complete, executable integration recipe — written so a coding assistant can wrap your agent correctly — see <a href="https://github.com/LukeyP02/Pherix/blob/main/llms-full.txt">llms-full.txt</a>. Source and issues: <a href="https://github.com/LukeyP02/Pherix">github.com/LukeyP02/Pherix</a>.</p>
+    </main>
+  </div>
+
+  <footer>
+    <div class="foot-inner">
+      <span>PHERIX — BLAST-RADIUS CONTAINMENT FOR AI AGENTS</span>
+      <span><a href="index.html">Home</a> &nbsp;·&nbsp; <a href="https://github.com/LukeyP02/Pherix">GitHub</a> &nbsp;·&nbsp; MIT</span>
+    </div>
+  </footer>
+
+</body>
+</html>
