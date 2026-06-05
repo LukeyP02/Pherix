@@ -360,3 +360,46 @@ def test_reader_tool_returning_cursor_is_journalled_not_crashed(stack):
     read_row = [e for e in effects if e["tool"] == "read_account"][0]
     assert json.loads(read_row["result"]) == [[7, 500]]
     assert read_row["status"] == EffectStatus.APPLIED.name
+
+
+def test_reader_tool_returning_nested_cursor_is_journalled_not_crashed(stack):
+    """A cursor wrapped in a dict (rows + metadata) must not kill the txn.
+
+    Regression for the latent ``execute_isolated`` raw-cursor bug at the level
+    *below* the top-level fix: a reader that returns the natural rows-plus-
+    metadata shape — ``return {"rows": execute_isolated(conn, "SELECT ..."),
+    "n": 1}`` — used to hand a nested ``sqlite3.Cursor`` to the journal. The
+    strict effect-result dump then raised ``TypeError`` mid-commit and the txn
+    died stuck at ``OPEN`` (never committed). ``_materialise_cursor`` now drains
+    cursors wherever they appear — top level OR nested in a dict/list/tuple — so
+    the commit lands and the rows are both returned to the agent and recorded.
+    This matches the TS SDK, where ``executeIsolated`` returns ``.all()`` rows
+    and a DB cursor can never reach the journal.
+    """
+    adapters, audit, db_path, _ = stack
+    open_account, _ = _register_tools()
+
+    @tool(resource="sql")
+    def read_account_meta(conn, account_id):
+        # Deliberately nest the cursor alongside metadata — the shape the
+        # top-level drain in apply() would miss before this fix.
+        cur = execute_isolated(
+            conn,
+            "SELECT id, balance FROM accounts WHERE id = ?",
+            (account_id,),
+            reads=[("accounts", account_id)],
+        )
+        return {"rows": cur, "n": 1}
+
+    with agent_txn(adapters, audit=audit) as ctx:
+        open_account(account_id=9, balance=750)
+        out = read_account_meta(account_id=9)
+
+    # The agent got materialised, re-iterable rows nested under "rows".
+    assert out == {"rows": [[9, 750]], "n": 1}
+    assert ctx.txn.state is TxnState.COMMITTED
+    # And the journal recorded the nested read effect's result losslessly.
+    effects = audit.get_effects(ctx.txn.txn_id)
+    read_row = [e for e in effects if e["tool"] == "read_account_meta"][0]
+    assert json.loads(read_row["result"]) == {"rows": [[9, 750]], "n": 1}
+    assert read_row["status"] == EffectStatus.APPLIED.name
