@@ -189,6 +189,7 @@
   .hero {
     border-bottom: 1px solid var(--rule);
     min-height: 100vh; box-sizing: border-box;
+    display: flex; flex-direction: column; justify-content: center;
     padding: clamp(2.6rem, 7vw, 5.2rem) var(--gutter) clamp(2.4rem, 6vw, 4.6rem);
   }
   .hero .kicker {
@@ -525,11 +526,7 @@
   .secicon { display: inline-flex; width: 1.2rem; height: 1.2rem; color: var(--ink-3); }
   .secicon svg { width: 100%; height: 100%; display: block; }
 
-  /* ---- hero: poster copy + the live blast diagram, side by side ---- */
-  @media (min-width: 920px) {
-    .hero { display: grid; grid-template-columns: 1.15fr 0.85fr;
-            gap: clamp(2rem, 4vw, 3.5rem); align-items: center; align-content: center; }
-  }
+  /* ---- hero: single-column poster ---- */
   .hero-copy { min-width: 0; }
   .hero-fig { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
   .hero-fig .blastmap { max-width: 300px; }
@@ -763,32 +760,10 @@
             <span class="install">
               <span class="dollar">$</span><span class="cmd" id="install-cmd">pip install pherix</span><button class="cp" id="copy-btn" type="button" aria-label="Copy install command">Copy</button>
             </span>
-            <a class="btn primary" href="https://pherix.dev/demos.html">Watch the demos <span class="arr">&rarr;</span></a>
-            <a class="btn ghost" href="https://pherix.dev/get-started.html">Get started</a>
+            <a class="btn primary" href="#demos">Watch the demos <span class="arr">&rarr;</span></a>
+            <a class="btn ghost" href="docs.html">Get started</a>
           </div>
         </div>
-        <figure class="hero-fig">
-          <svg class="blastmap" viewBox="0 0 360 360" role="img" aria-label="Blast-radius diagram: the agent's tool call sits at ground zero, its effects radiate outward as the blast, and Pherix's containment boundary holds the whole blast inside — real systems outside the line stay untouched.">
-            <circle class="wall" cx="180" cy="180" r="150"/>
-            <line class="tick" x1="180" y1="22"  x2="180" y2="38"/>
-            <line class="tick" x1="180" y1="322" x2="180" y2="338"/>
-            <line class="tick" x1="22"  y1="180" x2="38"  y2="180"/>
-            <line class="tick" x1="322" y1="180" x2="338" y2="180"/>
-            <circle class="field" cx="180" cy="180" r="74"/>
-            <circle class="ring2" cx="180" cy="180" r="112"/>
-            <circle class="ring1" cx="180" cy="180" r="74"/>
-            <circle class="pulse p1" cx="180" cy="180" r="30"/>
-            <circle class="pulse p2" cx="180" cy="180" r="30"/>
-            <circle class="pulse p3" cx="180" cy="180" r="30"/>
-            <circle class="core" cx="180" cy="180" r="26"/>
-          </svg>
-          <figcaption class="fig-cap">
-            <span class="fc"><span class="lk core" aria-hidden="true"></span><span><b>Ground zero</b> — your agent’s tool call</span></span>
-            <span class="fc"><span class="lk blast" aria-hidden="true"></span><span><b>The blast</b> — its effects on real resources</span></span>
-            <span class="fc"><span class="lk wall" aria-hidden="true"></span><span><b>Containment</b> — roll back, or wait for your yes</span></span>
-            <span class="fc"><span class="lk safe" aria-hidden="true"></span><span><b>Outside the line</b> — prod, payments, data: untouched</span></span>
-          </figcaption>
-        </figure>
       </header>
 
       <!-- ============ DEMOS WALL — watch it in action ============ -->
