@@ -158,6 +158,23 @@ def test_api_reliability_include_dry_run_flag(server: str):
     assert incl["scope"]["include_dry_run"] is True
 
 
+# --- recovery (reconciliation queue) ---------------------------------------
+
+
+def test_api_recovery_surfaces_the_stuck_txn(server: str):
+    status, data = _get_json(server + "/api/recovery")
+    assert status == 200
+    assert set(data) >= {"scope", "queue", "totals"}
+    # Only the STUCK story needs reconciliation; its dangling effect is the
+    # irreversible send_payout, and it survives the round trip over the wire.
+    assert [q["txn_id"] for q in data["queue"]] == ["txn-stuck-payout04"]
+    entry = data["queue"][0]
+    assert [d["tool"] for d in entry["dangling"]] == ["send_payout"]
+    assert entry["dangling"][0]["reversible"] is False
+    assert data["totals"]["irreversible_dangling_effects"] == 1
+    assert "NOT a live probe" in data["scope"]["caveat"]
+
+
 # --- lineage (action-provenance) -------------------------------------------
 
 

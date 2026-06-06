@@ -15,6 +15,7 @@ Routes:
 ``GET /api/transactions``       list + filter (query params below)
 ``GET /api/transactions/<id>``  one transaction's full timeline
 ``GET /api/reliability``        reliability metrics (Prong #2) over the journal
+``GET /api/recovery``           reconciliation queue — txns that didn't undo cleanly
 ``GET /api/lineage``            causal read→write provenance (``?txn=<id>``)
 ==============================  ===========================================
 
@@ -139,6 +140,9 @@ class InspectorHandler(BaseHTTPRequestHandler):
                         include_dry_run=include_dry_run,
                     ),
                 )
+                return
+            if path == "/api/recovery":
+                self._json(200, self._read(self.srv.reader.recovery))
                 return
             if path == "/api/transactions":
                 self._json(200, self._list(parse_qs(parsed.query)))

@@ -44,6 +44,17 @@ TXN_STATES = ("OPEN", "STAGED", "COMMITTED", "ROLLED_BACK", "PARTIAL", "STUCK")
 # separately (the held-back chains).
 SETTLED_STATES = ("COMMITTED", "ROLLED_BACK", "PARTIAL", "STUCK")
 
+# Terminal states a transaction can reach *without* committing. These are the
+# candidates the recovery fold inspects for stranded side effects: COMMITTED is
+# the clean terminal (its effects are meant to be live), OPEN/STAGED are still
+# in-flight. A ROLLED_BACK txn should hold nothing — included so the fold can
+# catch one that anomalously left an APPLIED effect; PARTIAL/STUCK are the
+# engine-flagged incomplete unwinds. See JournalReader.recovery.
+UNCOMMITTED_TERMINAL_STATES = ("ROLLED_BACK", "PARTIAL", "STUCK")
+# The two states the engine itself marks as an incomplete unwind — always in
+# the recovery queue regardless of their per-effect counts.
+INCOMPLETE_UNWIND_STATES = ("PARTIAL", "STUCK")
+
 # Effective per-effect verdict derived from the persisted status. This is the
 # honest, schema-backed reading of "what the policy/engine decided about this
 # effect" — distinct from the optional per-rule verdict rows (see
@@ -140,6 +151,22 @@ LINEAGE_CAVEAT = (
     "tool read actually shaped a value the agent later wrote, only that the "
     "journal records the read before the write. Full data lineage through the "
     "model is out of scope and not claimed."
+)
+
+# The recovery queue's honest-scope statement — travels with the payload the
+# same way LINEAGE_CAVEAT does. It is the boundary of the reconciliation claim:
+# "dangling" is read off the journal's recorded status, NOT a live probe of the
+# resource. See JournalReader.recovery.
+RECOVERY_CAVEAT = (
+    "Reconciliation queue, read off the journal alone. A 'dangling' effect is "
+    "a row persisted APPLIED inside a transaction that did not commit — the "
+    "journal's own record that a side effect outlived its transaction. It is "
+    "NOT a live probe of the world: Pherix does not re-read the resource to "
+    "confirm the effect is still present, only that the last status the journal "
+    "recorded for it was APPLIED. An irreversible dangling effect "
+    "(reversible=false) has no automatic undo and needs manual reconciliation; "
+    "a reversible one means the backward fold did not reach it before the "
+    "transaction settled."
 )
 
 
@@ -789,6 +816,136 @@ class JournalReader:
             "denials": denials,
             "held_back": held_back,
             "conflict_total": conflict_total,
+        }
+
+    # --- recovery queue (the undo guarantee's failure mode) ----------------
+
+    def recovery(self) -> dict:
+        """The reconciliation queue: transactions that did not commit yet still
+        hold side effects the journal could not undo.
+
+        This is the read-side companion to the engine's recovery path, and the
+        most on-thesis traversal there is: the whole product promises *undo*,
+        and this surfaces every place undo did **not** complete. When a backward
+        fold can't finish — a compensator is missing or itself fails — the
+        transaction settles ``PARTIAL`` or ``STUCK`` and the effects it already
+        applied stay ``APPLIED``: live side effects stranded outside any
+        committed transaction. A pure GROUP-of-effects-by-txn fold gathers them
+        into the queue an operator has to work; nothing is recomputed from the
+        live world (see :data:`RECOVERY_CAVEAT`).
+
+        A transaction enters the queue when it is terminal but not
+        ``COMMITTED`` and either the engine flagged its unwind incomplete
+        (``PARTIAL`` / ``STUCK``) or it still carries an ``APPLIED`` effect — so
+        a clean ``ROLLED_BACK`` (everything ``COMPENSATED``) is correctly
+        absent, while a ``ROLLED_BACK`` that anomalously left an applied effect
+        is surfaced rather than hidden. Per transaction the effects split into:
+
+        ``dangling``
+            ``APPLIED`` effects inside a non-committed txn — the side effects
+            that survived the failed unwind. ``reversible=False`` marks the
+            worst case: an irreversible action with no automatic undo, needing
+            manual reconciliation. This is the list an operator acts on.
+
+        ``reversed``
+            ``COMPENSATED`` effects — the part of the unwind that *did* land.
+            Carried so the operator sees what is already clean.
+
+        ``failed``
+            ``FAILED`` effects — denied or errored, never took effect, nothing
+            to reconcile. Carried for completeness.
+
+        (``STAGED`` / ``GATED`` effects in such a txn are neither live nor
+        to-reconcile and appear in none of the three buckets, by design.)
+
+        Ordered most-recently-updated first — the freshest incident on top —
+        ties broken by ``txn_id`` for determinism. NULL/absent-column tolerant
+        like the rest of the reader: a per-effect ``actor`` is carried when the
+        column exists, omitted otherwise.
+        """
+        actor_select = ", actor" if self._has_actor else ""
+        placeholders = ", ".join("?" for _ in UNCOMMITTED_TERMINAL_STATES)
+        txn_rows = self._conn.execute(
+            "SELECT txn_id, state, created_at, updated_at, client_id, dry_run "
+            "FROM transactions "
+            f"WHERE state IN ({placeholders}) "
+            "ORDER BY updated_at DESC, txn_id",
+            UNCOMMITTED_TERMINAL_STATES,
+        ).fetchall()
+
+        queue: list[dict] = []
+        total_dangling = 0
+        total_irreversible = 0
+        for t in txn_rows:
+            td = dict(t)
+            eff_rows = self._conn.execute(
+                "SELECT idx, tool, resource, reversible, status, write_keys"
+                + actor_select
+                + " FROM effects WHERE txn_id = ? ORDER BY idx",
+                (td["txn_id"],),
+            ).fetchall()
+            dangling: list[dict] = []
+            reversed_: list[dict] = []
+            failed: list[dict] = []
+            for e in eff_rows:
+                d = dict(e)
+                entry = {
+                    "idx": d["idx"],
+                    "tool": d["tool"],
+                    "resource": d["resource"],
+                    "reversible": bool(d["reversible"]),
+                    "status": d["status"],
+                    "writes": [_lineage_key(k) for k in _loads(d["write_keys"], [])],
+                }
+                if self._has_actor:
+                    entry["actor"] = d["actor"]
+                if d["status"] == "APPLIED":
+                    dangling.append(entry)
+                elif d["status"] == "COMPENSATED":
+                    reversed_.append(entry)
+                elif d["status"] == "FAILED":
+                    failed.append(entry)
+            # A clean ROLLED_BACK (nothing stranded, engine not flagging it) has
+            # nothing to reconcile — keep it out of the queue.
+            if td["state"] not in INCOMPLETE_UNWIND_STATES and not dangling:
+                continue
+            summary = txn_summary(td["state"])
+            irreversible = sum(1 for x in dangling if not x["reversible"])
+            total_dangling += len(dangling)
+            total_irreversible += irreversible
+            queue.append(
+                {
+                    "txn_id": td["txn_id"],
+                    "state": td["state"],
+                    "tone": summary["tone"],
+                    "blurb": summary["blurb"],
+                    "created_at": td["created_at"],
+                    "updated_at": td["updated_at"],
+                    "client_id": td["client_id"],
+                    "dry_run": bool(td["dry_run"]),
+                    "dangling": dangling,
+                    "reversed": reversed_,
+                    "failed": failed,
+                    "dangling_count": len(dangling),
+                    "irreversible_dangling": irreversible,
+                }
+            )
+
+        return {
+            "scope": {
+                # The states the engine itself flags as an incomplete unwind,
+                # always queued; plus any ROLLED_BACK left holding an applied
+                # effect (the anomaly path), stated rather than implied.
+                "incomplete_unwind_states": list(INCOMPLETE_UNWIND_STATES),
+                "also_included": "rolled_back_txns_with_a_surviving_applied_effect",
+                "caveat": RECOVERY_CAVEAT,
+            },
+            "queue": queue,
+            "totals": {
+                "transactions": len(queue),
+                "dangling_effects": total_dangling,
+                "irreversible_dangling_effects": total_irreversible,
+            },
         }
 
     # --- lineage (causal read→write provenance) ----------------------------
