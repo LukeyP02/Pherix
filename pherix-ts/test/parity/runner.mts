@@ -55,6 +55,8 @@ import {
   DynamoDbAdapter,
   Effect,
   ElasticsearchAdapter,
+  FilesystemAdapter,
+  FsHandle,
   GateBlocked,
   GcsAdapter,
   GitAdapter,
@@ -66,6 +68,9 @@ import {
   MongoAdapter,
   MqAdapter,
   MySQLAdapter,
+  type PgClient,
+  type PgResult,
+  PostgresAdapter,
   REGISTRY,
   RedisAdapter,
   RestAdapter,
@@ -541,6 +546,74 @@ async function mysqlCommit(): Promise<CanonJournal> {
   return out;
 }
 
+/** postgres_commit — insert one row that commits (better-sqlite3-backed pg fake,
+ *  same pattern as test/postgres.test.ts: SQLite speaks the SAVEPOINT grammar and
+ *  `$n` placeholders are rewritten to positional `?`). Mirrors the Python
+ *  `_postgres_commit`, whose `%s` placeholders rewrite the same way. */
+async function postgresCommit(): Promise<CanonJournal> {
+  REGISTRY.clear();
+  class FakePg implements PgClient {
+    constructor(public readonly db: Database.Database) {}
+    async query(text: string, params: unknown[] = []): Promise<PgResult> {
+      const sql = text.replace(/\$\d+/g, "?");
+      if (/^\s*select/i.test(sql) || /\breturning\b/i.test(sql)) {
+        const rows = this.db.prepare(sql).all(...(params as never[])) as Array<Record<string, unknown>>;
+        return { rows };
+      }
+      if (params.length > 0) {
+        this.db.prepare(sql).run(...(params as never[]));
+        return { rows: [] };
+      }
+      this.db.exec(sql);
+      return { rows: [] };
+    }
+  }
+  const db = new Database(":memory:");
+  db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)");
+  const pg = new PostgresAdapter(new FakePg(db));
+  const insertUser = tool<{ name: string }>(
+    "postgres",
+    async (conn: PgClient, args: { name: string }) => {
+      await conn.query("INSERT INTO users (name) VALUES ($1)", [args.name]);
+      return args.name;
+    },
+    { name: "insertUser" },
+  );
+  const ctx = await agentTxn({ postgres: pg }, async () => {
+    await insertUser({ name: "bob" });
+  });
+  const out = canonical(ctx.txn, "ok");
+  db.close();
+  return out;
+}
+
+/** filesystem_commit — write one file that commits. The FsHandle records a write
+ *  key automatically, so this proves cross-SDK parity of the content-addressed
+ *  filesystem version: the same raw bytes (`enc("hello")` / Python `b"hello"`)
+ *  hash to the SAME sha256 on both sides. A real temp dir is used and removed in
+ *  a `finally`, mirroring the Python `_filesystem_commit`. */
+async function filesystemCommit(): Promise<CanonJournal> {
+  REGISTRY.clear();
+  const root = mkdtempSync(path.join(tmpdir(), "pherix_fs_parity_"));
+  const fs = new FilesystemAdapter(root);
+  const writeFile = tool<{ path: string }>(
+    "fs",
+    (handle: FsHandle, args: { path: string }) => {
+      handle.write(args.path, enc("hello"));
+      return { ok: true };
+    },
+    { name: "writeFile" },
+  );
+  try {
+    const ctx = await agentTxn({ fs }, async () => {
+      await writeFile({ path: "note.txt" });
+    });
+    return canonical(ctx.txn, "ok");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 /** memory_commit — a governed-memory `remember` that commits (STAGED ->
  *  APPLIED). The memory handle records a write key automatically, so this also
  *  proves cross-SDK parity of the content-addressed version: `remember` of a
@@ -662,6 +735,8 @@ const SCENARIOS: Record<string, () => Promise<CanonJournal>> = {
   gcs_commit: gcsCommit,
   elasticsearch_commit: elasticsearchCommit,
   mysql_commit: mysqlCommit,
+  postgres_commit: postgresCommit,
+  filesystem_commit: filesystemCommit,
   memory_commit: memoryCommit,
   git_commit: gitCommit,
   // Irreversible adapters — one gate scenario each (GATED -> ROLLED_BACK).
