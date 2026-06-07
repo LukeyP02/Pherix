@@ -184,6 +184,25 @@ APPROVAL_CAVEAT = (
     "not from this approval."
 )
 
+# The accountability ledger's honest-scope statement — travels with the payload
+# like the caveats above. It is the boundary of the per-actor governance fold:
+# what an actor row does and does NOT prove. See JournalReader.accountability.
+ACCOUNTABILITY_CAVEAT = (
+    "Per-actor governance ledger, folded from the journal's recorded ``actor`` "
+    "on each effect. The actor is ATTRIBUTION, not authentication — Pherix "
+    "records the principal an effect claimed to run on behalf of; it does NOT "
+    "verify identity, so a row attributes actions to a *claimed* principal, not "
+    "a proven one. ``irreversible_applied`` is the at-a-glance blast figure — "
+    "effects this principal drove that are both irreversible (no compensator) "
+    "and recorded APPLIED, i.e. fired and cannot be auto-undone — read off the "
+    "journal's status, NOT a live probe of the world. Effects carrying no "
+    "declared principal are surfaced under ``unattributed`` (a governance gap "
+    "worth seeing), never dropped; on a journal predating the actor column "
+    "(``supported = false``) every effect is unattributed. The fold is a census "
+    "of what each principal did or attempted — in-flight and gated effects "
+    "included — not a rate over settled transactions (that is reliability())."
+)
+
 
 def _lineage_key(entry: Any) -> dict:
     """Normalise a persisted key triple into ``{resource, key, version}``.
@@ -1012,6 +1031,161 @@ class JournalReader:
             "denials": denials,
             "held_back": held_back,
             "conflict_total": conflict_total,
+        }
+
+    # --- accountability ledger (Wedge #1 — action-governance) --------------
+
+    def accountability(self, *, include_dry_run: bool = False) -> dict:
+        """A per-actor GROUP-BY fold over the journal — the governance ledger.
+
+        The reliability fold answers *how often does the system commit / fail*
+        (a tool-centric rate). The lineage fold answers *what read informed what
+        write* (a provenance chain). Neither answers the action-governance
+        question the sidecar wedge is built on: **on whose authority did each
+        action happen, and how did that principal's actions land?** This fold
+        does — a census of every effect grouped by its recorded ``actor``.
+
+        Like :meth:`reliability` it is a pure traversal of the journal already on
+        disk: one scan over the effects (joined to their txn for the dry-run
+        filter), folded in Python. No engine import, no recomputation, no writes,
+        and — crucially — it never touches the actor *data model*; it only reads
+        the column the engine already stamps. The shape:
+
+        ``scope``
+            ``include_dry_run`` — the caller's choice (``False`` by default: a
+            dry-run touched nothing, so folding its effects into "what did this
+            principal actually do?" would overstate the footprint). The effects
+            join their txn so the filter actually bites.
+
+        ``supported``
+            Whether the ``effects`` table carries an ``actor`` column at all
+            (``self._has_actor``). ``False`` on a journal written before the
+            field landed — every effect is then ``unattributed`` and ``actors``
+            is empty *because the schema predates the column*, not because no
+            principal acted. Stated so the consumer never misreads the empty list.
+
+        ``actors``
+            One record per **named** principal, ranked. Each carries: ``effects``
+            (total attributed in scope), ``txns`` (distinct transactions touched),
+            ``tools`` (sorted distinct tools driven on this authority),
+            ``reversibility`` (the reversible / irreversible split — the lead-value
+            dimension), ``by_status`` (the full effect-status histogram), and the
+            at-a-glance governance columns ``irreversible_applied`` (irreversibles
+            that FIRED and cannot be auto-undone — the blast figure), ``gated``
+            (held at the gate), ``failed`` (denied / errored), ``compensated``
+            (undone by the backward fold). Ranking: ``irreversible_applied`` desc
+            (most un-undoable blast first), then ``effects`` desc (busiest), then
+            actor name for a stable order.
+
+        ``unattributed``
+            The same record shape for every effect carrying NO declared principal
+            (``actor IS NULL``) — a real action with no accountable principal,
+            surfaced as a governance gap rather than dropped. ``None`` when every
+            counted effect names a principal. The whole journal lands here on a
+            pre-actor schema.
+
+        Unlike the reliability rates, this is a **census, not a rate**: it counts
+        in-flight (OPEN / STAGED) and gated effects too — a held irreversible is
+        exactly what governance wants to see — so there is no settled-only
+        denominator here.
+
+        ``totals``
+            A whole-scope rollup (named + unattributed combined) so the dashboard
+            has a headline without re-folding: ``actors`` (distinct named
+            principals), ``effects``, ``irreversible_applied``, ``gated``,
+            ``failed``, ``compensated``, and ``unattributed_effects``.
+        """
+        if include_dry_run:
+            txn_filter = "1=1"
+        else:
+            txn_filter = "t.dry_run = 0"
+
+        # ``actor`` is selected as a literal NULL on a pre-actor journal so the
+        # single code path below folds every effect into the unattributed bucket
+        # rather than raising on the absent column. ``_has_actor`` is a probed
+        # bool, never agent input — safe to branch the column name on it.
+        actor_col = "e.actor" if self._has_actor else "NULL"
+        rows = self._conn.execute(
+            f"SELECT {actor_col} AS actor, e.status AS status, "
+            "e.reversible AS reversible, e.tool AS tool, e.txn_id AS txn_id "
+            "FROM effects e JOIN transactions t ON t.txn_id = e.txn_id "
+            "WHERE " + txn_filter
+        ).fetchall()
+
+        def _blank(actor: str | None) -> dict:
+            return {
+                "actor": actor,
+                "effects": 0,
+                "reversibility": {"reversible": 0, "irreversible": 0},
+                "by_status": {s: 0 for s in EFFECT_STATUSES},
+                "irreversible_applied": 0,
+                "_txns": set(),
+                "_tools": set(),
+            }
+
+        buckets: dict[Any, dict] = {}
+        for r in rows:
+            actor = r["actor"]
+            b = buckets.get(actor)
+            if b is None:
+                b = buckets[actor] = _blank(actor)
+            b["effects"] += 1
+            status = r["status"]
+            # ``.get`` + assign tolerates a status a newer engine added (it lands
+            # as a fresh key) the same way reliability's effect histogram does.
+            b["by_status"][status] = b["by_status"].get(status, 0) + 1
+            if bool(r["reversible"]):
+                b["reversibility"]["reversible"] += 1
+            else:
+                b["reversibility"]["irreversible"] += 1
+                # The blast figure: irreversible AND it actually fired (APPLIED).
+                # A GATED or FAILED irreversible never took effect, so it is not
+                # un-undoable blast — only an APPLIED one is.
+                if status == "APPLIED":
+                    b["irreversible_applied"] += 1
+            b["_txns"].add(r["txn_id"])
+            b["_tools"].add(r["tool"])
+
+        def _finalise(b: dict) -> dict:
+            bs = b["by_status"]
+            return {
+                "actor": b["actor"],
+                "effects": b["effects"],
+                "txns": len(b["_txns"]),
+                "tools": sorted(b["_tools"]),
+                "reversibility": b["reversibility"],
+                "by_status": bs,
+                "irreversible_applied": b["irreversible_applied"],
+                "gated": bs.get("GATED", 0),
+                "failed": bs.get("FAILED", 0),
+                "compensated": bs.get("COMPENSATED", 0),
+            }
+
+        named = [_finalise(b) for a, b in buckets.items() if a is not None]
+        named.sort(
+            key=lambda r: (-r["irreversible_applied"], -r["effects"], r["actor"])
+        )
+        unattributed = _finalise(buckets[None]) if None in buckets else None
+
+        # Whole-scope rollup over named + unattributed — one headline, no re-fold.
+        rollup = named + ([unattributed] if unattributed else [])
+        totals = {
+            "actors": len(named),
+            "effects": sum(r["effects"] for r in rollup),
+            "irreversible_applied": sum(r["irreversible_applied"] for r in rollup),
+            "gated": sum(r["gated"] for r in rollup),
+            "failed": sum(r["failed"] for r in rollup),
+            "compensated": sum(r["compensated"] for r in rollup),
+            "unattributed_effects": unattributed["effects"] if unattributed else 0,
+        }
+
+        return {
+            "caveat": ACCOUNTABILITY_CAVEAT,
+            "scope": {"include_dry_run": include_dry_run},
+            "supported": self._has_actor,
+            "actors": named,
+            "unattributed": unattributed,
+            "totals": totals,
         }
 
     # --- recovery queue (the undo guarantee's failure mode) ----------------

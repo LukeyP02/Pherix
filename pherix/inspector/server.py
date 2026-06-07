@@ -142,6 +142,21 @@ class InspectorHandler(BaseHTTPRequestHandler):
                     ),
                 )
                 return
+            if path == "/api/accountability":
+                q = parse_qs(parsed.query)
+                vals = q.get("include_dry_run")
+                # Same default as reliability(): dry-runs excluded unless the
+                # param is explicitly "1" — a dry-run touched nothing, so it is
+                # not part of "what did this principal actually do?".
+                include_dry_run = bool(vals) and vals[0] == "1"
+                self._json(
+                    200,
+                    self._read(
+                        self.srv.reader.accountability,
+                        include_dry_run=include_dry_run,
+                    ),
+                )
+                return
             if path == "/api/recovery":
                 self._json(200, self._read(self.srv.reader.recovery))
                 return
