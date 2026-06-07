@@ -169,6 +169,21 @@ RECOVERY_CAVEAT = (
     "transaction settled."
 )
 
+# The approval queue's honest-scope statement — travels with the payload like
+# the two caveats above. It is the boundary of the over-the-wire gate claim:
+# what a PENDING/APPROVED row does and does NOT prove. See JournalReader.approvals.
+APPROVAL_CAVEAT = (
+    "Over-the-wire gate queue, read off the approvals journal alone. A PENDING "
+    "row is a staged irreversible whose commit the gate held until an "
+    "out-of-process approve(token) lands; an APPROVED row records the principal "
+    "who cleared it and when. The approver is ATTRIBUTION, not authentication — "
+    "Pherix records the claimed principal, it does not verify identity. Crucially, "
+    "an APPROVED row proves authorisation was GRANTED, NOT that the held "
+    "transaction has since resumed and committed: whether the approved effect "
+    "actually fired is a separate fact, read from that transaction's own state, "
+    "not from this approval."
+)
+
 
 def _lineage_key(entry: Any) -> dict:
     """Normalise a persisted key triple into ``{resource, key, version}``.
@@ -233,6 +248,11 @@ class JournalReader:
         # simply has none, and the reader degrades to "zero conflicts" rather
         # than failing to load.
         self._has_conflicts = self._table_exists("conflicts")
+        # The approvals table (Prong #1 — the over-the-wire human gate) is
+        # optional the same way: a journal written before approval recording
+        # has none, and the reader degrades to an empty queue rather than
+        # failing to load.
+        self._has_approvals = self._table_exists("approvals")
 
     # --- introspection ------------------------------------------------------
 
@@ -354,7 +374,10 @@ class JournalReader:
         verdict, any per-rule policy verdicts attached to that effect, and
         ``informed_by`` — the explicit per-effect result→inputs provenance: the
         reads (this effect's own + every earlier read in this txn) that informed
-        this effect's result. See :meth:`_informed_by`.
+        this effect's result. See :meth:`_informed_by`. Alongside the effects it
+        carries the txn's ``conflicts`` (Prong #2) and ``approvals`` (Prong #1 —
+        the over-the-wire gate lifecycle), both txn-level facts that ride beside
+        the effect list rather than inside it.
         """
         trow = self._conn.execute(
             "SELECT * FROM transactions WHERE txn_id = ?", (txn_id,)
@@ -409,11 +432,14 @@ class JournalReader:
         # Prong #2: the conflicts (if any) attach to the transaction, not to
         # an effect — a conflict is a property of the txn's read-set against
         # the world at commit, spanning the whole journal, so it rides
-        # alongside the effect list rather than inside it.
+        # alongside the effect list rather than inside it. Prong #1: the
+        # approval records ride alongside the same way — the over-the-wire gate
+        # lifecycle (who is held, who cleared it) is a property of the txn.
         return {
             "transaction": summary,
             "effects": effects,
             "conflicts": self.get_conflicts(txn_id),
+            "approvals": self.get_approvals(txn_id),
         }
 
     # --- per-effect result→inputs provenance -------------------------------
@@ -569,6 +595,161 @@ class JournalReader:
             )
         return out
 
+    # --- over-the-wire approvals (optional table, Prong #1) ----------------
+
+    def _approval_record(self, d: dict) -> dict:
+        """Render-ready shape for one approval row, shared by both readers.
+
+        ``d`` is an approvals row LEFT-JOINed to the effect it gates, so the
+        gated effect's identity (``idx`` / ``tool`` / ``resource`` /
+        ``reversible`` / ``actor``) rides with the approval — a console renders
+        *what* is held without a second lookup. The join is LEFT so an approval
+        whose effect row is somehow absent still surfaces (tolerated, never a
+        crash). ``actor`` is carried only when the effects table has the column.
+        """
+        approved = d["status"] == "APPROVED"
+        rec = {
+            "effect_id": d["effect_id"],
+            "token": d["token"],
+            "status": d["status"],
+            # The derived at-a-glance flag + tone: a PENDING hold reads amber
+            # ("pending" — in the queue, action needed, NOT denied); an APPROVED
+            # clear reads green.
+            "approved": approved,
+            "tone": "ok" if approved else "pending",
+            "approver": d["approver"],
+            "requested_at": d["requested_at"],
+            "approved_at": d["approved_at"],
+            # the gated effect's identity (LEFT JOIN — None if the effect row is
+            # absent; tolerated)
+            "idx": d.get("idx"),
+            "tool": d.get("tool"),
+            "resource": d.get("resource"),
+            "reversible": (
+                bool(d["reversible"]) if d.get("reversible") is not None else None
+            ),
+        }
+        if self._has_actor:
+            rec["actor"] = d.get("actor")
+        return rec
+
+    def get_approvals(self, txn_id: str) -> list[dict]:
+        """Recorded over-the-wire approvals for one transaction, oldest-first.
+
+        Each row is the gate's persisted approval record — the PENDING request a
+        staged irreversible raised and, once an out-of-process ``approve(token)``
+        landed, its APPROVED resolution (the approver principal + timestamp).
+        Enriched with the gated effect's own identity by joining the effect the
+        approval is keyed to (see :meth:`_approval_record`). Empty when the
+        journal predates the approvals table or the txn never gated an
+        irreversible — both mean "nothing to show" and neither raises, exactly
+        like :meth:`get_conflicts`.
+        """
+        if not self._has_approvals:
+            return []
+        actor_col = ", e.actor AS actor" if self._has_actor else ""
+        rows = self._conn.execute(
+            "SELECT a.effect_id, a.token, a.status, a.approver, "
+            "a.requested_at, a.approved_at, "
+            "e.idx AS idx, e.tool AS tool, e.resource AS resource, "
+            "e.reversible AS reversible" + actor_col + " "
+            "FROM approvals a "
+            "LEFT JOIN effects e "
+            "ON e.txn_id = a.txn_id AND e.effect_id = a.effect_id "
+            "WHERE a.txn_id = ? "
+            "ORDER BY a.requested_at, a.effect_id",
+            (txn_id,),
+        ).fetchall()
+        return [self._approval_record(dict(r)) for r in rows]
+
+    def approvals(self) -> dict:
+        """The over-the-wire approval queue — a fold over the approvals journal.
+
+        The operational surface of "gate the irreversible": every staged
+        irreversible whose commit the gate held for an out-of-process approval,
+        split into the queue still to action and the log already cleared. A pure
+        traversal of the append-only approvals table — no live state, nothing
+        recomputed (see :data:`APPROVAL_CAVEAT`).
+
+        ``pending``
+            PENDING requests — irreversibles held at the gate, waiting on an
+            ``approve(token)`` that has not landed. The queue an operator works,
+            freshest request first. This is the action-governance sidecar's
+            core view: what is held right now and on whose behalf.
+
+        ``approved``
+            APPROVED records — the cleared log, freshest approval first: which
+            principal approved which effect and when. Carried for provenance.
+            Per the caveat, an APPROVED row proves authorisation was granted,
+            NOT that the held transaction has since resumed and committed.
+
+        ``totals``
+            ``pending`` / ``approved`` counts and the distinct ``approvers``
+            seen — the actor-axis of the gate. Zero / empty (not absent) on a
+            journal predating the approvals table, so a console always has a
+            number to show.
+
+        Each record carries its ``txn_id`` and the holding transaction's
+        ``txn_state`` / ``txn_tone`` (journal-wide, so the txn context travels
+        with the row) plus the gated effect's identity from
+        :meth:`_approval_record`.
+        """
+        empty = {
+            "scope": {"states": ["PENDING", "APPROVED"], "caveat": APPROVAL_CAVEAT},
+            "pending": [],
+            "approved": [],
+            "totals": {"pending": 0, "approved": 0, "approvers": []},
+        }
+        if not self._has_approvals:
+            return empty
+        actor_col = ", e.actor AS actor" if self._has_actor else ""
+        rows = self._conn.execute(
+            "SELECT a.txn_id AS txn_id, a.effect_id, a.token, a.status, "
+            "a.approver, a.requested_at, a.approved_at, "
+            "e.idx AS idx, e.tool AS tool, e.resource AS resource, "
+            "e.reversible AS reversible" + actor_col + ", "
+            "t.state AS txn_state "
+            "FROM approvals a "
+            "LEFT JOIN effects e "
+            "ON e.txn_id = a.txn_id AND e.effect_id = a.effect_id "
+            "LEFT JOIN transactions t ON t.txn_id = a.txn_id"
+        ).fetchall()
+        pending: list[dict] = []
+        approved: list[dict] = []
+        approvers: set[str] = set()
+        for r in rows:
+            d = dict(r)
+            rec = self._approval_record(d)
+            rec["txn_id"] = d["txn_id"]
+            state = d.get("txn_state")
+            summ = txn_summary(state) if state else {"tone": "unknown", "blurb": state}
+            rec["txn_state"] = state
+            rec["txn_tone"] = summ["tone"]
+            if rec["approved"]:
+                approved.append(rec)
+                if rec["approver"]:
+                    approvers.add(rec["approver"])
+            else:
+                pending.append(rec)
+        # Freshest on top, ties broken by effect_id for determinism. Two stable
+        # passes: secondary key (effect_id asc) first, primary key (timestamp
+        # desc) second — Python's stable sort then yields timestamp-desc,
+        # effect_id-asc. PENDING orders on requested_at, APPROVED on approved_at.
+        pending.sort(key=lambda x: x["effect_id"])
+        pending.sort(key=lambda x: x["requested_at"] or "", reverse=True)
+        approved.sort(key=lambda x: x["effect_id"])
+        approved.sort(key=lambda x: x["approved_at"] or "", reverse=True)
+        return {
+            "scope": {"states": ["PENDING", "APPROVED"], "caveat": APPROVAL_CAVEAT},
+            "pending": pending,
+            "approved": approved,
+            "totals": {
+                "pending": len(pending),
+                "approved": len(approved),
+                "approvers": sorted(approvers),
+            },
+        }
+
     # --- summary stats ------------------------------------------------------
 
     def stats(self) -> dict:
@@ -624,6 +805,19 @@ class JournalReader:
             conflict_total = self._conn.execute(
                 "SELECT COUNT(*) FROM conflicts"
             ).fetchone()[0]
+        # Prong #1: the over-the-wire gate's headline numbers. ``pending`` is
+        # the at-a-glance count that matters for the action-governance sidecar —
+        # how many irreversibles are held right now. Zero (not absent) on a
+        # journal predating the approvals table, mirroring conflict_total.
+        approvals_pending = 0
+        approvals_total = 0
+        if self._has_approvals:
+            approvals_pending = self._conn.execute(
+                "SELECT COUNT(*) FROM approvals WHERE status = 'PENDING'"
+            ).fetchone()[0]
+            approvals_total = self._conn.execute(
+                "SELECT COUNT(*) FROM approvals"
+            ).fetchone()[0]
         return {
             "txn_total": txn_total,
             "txns_by_state": by_state,
@@ -633,6 +827,8 @@ class JournalReader:
             "tools": tools,
             "has_verdicts": verdict_rows > 0,
             "conflict_total": conflict_total,
+            "approvals_pending": approvals_pending,
+            "approvals_total": approvals_total,
         }
 
     # --- reliability metrics (Prong #2) ------------------------------------

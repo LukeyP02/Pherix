@@ -16,6 +16,7 @@ Routes:
 ``GET /api/transactions/<id>``  one transaction's full timeline
 ``GET /api/reliability``        reliability metrics (Prong #2) over the journal
 ``GET /api/recovery``           reconciliation queue — txns that didn't undo cleanly
+``GET /api/approvals``          over-the-wire gate queue — held + cleared irreversibles
 ``GET /api/lineage``            causal read→write provenance (``?txn=<id>``)
 ==============================  ===========================================
 
@@ -143,6 +144,9 @@ class InspectorHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/recovery":
                 self._json(200, self._read(self.srv.reader.recovery))
+                return
+            if path == "/api/approvals":
+                self._json(200, self._read(self.srv.reader.approvals))
                 return
             if path == "/api/transactions":
                 self._json(200, self._list(parse_qs(parsed.query)))

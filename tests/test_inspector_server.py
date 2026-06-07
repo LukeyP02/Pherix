@@ -175,6 +175,29 @@ def test_api_recovery_surfaces_the_stuck_txn(server: str):
     assert "NOT a live probe" in data["scope"]["caveat"]
 
 
+# --- approvals (over-the-wire gate queue) ----------------------------------
+
+
+def test_api_approvals_surfaces_the_held_charge(server: str):
+    status, data = _get_json(server + "/api/approvals")
+    assert status == 200
+    assert set(data) >= {"scope", "pending", "approved", "totals"}
+    # The seed holds the gated charge PENDING and nothing cleared yet — it
+    # survives the round trip over the wire, enriched with its effect identity.
+    assert data["totals"] == {"pending": 1, "approved": 0, "approvers": []}
+    held = data["pending"][0]
+    assert held["tool"] == "charge_card"
+    assert held["reversible"] is False
+    assert held["status"] == "PENDING"
+    assert held["txn_id"] == "txn-gated-charge03"
+    assert "NOT that the held transaction has since resumed" in data["scope"]["caveat"]
+
+
+def test_api_timeline_carries_approvals(server: str):
+    _, data = _get_json(server + "/api/transactions/txn-gated-charge03")
+    assert [a["tool"] for a in data["approvals"]] == ["charge_card"]
+
+
 # --- lineage (action-provenance) -------------------------------------------
 
 
