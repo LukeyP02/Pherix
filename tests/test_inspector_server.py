@@ -216,3 +216,31 @@ def test_api_lineage_txn_scoped(server: str):
     _, data = _get_json(server + "/api/lineage?txn=txn-clean-deploy01")
     assert data["scope"]["txn_id"] == "txn-clean-deploy01"
     assert {c["txn_id"] for c in data["chains"]} == {"txn-clean-deploy01"}
+
+
+# --- undo impact (blast radius of reversing a transaction) ------------------
+
+
+def test_api_undo_impact_clean_deploy(server: str):
+    status, data = _get_json(server + "/api/undo-impact/txn-clean-deploy01")
+    assert status == 200
+    assert set(data) >= {"target", "downstream", "superseded", "verdict",
+                         "totals", "caveat"}
+    # nobody committed-read releases/current v12 → a self-contained undo
+    assert data["verdict"]["label"] == "clean"
+    assert data["downstream"] == []
+    # the versionless fs manifest is surfaced as a blind spot, not dropped
+    assert data["target"]["versionless_writes"][0]["resource"] == "fs"
+    assert "blast radius" in data["caveat"].lower()
+
+
+def test_api_undo_impact_not_committed(server: str):
+    """The gated charge is STAGED — the verdict says there is nothing committed
+    to reverse rather than pretending an undo is available."""
+    _, data = _get_json(server + "/api/undo-impact/txn-gated-charge03")
+    assert data["verdict"]["label"] == "not-committed"
+    assert data["verdict"]["undoable"] is False
+
+
+def test_api_undo_impact_missing_is_404(server: str):
+    assert _status_of(server + "/api/undo-impact/txn-nope") == 404

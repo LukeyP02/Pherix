@@ -203,6 +203,29 @@ ACCOUNTABILITY_CAVEAT = (
     "included — not a rate over settled transactions (that is reliability())."
 )
 
+# The undo-impact caveat — travels with the payload like the others. It is the
+# boundary of the blast-radius claim: what folding the journal's version-grounded
+# read-after-write relation does and does NOT prove before you reverse a txn.
+UNDO_IMPACT_CAVEAT = (
+    "Blast radius of an undo, folded off the journal alone — the same "
+    "version-grounded read-after-write relation lineage() calls 'produces'. A "
+    "'downstream consumer' is an effect whose recorded read observed the EXACT "
+    "version this transaction's write produced; the version counter proves the "
+    "read saw this writer's value. It does NOT prove the consumer used that "
+    "value in its own output — Pherix does not trace data-flow through the "
+    "agent/LLM (same boundary as lineage). Entanglement is judged against "
+    "COMMITTED consumers (a standing, final dependency) and against later LIVE "
+    "(APPLIED) writes that superseded this transaction's keys; in-flight readers "
+    "(OPEN/STAGED) are listed but are provisional and do not flip the verdict. "
+    "Irreversible APPLIED effects are a hard floor — they have no compensator "
+    "and cannot be auto-undone regardless of blast radius. Versionless writes "
+    "(e.g. the filesystem adapter) cannot anchor a downstream edge and are "
+    "listed separately as an honest blind spot. This is a STATIC read of the "
+    "journal snapshot, NOT a live simulation of the undo nor a probe of the "
+    "world: it says who the journal records depended on this transaction, not "
+    "what reversing it would do at runtime."
+)
+
 
 def _lineage_key(entry: Any) -> dict:
     """Normalise a persisted key triple into ``{resource, key, version}``.
@@ -1546,4 +1569,247 @@ class JournalReader:
             "edges": unique_edges,
             "chains": chains,
             "caveat": LINEAGE_CAVEAT,
+        }
+
+    # --- undo impact (the blast radius of reversing a transaction) ----------
+
+    def undo_impact(self, txn_id: str) -> dict | None:
+        """The blast radius of undoing one transaction, or ``None`` if unknown.
+
+        The whole product promises *undo*; this is the pre-flight check the
+        promise implies — *before* you reverse a committed transaction, what
+        depends on it? It is lineage's version-grounded ``produces`` relation
+        read in reverse, folded into an undo-safety verdict: nothing is recomputed
+        from the live world (see :data:`UNDO_IMPACT_CAVEAT`). Two hazards, both
+        provable from the journal's recorded keys and the resources' version
+        counters:
+
+        - **downstream consumers** — every effect elsewhere in the journal whose
+          recorded read observed the EXACT version this transaction's write
+          produced. Undoing this transaction reverses that value, so a *committed*
+          consumer is a standing dependency the undo retroactively invalidates.
+          In-flight (OPEN/STAGED) readers are surfaced but provisional; a read in
+          a rolled-back consumer didn't stand, so it never forces the verdict.
+        - **superseded keys** — a key this transaction wrote that a *later* live
+          (APPLIED) write, in another transaction, has since overwritten at a
+          higher version. The current value is no longer this transaction's, so
+          an undo would roll back from a value it did not write — a stale undo.
+
+        The verdict is precedence-ordered: a non-committed target has nothing
+        committed to reverse (``not-committed``); an irreversible APPLIED effect
+        is a hard floor with no compensator (``blocked-irreversible``) regardless
+        of blast; otherwise a committed consumer or a live supersession makes the
+        undo ``entangled``; a target whose outputs nobody committed-read and whose
+        keys nobody overwrote is a self-contained ``clean`` undo.
+
+        Returns a render-ready dict — ``target`` (the txn and the live versioned
+        writes an undo would reverse), ``downstream`` (consumer transactions,
+        committed-and-busiest first), ``superseded`` (keys overwritten since),
+        ``verdict`` and ``totals`` — plus the honest-scope ``caveat``. ``None``
+        when no such transaction exists (the HTTP layer renders that as 404).
+        """
+        trow = self._conn.execute(
+            "SELECT * FROM transactions WHERE txn_id = ?", (txn_id,)
+        ).fetchone()
+        if trow is None:
+            return None
+        td = dict(trow)
+        summary = txn_summary(td["state"])
+        is_committed = td["state"] == "COMMITTED"
+
+        # The target's own effects: count applied/(ir)reversible, and gather the
+        # LIVE versioned writes an undo would reverse. Only APPLIED writes produced
+        # a live value; a STAGED/GATED/FAILED write never landed and a COMPENSATED
+        # one is already undone, so neither anchors an undo.
+        terows = self._conn.execute(
+            "SELECT idx, tool, reversible, status, write_keys "
+            "FROM effects WHERE txn_id = ? ORDER BY idx",
+            (txn_id,),
+        ).fetchall()
+        target_sigs: dict[tuple, dict] = {}
+        versionless: list[dict] = []
+        applied = reversible_applied = irreversible_applied = 0
+        for e in terows:
+            d = dict(e)
+            if d["status"] != "APPLIED":
+                continue
+            applied += 1
+            if d["reversible"]:
+                reversible_applied += 1
+            else:
+                irreversible_applied += 1
+            for w in (_lineage_key(k) for k in _loads(d["write_keys"], [])):
+                if w["version"] is None:
+                    versionless.append(
+                        {"resource": w["resource"], "key": w["key"],
+                         "by_idx": d["idx"], "by_tool": d["tool"]}
+                    )
+                    continue
+                sig = (w["resource"], _freeze(w["key"]), w["version"])
+                target_sigs.setdefault(
+                    sig,
+                    {"resource": w["resource"], "key": w["key"],
+                     "version": w["version"], "by_idx": d["idx"],
+                     "by_tool": d["tool"]},
+                )
+
+        # The latest version this txn holds per key — supersession is judged
+        # against the freshest value an undo would actually restore from.
+        my_key_versions: dict[tuple, int] = {}
+        for (resource, fkey, version) in target_sigs:
+            rk = (resource, fkey)
+            if rk not in my_key_versions or version > my_key_versions[rk]:
+                my_key_versions[rk] = version
+
+        # One pass over the whole journal: collect reads that observed my exact
+        # versions (consumers) and later live writes that superseded my keys.
+        rows = self._conn.execute(
+            "SELECT txn_id, idx, tool, status, read_keys, write_keys "
+            "FROM effects ORDER BY txn_id, idx"
+        ).fetchall()
+        consumers: dict[str, list[dict]] = {}
+        superseded: dict[tuple, dict] = {}
+        for r in rows:
+            d = dict(r)
+            if d["txn_id"] == txn_id:
+                continue  # a txn reading/overwriting its own writes isn't downstream
+            for rd in (_lineage_key(k) for k in _loads(d["read_keys"], [])):
+                if rd["version"] is None:
+                    continue
+                if (rd["resource"], _freeze(rd["key"]), rd["version"]) in target_sigs:
+                    consumers.setdefault(d["txn_id"], []).append(
+                        {"resource": rd["resource"], "key": rd["key"],
+                         "version": rd["version"], "by_idx": d["idx"],
+                         "by_tool": d["tool"], "read_status": d["status"]}
+                    )
+            if d["status"] != "APPLIED":
+                continue  # only a LIVE later write supersedes; a compensated one doesn't
+            for w in (_lineage_key(k) for k in _loads(d["write_keys"], [])):
+                if w["version"] is None:
+                    continue
+                rk = (w["resource"], _freeze(w["key"]))
+                mine = my_key_versions.get(rk)
+                if mine is not None and w["version"] > mine:
+                    cur = superseded.get(rk)
+                    if cur is None or w["version"] > cur["latest_version"]:
+                        superseded[rk] = {
+                            "resource": w["resource"], "key": w["key"],
+                            "my_version": mine, "latest_version": w["version"],
+                            "by_txn": d["txn_id"], "by_idx": d["idx"],
+                            "by_tool": d["tool"],
+                        }
+
+        # Enrich each consumer with its transaction's state (is the dependency
+        # standing?), then order committed-first, busiest-first, id for ties.
+        downstream: list[dict] = []
+        for ctxn, reads in consumers.items():
+            crow = self._conn.execute(
+                "SELECT state, client_id FROM transactions WHERE txn_id = ?",
+                (ctxn,),
+            ).fetchone()
+            cstate = crow["state"] if crow else None
+            csumm = (txn_summary(cstate) if cstate
+                     else {"tone": "unknown", "blurb": "unknown"})
+            downstream.append(
+                {
+                    "txn_id": ctxn,
+                    "state": cstate,
+                    "tone": csumm["tone"],
+                    "blurb": csumm["blurb"],
+                    "client_id": crow["client_id"] if crow else None,
+                    "committed": cstate == "COMMITTED",
+                    "in_flight": cstate in ("OPEN", "STAGED"),
+                    "reads": reads,
+                    "read_count": len(reads),
+                }
+            )
+        downstream.sort(
+            key=lambda x: (not x["committed"], -x["read_count"], x["txn_id"])
+        )
+        superseded_list = sorted(
+            superseded.values(),
+            key=lambda s: (str(s["resource"]), str(s["key"]), s["latest_version"]),
+        )
+
+        committed_consumers = [d for d in downstream if d["committed"]]
+        in_flight_consumers = [d for d in downstream if d["in_flight"]]
+
+        if not is_committed:
+            label, undoable, clean = "not-committed", False, False
+            reason = (
+                f"Transaction is {td['state']}, not COMMITTED — it holds no "
+                "committed effect to reverse. Undo applies to a committed "
+                "transaction."
+            )
+        elif irreversible_applied > 0:
+            label, undoable, clean = "blocked-irreversible", False, False
+            reason = (
+                f"{irreversible_applied} irreversible effect(s) already fired "
+                "(APPLIED, no compensator) and cannot be auto-undone. Any "
+                "reversible effects could roll back, but the transaction as a "
+                "whole has no clean undo."
+            )
+        elif committed_consumers or superseded_list:
+            label, undoable, clean = "entangled", True, False
+            parts: list[str] = []
+            if committed_consumers:
+                parts.append(
+                    f"{len(committed_consumers)} committed transaction(s) read "
+                    "the exact versions this one produced — undoing it "
+                    "retroactively invalidates their inputs"
+                )
+            if superseded_list:
+                parts.append(
+                    f"{len(superseded_list)} of its keys were since overwritten "
+                    "by a later live write — undo would roll back from a value "
+                    "it did not write"
+                )
+            reason = "Undo is mechanically possible but carries a blast radius: " \
+                + "; ".join(parts) + "."
+        else:
+            label, undoable, clean = "clean", True, True
+            reason = (
+                "No committed transaction read this one's outputs and none of "
+                "its keys were since overwritten — the undo is self-contained."
+            )
+            if in_flight_consumers:
+                reason += (
+                    f" ({len(in_flight_consumers)} in-flight transaction(s) are "
+                    "reading these versions but have not committed — re-check "
+                    "before undoing.)"
+                )
+
+        return {
+            "target": {
+                "txn_id": txn_id,
+                "state": td["state"],
+                "tone": summary["tone"],
+                "blurb": summary["blurb"],
+                "client_id": td["client_id"],
+                "is_committed": is_committed,
+                "applied_effects": applied,
+                "reversible_applied": reversible_applied,
+                "irreversible_applied": irreversible_applied,
+                "writes": sorted(
+                    target_sigs.values(),
+                    key=lambda w: (str(w["resource"]), str(w["key"]), w["version"]),
+                ),
+                "versionless_writes": versionless,
+            },
+            "downstream": downstream,
+            "superseded": superseded_list,
+            "verdict": {
+                "label": label,
+                "undoable": undoable,
+                "clean": clean,
+                "reason": reason,
+            },
+            "totals": {
+                "downstream_transactions": len(downstream),
+                "committed_consumers": len(committed_consumers),
+                "in_flight_consumers": len(in_flight_consumers),
+                "downstream_reads": sum(d["read_count"] for d in downstream),
+                "superseded_keys": len(superseded_list),
+            },
+            "caveat": UNDO_IMPACT_CAVEAT,
         }
