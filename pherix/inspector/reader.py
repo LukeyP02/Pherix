@@ -637,6 +637,158 @@ class JournalReader:
             )
         return out
 
+    def contention(self) -> dict:
+        """The isolation collision map — a GROUP-BY fold over the conflicts.
+
+        :meth:`reliability` surfaces a single ``conflict_total`` and
+        :meth:`get_conflicts` lists one transaction's conflicts. Neither answers
+        the isolation-pillar / Wedge #2 question this fold does: **where do
+        concurrent agents collide, and who loses the race?** Every recorded
+        conflict is a *lost read* — the losing side of a non-commutative race the
+        commit-time diff caught — so this counts those collisions three ways:
+
+        ``hotspots``
+            Per ``(resource, key)`` — the rows agents actually fight over,
+            ranked busiest-first. Each carries the distinct losing
+            ``transactions`` and the distinct named ``clients`` that lost a read
+            there. An unattributed (NULL-client) loss still counts toward
+            ``conflicts`` but names no agent, so it is absent from ``clients``.
+
+        ``resources``
+            Per resource — which backend is hot — ranked busiest-first, with the
+            distinct ``keys`` / ``transactions`` counts and the named ``clients``.
+
+        ``by_client``
+            Per ``client_id`` — which agent is least isolation-safe — loudest
+            loser first, the unattributed (NULL) bucket sorting last among its
+            tier so a real agent never hides behind anonymous reads. The
+            per-client conflict counts reconcile back to ``total`` (the NULL
+            bucket keeps the sum honest — nothing is silently dropped).
+
+        Like :meth:`reliability` it is a pure traversal of the journal already on
+        disk — one scan over the conflicts (LEFT-JOINed to their txn for the
+        recorded ``client_id``), folded in Python; no engine import, no
+        recomputation, no writes. ``scope.conflicts_recorded`` is ``False`` on a
+        journal that predates the conflicts table — a console can then say "this
+        journal predates conflict recording" rather than "no conflicts seen" —
+        and in that case (like the empty-table case) every collection is empty
+        and ``total`` is ``0`` rather than a crash.
+        """
+        if not self._has_conflicts:
+            return {
+                "scope": {"conflicts_recorded": False},
+                "total": 0,
+                "hotspots": [],
+                "resources": [],
+                "by_client": [],
+            }
+
+        # One scan; each row is one lost read. The LEFT JOIN keeps a conflict
+        # whose txn row is somehow absent (and so attributes it to the NULL
+        # bucket) rather than dropping it — the counts must reconcile.
+        rows = self._conn.execute(
+            "SELECT c.resource AS resource, c.key AS key, c.txn_id AS txn_id, "
+            "t.client_id AS client_id "
+            "FROM conflicts c LEFT JOIN transactions t ON t.txn_id = c.txn_id"
+        ).fetchall()
+
+        # Group three ways in a single pass. Keys group on their stored JSON
+        # string (the canonical form the engine wrote, so identical tuples
+        # collapse); the parsed list is only re-derived for output. Named-client
+        # sets exclude NULL, but the raw ``conflicts`` count never does.
+        hotspots: dict[tuple, dict] = {}
+        resources: dict[str, dict] = {}
+        by_client: dict[Any, dict] = {}
+        for r in rows:
+            resource, raw_key = r["resource"], r["key"]
+            txn_id, client_id = r["txn_id"], r["client_id"]
+
+            hs = hotspots.setdefault(
+                (resource, raw_key),
+                {"resource": resource, "raw_key": raw_key,
+                 "conflicts": 0, "txns": set(), "clients": set()},
+            )
+            hs["conflicts"] += 1
+            hs["txns"].add(txn_id)
+
+            rs = resources.setdefault(
+                resource,
+                {"resource": resource, "conflicts": 0,
+                 "keys": set(), "txns": set(), "clients": set()},
+            )
+            rs["conflicts"] += 1
+            rs["keys"].add(raw_key)
+            rs["txns"].add(txn_id)
+
+            cl = by_client.setdefault(
+                client_id,
+                {"client_id": client_id, "conflicts": 0,
+                 "resources": set(), "keys": set()},
+            )
+            cl["conflicts"] += 1
+            cl["resources"].add(resource)
+            cl["keys"].add((resource, raw_key))
+
+            if client_id is not None:
+                hs["clients"].add(client_id)
+                rs["clients"].add(client_id)
+
+        # Hotspots: conflicts desc, then resource, then key (sorted on the raw
+        # JSON string so the tiebreak is always comparable and deterministic).
+        hotspot_list = [
+            {
+                "resource": h["resource"],
+                "key": _loads(h["raw_key"], []),
+                "conflicts": h["conflicts"],
+                "transactions": sorted(h["txns"]),
+                "clients": sorted(h["clients"]),
+            }
+            for h in sorted(
+                hotspots.values(),
+                key=lambda h: (-h["conflicts"], h["resource"], h["raw_key"]),
+            )
+        ]
+        # Resources: conflicts desc, then resource.
+        resource_list = [
+            {
+                "resource": rs["resource"],
+                "conflicts": rs["conflicts"],
+                "keys": len(rs["keys"]),
+                "transactions": len(rs["txns"]),
+                "clients": sorted(rs["clients"]),
+            }
+            for rs in sorted(
+                resources.values(),
+                key=lambda rs: (-rs["conflicts"], rs["resource"]),
+            )
+        ]
+        # By client: conflicts desc; the NULL bucket sorts last within its tier
+        # (the ``is None`` flag) so a named agent never hides behind it.
+        client_list = [
+            {
+                "client_id": cl["client_id"],
+                "conflicts": cl["conflicts"],
+                "resources": len(cl["resources"]),
+                "keys": len(cl["keys"]),
+            }
+            for cl in sorted(
+                by_client.values(),
+                key=lambda cl: (
+                    -cl["conflicts"],
+                    cl["client_id"] is None,
+                    cl["client_id"] or "",
+                ),
+            )
+        ]
+
+        return {
+            "scope": {"conflicts_recorded": True},
+            "total": len(rows),
+            "hotspots": hotspot_list,
+            "resources": resource_list,
+            "by_client": client_list,
+        }
+
     # --- over-the-wire approvals (optional table, Prong #1) ----------------
 
     def _approval_record(self, d: dict) -> dict:

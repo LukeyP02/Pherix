@@ -15,6 +15,7 @@ Routes:
 ``GET /api/transactions``       list + filter (query params below)
 ``GET /api/transactions/<id>``  one transaction's full timeline
 ``GET /api/reliability``        reliability metrics (Prong #2) over the journal
+``GET /api/contention``         isolation collision map — where agents collide (Prong #2)
 ``GET /api/recovery``           reconciliation queue — txns that didn't undo cleanly
 ``GET /api/approvals``          over-the-wire gate queue — held + cleared irreversibles
 ``GET /api/lineage``            causal read→write provenance (``?txn=<id>``)
@@ -162,6 +163,9 @@ class InspectorHandler(BaseHTTPRequestHandler):
                         include_dry_run=include_dry_run,
                     ),
                 )
+                return
+            if path == "/api/contention":
+                self._json(200, self._read(self.srv.reader.contention))
                 return
             if path == "/api/recovery":
                 self._json(200, self._read(self.srv.reader.recovery))
