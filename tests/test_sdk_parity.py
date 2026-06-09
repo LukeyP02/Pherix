@@ -66,10 +66,20 @@ Node runner is run from source via ``npx tsx`` (already a ``pherix-ts``
 devDependency) — no build step. If ``node_modules`` is absent the subprocess
 fails and the test reports it loudly rather than silently passing.
 
-The coverage GATE (:func:`test_parity_scenarios_cover_every_adapter`) is pure
-Python and runs unconditionally — it is a static contract check (every shipped
-adapter has a parity scenario) that needs no Node, so a missing scenario is
-caught even on a Node-less machine.
+The coverage GATES are pure Python and run unconditionally — static contract
+checks that need no Node, so they hold even on a Node-less machine (exactly
+where the journal-diff test, ``skipif(NODE is None)``, cannot help):
+
+* :func:`test_parity_scenarios_cover_every_adapter` — every shipped *Python*
+  adapter has a parity scenario.
+* :func:`test_adapter_inventory_symmetric_across_sdks` — the Python and TS
+  adapter inventories are identical, so neither SDK can ship an adapter the
+  other lacks without failing loudly. The earlier gate only walks the Python
+  adapters, so a TS-only adapter (or a Python adapter never ported to TS) would
+  otherwise slip past every Node-less run.
+* :func:`test_parity_scenarios_symmetric_across_sdks` — the Python ``SCENARIOS``
+  list and the TS runner's ``SCENARIOS`` map name the same scenarios, so a
+  scenario added on one side without its twin fails even without Node.
 
 Extending per adapter
 ---------------------
@@ -86,6 +96,7 @@ from __future__ import annotations
 import importlib
 import json
 import pkgutil
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -120,6 +131,7 @@ NODE = shutil.which("node")
 NPX = shutil.which("npx")
 PHERIX_TS = Path(__file__).resolve().parent.parent / "pherix-ts"
 RUNNER = PHERIX_TS / "test" / "parity" / "runner.mts"
+TS_ADAPTERS_DIR = PHERIX_TS / "src" / "adapters"
 
 
 # -- canonicalization --------------------------------------------------------
@@ -842,6 +854,62 @@ def _shipped_adapter_resources() -> set[str]:
     return names
 
 
+def _ts_adapter_resources() -> set[str]:
+    """Every resource name shipped by a concrete adapter under
+    ``pherix-ts/src/adapters`` — the TypeScript twin of
+    :func:`_shipped_adapter_resources`.
+
+    A concrete TS adapter declares its resource as a class-field literal
+    ``readonly name = "<resource>"`` (e.g. ``sql.ts``: ``readonly name =
+    "sql"``). The abstract base declares ``readonly name: string`` with NO
+    literal, so it is excluded by construction; ``index.ts`` only re-exports and
+    carries no declaration. The source is read as TEXT — there is no Node
+    dependency — so this enumerates the TS inventory on a Node-less machine
+    exactly as the Python side does, which is the whole point: the cross-SDK
+    inventory contract must hold where the journal-diff test is skipped.
+    """
+    names: set[str] = set()
+    for ts_file in sorted(TS_ADAPTERS_DIR.glob("*.ts")):
+        for match in re.finditer(r'readonly\s+name\s*=\s*"([^"]+)"', ts_file.read_text()):
+            names.add(match.group(1))
+    return names
+
+
+def _ts_runner_scenarios() -> set[str]:
+    """The scenario names the TS parity runner dispatches — the keys of the
+    ``SCENARIOS`` object literal in ``pherix-ts/test/parity/runner.mts``.
+
+    Parsed statically (no Node): the ``SCENARIOS`` object literal is isolated by
+    brace-matching from its declaration to the matching close brace, then each
+    ``key:`` at the head of a non-comment line is taken as a scenario name. The
+    matching Python set is ``{s.name for s in SCENARIOS}``; the symmetry gate
+    asserts the two are identical, so a scenario added on one SDK without its
+    twin on the other fails loudly even on a Node-less machine — where the
+    journal-diff test that would otherwise catch it is skipped.
+    """
+    src = RUNNER.read_text()
+    brace = src.index("{", src.index("const SCENARIOS"))
+    depth = 0
+    end = brace
+    for i in range(brace, len(src)):
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    names: set[str] = set()
+    for line in src[brace + 1 : end].splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("//", "*", "/*")):
+            continue
+        match = re.match(r"([A-Za-z_]\w*)\s*:", stripped)
+        if match:
+            names.add(match.group(1))
+    return names
+
+
 # -- the parity assertion ----------------------------------------------------
 
 
@@ -965,3 +1033,62 @@ def test_scenario_resource_map_matches_reality():
             f"{scenario.name}: declared resource {declared!r} but effects carry "
             f"{sorted(emitted)} — fix SCENARIO_RESOURCES."
         )
+
+
+# -- the symmetric cross-SDK gates (pure Python — run without Node) ----------
+
+
+def test_adapter_inventory_symmetric_across_sdks():
+    """GATE: the Python and TypeScript SDKs ship the EXACT same set of adapter
+    resources — neither side has an adapter the other lacks.
+
+    :func:`test_parity_scenarios_cover_every_adapter` proves every *Python*
+    adapter has a parity scenario, but it never reads the TS source — so an
+    adapter ported to one SDK and not the other slips through: the missing
+    twin is invisible to a gate that only walks one side's inventory, and the
+    ``one system`` claim quietly breaks. This gate diffs the two inventories
+    directly. Both sides are static text parses, so it holds on a Node-less
+    machine — the same place the journal-diff test (``skipif NODE is None``)
+    cannot help.
+    """
+    if not TS_ADAPTERS_DIR.is_dir():
+        pytest.skip(f"pherix-ts source tree absent: {TS_ADAPTERS_DIR}")
+    py = _shipped_adapter_resources()
+    ts = _ts_adapter_resources()
+    py_only = py - ts
+    ts_only = ts - py
+    assert not py_only, (
+        f"adapters shipped in Python but missing from pherix-ts: {sorted(py_only)}. "
+        "Port the adapter to pherix-ts/src/adapters so the two SDKs stay one system."
+    )
+    assert not ts_only, (
+        f"adapters shipped in pherix-ts but missing from Python: {sorted(ts_only)}. "
+        "Add the adapter under pherix/core/adapters so the two SDKs stay one system."
+    )
+
+
+def test_parity_scenarios_symmetric_across_sdks():
+    """GATE: the Python ``SCENARIOS`` list and the TS runner's ``SCENARIOS`` map
+    name the SAME set of scenarios.
+
+    The journal-diff test pairs a Python scenario with a same-named TS branch —
+    but it is ``skipif(NODE is None)``, so on a Node-less machine a Python
+    scenario whose TS branch was never added (or vice versa) passes silently
+    until someone runs it under Node. This static gate makes the name-pairing a
+    contract that holds WITHOUT Node, naming the unpaired scenario in either
+    direction.
+    """
+    if not RUNNER.exists():
+        pytest.skip(f"pherix-ts parity runner absent: {RUNNER}")
+    py = {s.name for s in SCENARIOS}
+    ts = _ts_runner_scenarios()
+    py_only = py - ts
+    ts_only = ts - py
+    assert not py_only, (
+        f"parity scenarios defined in Python with no TS branch: {sorted(py_only)}. "
+        "Add a same-named entry to SCENARIOS in pherix-ts/test/parity/runner.mts."
+    )
+    assert not ts_only, (
+        f"parity scenarios defined in the TS runner with no Python twin: {sorted(ts_only)}. "
+        "Add a same-named Scenario to SCENARIOS in tests/test_sdk_parity.py."
+    )
