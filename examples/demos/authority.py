@@ -88,7 +88,6 @@ from pherix import (  # noqa: E402
     HTTPAdapter,
     Policy,
     PolicyViolation,
-    SQLiteAdapter,
     agent_txn,
     tool,
 )

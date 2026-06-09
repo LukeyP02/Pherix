@@ -260,7 +260,7 @@ adapters = {<span class="st">"sql"</span>: SQLiteAdapter(conn)}
       <div class="callout"><b>The boundary is explicit.</b> Whether an effect can be rolled back is the adapter's <code>supports_rollback()</code> flag, not a guess. An HTTP POST adapter returns <code>False</code>, so the runtime forces that effect down the staged/gated path instead of pretending it can reverse it.</div>
 
       <h2 id="adapters"><span class="n">§ 07</span>Adapters</h2>
-      <p>An adapter teaches Pherix how to snapshot, apply, and restore one class of resource. Sixteen ship in Python, fourteen mirrored in TypeScript:</p>
+      <p>An adapter teaches Pherix how to snapshot, apply, and restore one class of resource. Fifteen ship in Python, fifteen mirrored in TypeScript:</p>
       <ul class="list">
         <li><b>Databases</b> — SQLite, Postgres, MySQL, MongoDB, Redis, DynamoDB, Elasticsearch.</li>
         <li><b>Storage</b> — filesystem (copy-on-write), S3, GCS, git.</li>

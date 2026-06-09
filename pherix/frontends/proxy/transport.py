@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, TextIO
+from typing import TextIO
 
 from pherix.frontends.proxy.server import (
     INTERNAL_ERROR,

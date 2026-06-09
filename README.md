@@ -163,7 +163,7 @@ python -m pherix.inspector --db demo.db   # open the read-only audit console ove
 
 ## Adapters
 
-Reversible-state rollback against the backend's own semantics — 16 in Python, 14 mirrored in TypeScript: SQLite · Postgres · MySQL · MongoDB · Redis · S3 · GCS · DynamoDB · Elasticsearch · filesystem · HTTP · REST · message queues · git · in-memory. Each lazy-imports its driver, so `import pherix` stays dependency-free (`pip install pherix[postgres]` pulls only what that adapter needs).
+Reversible-state rollback against the backend's own semantics — 15 in Python, 15 mirrored in TypeScript: SQLite · Postgres · MySQL · MongoDB · Redis · S3 · GCS · DynamoDB · Elasticsearch · filesystem · HTTP · REST · message queues · git · in-memory. Each lazy-imports its driver, so `import pherix` stays dependency-free (`pip install pherix[postgres]` pulls only what that adapter needs).
 
 ## Status
 
