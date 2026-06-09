@@ -26,7 +26,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 from pherix.core.audit import AuditJournal
-from pherix.core.effects import Effect, EffectStatus
+from pherix.core.effects import Effect, EffectStatus, compute_approval_token
 from pherix.core.transaction import Transaction, TxnState
 
 
@@ -184,7 +184,20 @@ def seed_demo_journal(path: str) -> dict:
     try:
         _write(journal, _clean_commit())
         _write(journal, _rollback())
-        _write(journal, _gated())
+        gated = _gated()
+        _write(journal, gated)
+        # The held irreversible (charge_card, idx1) raised a PENDING over-the-wire
+        # approval: the gate persisted a request keyed by that staged effect,
+        # waiting on an out-of-process approve(token). The token is the engine's
+        # own deterministic derivation, so the seeded row is byte-for-byte what
+        # the gate writes — this is the action-governance queue the inspector's
+        # /api/approvals surfaces.
+        charge = gated.effects[1]
+        journal.record_pending_approval(
+            gated.txn_id,
+            charge.effect_id,
+            compute_approval_token(gated.txn_id, charge.effect_id),
+        )
         # The gated charge: a spend cap allows it at stage but the running
         # total trips it at commit — the world-state divergence the inspector
         # surfaces (allowed when planned, denied when it fired).

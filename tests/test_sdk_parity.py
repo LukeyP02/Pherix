@@ -60,11 +60,26 @@ the two SDKs one system; if it ever drifts, this suite catches it.
 
 Skip mechanism
 --------------
-Mirrors ``test_governance_js_conformance.py``: the whole module is
-``skipif(node is None)`` so the offline Python suite stays green on a machine
-without Node. The Node runner is run from source via ``npx tsx`` (already a
-``pherix-ts`` devDependency) — no build step. If ``node_modules`` is absent the
-subprocess fails and the test reports it loudly rather than silently passing.
+The journal-diff test (:func:`test_sdk_journal_parity`) is ``skipif(node is
+None)`` so the offline Python suite stays green on a machine without Node. The
+Node runner is run from source via ``npx tsx`` (already a ``pherix-ts``
+devDependency) — no build step. If ``node_modules`` is absent the subprocess
+fails and the test reports it loudly rather than silently passing.
+
+The coverage GATES are pure Python and run unconditionally — static contract
+checks that need no Node, so they hold even on a Node-less machine (exactly
+where the journal-diff test, ``skipif(NODE is None)``, cannot help):
+
+* :func:`test_parity_scenarios_cover_every_adapter` — every shipped *Python*
+  adapter has a parity scenario.
+* :func:`test_adapter_inventory_symmetric_across_sdks` — the Python and TS
+  adapter inventories are identical, so neither SDK can ship an adapter the
+  other lacks without failing loudly. The earlier gate only walks the Python
+  adapters, so a TS-only adapter (or a Python adapter never ported to TS) would
+  otherwise slip past every Node-less run.
+* :func:`test_parity_scenarios_symmetric_across_sdks` — the Python ``SCENARIOS``
+  list and the TS runner's ``SCENARIOS`` map name the same scenarios, so a
+  scenario added on one side without its twin fails even without Node.
 
 Extending per adapter
 ---------------------
@@ -78,7 +93,10 @@ parametrized test picks it up automatically.
 
 from __future__ import annotations
 
+import importlib
 import json
+import pkgutil
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -91,6 +109,7 @@ import pytest
 
 from pherix.core.adapters.dynamodb import DynamoDBAdapter
 from pherix.core.adapters.elasticsearch import ElasticsearchAdapter
+from pherix.core.adapters.filesystem import FilesystemAdapter
 from pherix.core.adapters.gcs import GCSAdapter
 from pherix.core.adapters.git import GitAdapter
 from pherix.core.adapters.http import HTTPAdapter
@@ -98,6 +117,7 @@ from pherix.core.adapters.memory import MemoryAdapter
 from pherix.core.adapters.messagequeue import MQAdapter, publish_tool
 from pherix.core.adapters.mongodb import MongoAdapter
 from pherix.core.adapters.mysql import MySQLAdapter
+from pherix.core.adapters.postgres import PostgresAdapter
 from pherix.core.adapters.redis import RedisAdapter
 from pherix.core.adapters.rest import RESTAdapter, rest_tool
 from pherix.core.adapters.s3 import S3Adapter
@@ -111,8 +131,7 @@ NODE = shutil.which("node")
 NPX = shutil.which("npx")
 PHERIX_TS = Path(__file__).resolve().parent.parent / "pherix-ts"
 RUNNER = PHERIX_TS / "test" / "parity" / "runner.mts"
-
-pytestmark = pytest.mark.skipif(NODE is None, reason="Node not installed")
+TS_ADAPTERS_DIR = PHERIX_TS / "src" / "adapters"
 
 
 # -- canonicalization --------------------------------------------------------
@@ -549,6 +568,95 @@ def _mysql_commit() -> tuple[list[Any], TxnState, str]:
     return list(ctx.txn.effects), ctx.txn.state, "ok"
 
 
+class _FakePgCursor:
+    """A sqlite-backed cursor speaking enough of psycopg's cursor surface.
+
+    Mirrors the TS test's better-sqlite3 ``FakePgClient``: SQLite speaks the same
+    BEGIN / SAVEPOINT / ROLLBACK TO SAVEPOINT / COMMIT grammar the
+    :class:`PostgresAdapter` drives, so the real adapter code path runs offline
+    with no live Postgres. psycopg's ``%s`` placeholders are rewritten to
+    sqlite3's ``?``; the version side-table's ``BIGINT`` column type is a valid
+    SQLite type name (INTEGER affinity). The cursor is a context manager because
+    the adapter drives it via ``with conn.cursor() as cur``.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+        self._cur: sqlite3.Cursor | None = None
+
+    def execute(self, sql: str, params: tuple = ()):  # noqa: ANN001
+        self._cur = self._conn.execute(sql.replace("%s", "?"), params or ())
+        return self._cur
+
+    def fetchone(self):
+        return self._cur.fetchone() if self._cur is not None else None
+
+    def __enter__(self) -> "_FakePgCursor":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        return None
+
+
+class _FakePgConn:
+    def __init__(self) -> None:
+        self._conn = sqlite3.connect(":memory:", isolation_level=None)
+        self._conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
+
+    def cursor(self) -> _FakePgCursor:
+        return _FakePgCursor(self._conn)
+
+
+def _postgres_commit() -> tuple[list[Any], TxnState, str]:
+    """Reversible: a Postgres insert that commits (STAGED -> APPLIED).
+
+    Guarded like ``_git_commit``: the adapter's ``__init__`` does ``import
+    psycopg`` as an install-check, so we skip cleanly when psycopg is absent
+    (the same machine runs both halves, so a single Python-side skip keeps the
+    offline suite green). The TS half is backed by better-sqlite3 — always
+    present as a devDependency — so the skip is one-sided and symmetric with the
+    git scenario."""
+    pytest.importorskip("psycopg")
+    REGISTRY.clear()
+    pg = PostgresAdapter(_FakePgConn())
+
+    @tool("postgres", name="insertUser")
+    def insert_user(conn, name: str):  # noqa: ANN001
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO users (name) VALUES (%s)", (name,))
+        return name
+
+    with agent_txn({"postgres": pg}) as ctx:
+        insert_user(name="bob")
+    return list(ctx.txn.effects), ctx.txn.state, "ok"
+
+
+def _filesystem_commit() -> tuple[list[Any], TxnState, str]:
+    """Reversible: a filesystem write that commits (STAGED -> APPLIED).
+
+    Unlike the SQL commit scenarios, the FsHandle records a write key
+    automatically — so this also asserts cross-SDK parity of the
+    content-addressed filesystem version: writing the SAME raw bytes (``b"hello"``
+    / ``enc("hello")``) makes the write-key version the sha256 of those identical
+    bytes on both sides, byte-for-byte. A real temp dir is used and removed in a
+    ``finally`` (the TS half does the same)."""
+    REGISTRY.clear()
+    root = Path(tempfile.mkdtemp(prefix="pherix_fs_parity_"))
+    fs = FilesystemAdapter(root)
+
+    @tool("fs", name="writeFile")
+    def write_file(handle, path: str):  # noqa: ANN001
+        handle.write(path, b"hello")
+        return {"ok": True}
+
+    try:
+        with agent_txn({"fs": fs}) as ctx:
+            write_file(path="note.txt")
+        return list(ctx.txn.effects), ctx.txn.state, "ok"
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _memory_commit() -> tuple[list[Any], TxnState, str]:
     """Reversible: a governed-memory ``remember`` that commits (STAGED ->
     APPLIED). Unlike the other per-adapter commit scenarios, the memory handle
@@ -682,12 +790,124 @@ SCENARIOS = [
     Scenario("gcs_commit", _gcs_commit),
     Scenario("elasticsearch_commit", _elasticsearch_commit),
     Scenario("mysql_commit", _mysql_commit),
+    Scenario("postgres_commit", _postgres_commit),
+    Scenario("filesystem_commit", _filesystem_commit),
     Scenario("memory_commit", _memory_commit),
     Scenario("git_commit", _git_commit),
     # Irreversible adapters — one gate scenario each (GATED -> ROLLED_BACK).
     Scenario("rest_gate", _rest_gate),
     Scenario("messagequeue_gate", _messagequeue_gate),
 ]
+
+
+# Maps each parity scenario to the adapter resource it exercises. The coverage
+# gate below uses this to assert that EVERY adapter shipped under
+# ``pherix/core/adapters`` has at least one parity scenario — so a newly-added
+# adapter that lacks a Py<->TS scenario fails the suite loudly instead of
+# silently drifting out of the cross-SDK contract. Keep it in lockstep with
+# :data:`SCENARIOS` (the gate asserts that too).
+SCENARIO_RESOURCES: dict[str, str] = {
+    "reversible_commit": "sql",
+    "irreversible_gate": "http",
+    "isolation_conflict": "sql",
+    "s3_commit": "s3",
+    "redis_commit": "redis",
+    "mongodb_commit": "mongodb",
+    "dynamodb_commit": "dynamodb",
+    "gcs_commit": "gcs",
+    "elasticsearch_commit": "elasticsearch",
+    "mysql_commit": "mysql",
+    "postgres_commit": "postgres",
+    "filesystem_commit": "fs",
+    "memory_commit": "memory",
+    "git_commit": "git",
+    "rest_gate": "rest",
+    "messagequeue_gate": "mq",
+}
+
+
+def _shipped_adapter_resources() -> set[str]:
+    """Every resource name shipped by a concrete adapter under
+    ``pherix/core/adapters``.
+
+    A concrete adapter is a class DEFINED in an adapter submodule (not merely
+    imported into it) that carries a non-empty class-level ``name`` string AND a
+    per-effect ``apply`` method — the protocol entry point. This deliberately
+    excludes the abstract base (``name`` is ``""``), ``SnapshotHandle``, and
+    handle helpers like ``FsHandle`` (no ``name``). Driver imports are lazy in
+    every adapter's ``__init__``, so importing the modules here needs zero
+    third-party packages.
+    """
+    import pherix.core.adapters as pkg
+
+    names: set[str] = set()
+    for modinfo in pkgutil.iter_modules(pkg.__path__):
+        if modinfo.name == "base":
+            continue
+        mod = importlib.import_module(f"{pkg.__name__}.{modinfo.name}")
+        for obj in vars(mod).values():
+            if not isinstance(obj, type) or obj.__module__ != mod.__name__:
+                continue  # skip non-classes and classes imported from elsewhere
+            name = getattr(obj, "name", "")
+            if isinstance(name, str) and name and callable(getattr(obj, "apply", None)):
+                names.add(name)
+    return names
+
+
+def _ts_adapter_resources() -> set[str]:
+    """Every resource name shipped by a concrete adapter under
+    ``pherix-ts/src/adapters`` — the TypeScript twin of
+    :func:`_shipped_adapter_resources`.
+
+    A concrete TS adapter declares its resource as a class-field literal
+    ``readonly name = "<resource>"`` (e.g. ``sql.ts``: ``readonly name =
+    "sql"``). The abstract base declares ``readonly name: string`` with NO
+    literal, so it is excluded by construction; ``index.ts`` only re-exports and
+    carries no declaration. The source is read as TEXT — there is no Node
+    dependency — so this enumerates the TS inventory on a Node-less machine
+    exactly as the Python side does, which is the whole point: the cross-SDK
+    inventory contract must hold where the journal-diff test is skipped.
+    """
+    names: set[str] = set()
+    for ts_file in sorted(TS_ADAPTERS_DIR.glob("*.ts")):
+        for match in re.finditer(r'readonly\s+name\s*=\s*"([^"]+)"', ts_file.read_text()):
+            names.add(match.group(1))
+    return names
+
+
+def _ts_runner_scenarios() -> set[str]:
+    """The scenario names the TS parity runner dispatches — the keys of the
+    ``SCENARIOS`` object literal in ``pherix-ts/test/parity/runner.mts``.
+
+    Parsed statically (no Node): the ``SCENARIOS`` object literal is isolated by
+    brace-matching from its declaration to the matching close brace, then each
+    ``key:`` at the head of a non-comment line is taken as a scenario name. The
+    matching Python set is ``{s.name for s in SCENARIOS}``; the symmetry gate
+    asserts the two are identical, so a scenario added on one SDK without its
+    twin on the other fails loudly even on a Node-less machine — where the
+    journal-diff test that would otherwise catch it is skipped.
+    """
+    src = RUNNER.read_text()
+    brace = src.index("{", src.index("const SCENARIOS"))
+    depth = 0
+    end = brace
+    for i in range(brace, len(src)):
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    names: set[str] = set()
+    for line in src[brace + 1 : end].splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("//", "*", "/*")):
+            continue
+        match = re.match(r"([A-Za-z_]\w*)\s*:", stripped)
+        if match:
+            names.add(match.group(1))
+    return names
 
 
 # -- the parity assertion ----------------------------------------------------
@@ -722,6 +942,7 @@ def _run_node(scenario: Scenario) -> dict:
     return _json_normalized(json.loads(proc.stdout))
 
 
+@pytest.mark.skipif(NODE is None, reason="Node not installed")
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.name)
 def test_sdk_journal_parity(scenario: Scenario):
     """The Python and TS SDKs produce structurally identical journals."""
@@ -746,4 +967,128 @@ def test_sdk_journal_parity(scenario: Scenario):
     # Then the full per-effect structural diff (order, status, keys, lane).
     assert ts["effects"] == py["effects"], (
         f"{scenario.name}: journals diverge.\nPY:  {py['effects']}\nTS:  {ts['effects']}"
+    )
+
+
+# -- the coverage gate (pure Python — runs without Node) ---------------------
+
+
+def test_parity_scenarios_cover_every_adapter():
+    """GATE: every adapter shipped under ``pherix/core/adapters`` has a Py<->TS
+    parity scenario, and the scenario list ⇔ resource map stay in lockstep.
+
+    This is what makes the parity suite a CONTRACT rather than a snapshot: ship a
+    new adapter on one side without a paired scenario and this fails loudly,
+    naming the uncovered resource — instead of the gap going unnoticed until the
+    two SDKs have quietly diverged. It needs no Node (it never diffs a journal),
+    so the contract holds even on a Node-less machine.
+    """
+    # 1. The scenario list and the resource map must describe the same set of
+    #    scenarios — a scenario with no mapped resource (or vice versa) means the
+    #    gate below is reasoning over a stale map.
+    scenario_names = {s.name for s in SCENARIOS}
+    mapped_names = set(SCENARIO_RESOURCES)
+    assert mapped_names == scenario_names, (
+        "SCENARIO_RESOURCES drifted from SCENARIOS: "
+        f"only in map={sorted(mapped_names - scenario_names)}, "
+        f"only in SCENARIOS={sorted(scenario_names - mapped_names)}"
+    )
+
+    # 2. Bidirectional coverage: every shipped adapter resource is exercised by a
+    #    scenario, and no scenario claims a resource that no adapter ships.
+    shipped = _shipped_adapter_resources()
+    covered = set(SCENARIO_RESOURCES.values())
+    missing = shipped - covered
+    phantom = covered - shipped
+    assert not missing, (
+        f"adapters with no Py<->TS parity scenario: {sorted(missing)}. "
+        "Add a Scenario to SCENARIOS (Python) + a same-named branch to "
+        "pherix-ts/test/parity/runner.mts (TS), and register it in "
+        "SCENARIO_RESOURCES."
+    )
+    assert not phantom, (
+        f"SCENARIO_RESOURCES references resources no adapter ships: {sorted(phantom)}. "
+        "Fix the mapping or remove the stale scenario."
+    )
+
+
+def test_scenario_resource_map_matches_reality():
+    """The declared SCENARIO_RESOURCES entry for each runnable Python scenario
+    matches the resource its effects actually carry — so the map (which the gate
+    above trusts) cannot quietly lie about WHICH adapter a scenario covers.
+
+    Scenarios that ``pytest.skip`` for a missing optional dependency (git binary,
+    psycopg) are tolerated: their declared resource is taken on faith, exactly as
+    the journal-diff test would skip them. Every other scenario is run in-process
+    (no Node) and its emitted resources are checked against the declaration.
+    """
+    for scenario in SCENARIOS:
+        try:
+            effects, _state, _outcome = scenario.run()
+        except pytest.skip.Exception:
+            continue  # optional dependency absent — declaration taken on faith
+        declared = SCENARIO_RESOURCES[scenario.name]
+        emitted = {e.resource for e in effects}
+        assert emitted == {declared}, (
+            f"{scenario.name}: declared resource {declared!r} but effects carry "
+            f"{sorted(emitted)} — fix SCENARIO_RESOURCES."
+        )
+
+
+# -- the symmetric cross-SDK gates (pure Python — run without Node) ----------
+
+
+def test_adapter_inventory_symmetric_across_sdks():
+    """GATE: the Python and TypeScript SDKs ship the EXACT same set of adapter
+    resources — neither side has an adapter the other lacks.
+
+    :func:`test_parity_scenarios_cover_every_adapter` proves every *Python*
+    adapter has a parity scenario, but it never reads the TS source — so an
+    adapter ported to one SDK and not the other slips through: the missing
+    twin is invisible to a gate that only walks one side's inventory, and the
+    ``one system`` claim quietly breaks. This gate diffs the two inventories
+    directly. Both sides are static text parses, so it holds on a Node-less
+    machine — the same place the journal-diff test (``skipif NODE is None``)
+    cannot help.
+    """
+    if not TS_ADAPTERS_DIR.is_dir():
+        pytest.skip(f"pherix-ts source tree absent: {TS_ADAPTERS_DIR}")
+    py = _shipped_adapter_resources()
+    ts = _ts_adapter_resources()
+    py_only = py - ts
+    ts_only = ts - py
+    assert not py_only, (
+        f"adapters shipped in Python but missing from pherix-ts: {sorted(py_only)}. "
+        "Port the adapter to pherix-ts/src/adapters so the two SDKs stay one system."
+    )
+    assert not ts_only, (
+        f"adapters shipped in pherix-ts but missing from Python: {sorted(ts_only)}. "
+        "Add the adapter under pherix/core/adapters so the two SDKs stay one system."
+    )
+
+
+def test_parity_scenarios_symmetric_across_sdks():
+    """GATE: the Python ``SCENARIOS`` list and the TS runner's ``SCENARIOS`` map
+    name the SAME set of scenarios.
+
+    The journal-diff test pairs a Python scenario with a same-named TS branch —
+    but it is ``skipif(NODE is None)``, so on a Node-less machine a Python
+    scenario whose TS branch was never added (or vice versa) passes silently
+    until someone runs it under Node. This static gate makes the name-pairing a
+    contract that holds WITHOUT Node, naming the unpaired scenario in either
+    direction.
+    """
+    if not RUNNER.exists():
+        pytest.skip(f"pherix-ts parity runner absent: {RUNNER}")
+    py = {s.name for s in SCENARIOS}
+    ts = _ts_runner_scenarios()
+    py_only = py - ts
+    ts_only = ts - py
+    assert not py_only, (
+        f"parity scenarios defined in Python with no TS branch: {sorted(py_only)}. "
+        "Add a same-named entry to SCENARIOS in pherix-ts/test/parity/runner.mts."
+    )
+    assert not ts_only, (
+        f"parity scenarios defined in the TS runner with no Python twin: {sorted(ts_only)}. "
+        "Add a same-named Scenario to SCENARIOS in tests/test_sdk_parity.py."
     )

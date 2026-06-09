@@ -44,6 +44,17 @@ TXN_STATES = ("OPEN", "STAGED", "COMMITTED", "ROLLED_BACK", "PARTIAL", "STUCK")
 # separately (the held-back chains).
 SETTLED_STATES = ("COMMITTED", "ROLLED_BACK", "PARTIAL", "STUCK")
 
+# Terminal states a transaction can reach *without* committing. These are the
+# candidates the recovery fold inspects for stranded side effects: COMMITTED is
+# the clean terminal (its effects are meant to be live), OPEN/STAGED are still
+# in-flight. A ROLLED_BACK txn should hold nothing — included so the fold can
+# catch one that anomalously left an APPLIED effect; PARTIAL/STUCK are the
+# engine-flagged incomplete unwinds. See JournalReader.recovery.
+UNCOMMITTED_TERMINAL_STATES = ("ROLLED_BACK", "PARTIAL", "STUCK")
+# The two states the engine itself marks as an incomplete unwind — always in
+# the recovery queue regardless of their per-effect counts.
+INCOMPLETE_UNWIND_STATES = ("PARTIAL", "STUCK")
+
 # Effective per-effect verdict derived from the persisted status. This is the
 # honest, schema-backed reading of "what the policy/engine decided about this
 # effect" — distinct from the optional per-rule verdict rows (see
@@ -142,6 +153,127 @@ LINEAGE_CAVEAT = (
     "model is out of scope and not claimed."
 )
 
+# The recovery queue's honest-scope statement — travels with the payload the
+# same way LINEAGE_CAVEAT does. It is the boundary of the reconciliation claim:
+# "dangling" is read off the journal's recorded status, NOT a live probe of the
+# resource. See JournalReader.recovery.
+RECOVERY_CAVEAT = (
+    "Reconciliation queue, read off the journal alone. A 'dangling' effect is "
+    "a row persisted APPLIED inside a transaction that did not commit — the "
+    "journal's own record that a side effect outlived its transaction. It is "
+    "NOT a live probe of the world: Pherix does not re-read the resource to "
+    "confirm the effect is still present, only that the last status the journal "
+    "recorded for it was APPLIED. An irreversible dangling effect "
+    "(reversible=false) has no automatic undo and needs manual reconciliation; "
+    "a reversible one means the backward fold did not reach it before the "
+    "transaction settled."
+)
+
+# The approval queue's honest-scope statement — travels with the payload like
+# the two caveats above. It is the boundary of the over-the-wire gate claim:
+# what a PENDING/APPROVED row does and does NOT prove. See JournalReader.approvals.
+APPROVAL_CAVEAT = (
+    "Over-the-wire gate queue, read off the approvals journal alone. A PENDING "
+    "row is a staged irreversible whose commit the gate held until an "
+    "out-of-process approve(token) lands; an APPROVED row records the principal "
+    "who cleared it and when. The approver is ATTRIBUTION, not authentication — "
+    "Pherix records the claimed principal, it does not verify identity. Crucially, "
+    "an APPROVED row proves authorisation was GRANTED, NOT that the held "
+    "transaction has since resumed and committed: whether the approved effect "
+    "actually fired is a separate fact, read from that transaction's own state, "
+    "not from this approval."
+)
+
+# The accountability ledger's honest-scope statement — travels with the payload
+# like the caveats above. It is the boundary of the per-actor governance fold:
+# what an actor row does and does NOT prove. See JournalReader.accountability.
+ACCOUNTABILITY_CAVEAT = (
+    "Per-actor governance ledger, folded from the journal's recorded ``actor`` "
+    "on each effect. The actor is ATTRIBUTION, not authentication — Pherix "
+    "records the principal an effect claimed to run on behalf of; it does NOT "
+    "verify identity, so a row attributes actions to a *claimed* principal, not "
+    "a proven one. ``irreversible_applied`` is the at-a-glance blast figure — "
+    "effects this principal drove that are both irreversible (no compensator) "
+    "and recorded APPLIED, i.e. fired and cannot be auto-undone — read off the "
+    "journal's status, NOT a live probe of the world. Effects carrying no "
+    "declared principal are surfaced under ``unattributed`` (a governance gap "
+    "worth seeing), never dropped; on a journal predating the actor column "
+    "(``supported = false``) every effect is unattributed. The fold is a census "
+    "of what each principal did or attempted — in-flight and gated effects "
+    "included — not a rate over settled transactions (that is reliability())."
+)
+
+# The policy ledger's honest-scope statement — travels with the payload like the
+# caveats above. It is the boundary of the per-rule decision census: what folding
+# the journal's recorded verdicts by the rule that fired does and does NOT prove.
+# See JournalReader.policy.
+POLICY_CAVEAT = (
+    "Policy-decision ledger, folded from the journal's recorded per-rule "
+    "verdicts — the same rows the timeline attaches per effect, here grouped "
+    "across the whole journal by the rule that fired. Each verdict is a decision "
+    "the policy layer PERSISTED at evaluation time: which primitive fired (a "
+    "rule, a cap, or an allowlist), at the stage or the commit phase, and whether "
+    "it allowed or denied. It is NOT a re-evaluation of policy against the world "
+    "now — a denial proves the policy blocked THAT effect at THAT phase when it "
+    "ran, not that a since-changed policy would still block it. Rules are grouped "
+    "by their recorded (kind, rule_name); verdicts carrying no rule_name collapse "
+    "into a single ``unnamed`` bucket (a governance gap worth seeing — a decision "
+    "with no attributable rule), never dropped. The fold spans EVERY verdict "
+    "regardless of dry-run: a dry-run's denials are real policy decisions worth "
+    "surfacing — the same scope reliability()'s denial rollup uses. This is a "
+    "census of what the policy decided, NOT a rate over settled transactions "
+    "(that is reliability()); and ``deny_rate`` is a rule's denials over its own "
+    "firings, not over all traffic."
+)
+
+# The undo-impact caveat — travels with the payload like the others. It is the
+# boundary of the blast-radius claim: what folding the journal's version-grounded
+# read-after-write relation does and does NOT prove before you reverse a txn.
+UNDO_IMPACT_CAVEAT = (
+    "Blast radius of an undo, folded off the journal alone — the same "
+    "version-grounded read-after-write relation lineage() calls 'produces'. A "
+    "'downstream consumer' is an effect whose recorded read observed the EXACT "
+    "version this transaction's write produced; the version counter proves the "
+    "read saw this writer's value. It does NOT prove the consumer used that "
+    "value in its own output — Pherix does not trace data-flow through the "
+    "agent/LLM (same boundary as lineage). Entanglement is judged against "
+    "COMMITTED consumers (a standing, final dependency) and against later LIVE "
+    "(APPLIED) writes that superseded this transaction's keys; in-flight readers "
+    "(OPEN/STAGED) are listed but are provisional and do not flip the verdict. "
+    "Irreversible APPLIED effects are a hard floor — they have no compensator "
+    "and cannot be auto-undone regardless of blast radius. Versionless writes "
+    "(e.g. the filesystem adapter) cannot anchor a downstream edge and are "
+    "listed separately as an honest blind spot. This is a STATIC read of the "
+    "journal snapshot, NOT a live simulation of the undo nor a probe of the "
+    "world: it says who the journal records depended on this transaction, not "
+    "what reversing it would do at runtime."
+)
+
+# The provenance trace's honest-scope statement — travels with the payload like
+# the caveats above. It is the boundary of the transitive-ancestry claim: what
+# walking the version-grounded produces relation BACKWARD across transactions
+# does and does NOT prove. See JournalReader.provenance.
+PROVENANCE_CAVEAT = (
+    "Transitive upstream provenance, folded off the journal alone — the same "
+    "version-grounded 'produces' relation lineage() proves, walked BACKWARD "
+    "across transaction boundaries from one anchor to its origins. Each hop is "
+    "a fact the journal can prove: a read observed the EXACT version an earlier "
+    "transaction's write produced (the version counter ties reader to writer). "
+    "An 'informs' edge is the co-transactional ordering inside an ancestor — a "
+    "read preceded the write it fed in the same atomic unit — honest sequence, "
+    "NOT proven value-flow. The walk stops at the journal's edge: a read whose "
+    "version no in-journal write produced, or a versionless read (e.g. the "
+    "filesystem adapter), is surfaced under 'external_inputs' rather than "
+    "invented as an ancestor. An intra-transaction read-after-write never "
+    "crosses a boundary, so it is lineage()'s territory, never an ancestor "
+    "here. This is NOT data lineage through the agent/LLM — Pherix cannot see "
+    "that a value a tool read actually shaped a value it later wrote, only that "
+    "the journal records the read before the write — and because the relation "
+    "is per-hop, that boundary COMPOUNDS with depth: a deep ancestor is a "
+    "weaker claim than a shallow one. Full data lineage through the model is "
+    "out of scope and not claimed."
+)
+
 
 def _lineage_key(entry: Any) -> dict:
     """Normalise a persisted key triple into ``{resource, key, version}``.
@@ -206,6 +338,11 @@ class JournalReader:
         # simply has none, and the reader degrades to "zero conflicts" rather
         # than failing to load.
         self._has_conflicts = self._table_exists("conflicts")
+        # The approvals table (Prong #1 — the over-the-wire human gate) is
+        # optional the same way: a journal written before approval recording
+        # has none, and the reader degrades to an empty queue rather than
+        # failing to load.
+        self._has_approvals = self._table_exists("approvals")
 
     # --- introspection ------------------------------------------------------
 
@@ -327,7 +464,10 @@ class JournalReader:
         verdict, any per-rule policy verdicts attached to that effect, and
         ``informed_by`` — the explicit per-effect result→inputs provenance: the
         reads (this effect's own + every earlier read in this txn) that informed
-        this effect's result. See :meth:`_informed_by`.
+        this effect's result. See :meth:`_informed_by`. Alongside the effects it
+        carries the txn's ``conflicts`` (Prong #2) and ``approvals`` (Prong #1 —
+        the over-the-wire gate lifecycle), both txn-level facts that ride beside
+        the effect list rather than inside it.
         """
         trow = self._conn.execute(
             "SELECT * FROM transactions WHERE txn_id = ?", (txn_id,)
@@ -382,11 +522,14 @@ class JournalReader:
         # Prong #2: the conflicts (if any) attach to the transaction, not to
         # an effect — a conflict is a property of the txn's read-set against
         # the world at commit, spanning the whole journal, so it rides
-        # alongside the effect list rather than inside it.
+        # alongside the effect list rather than inside it. Prong #1: the
+        # approval records ride alongside the same way — the over-the-wire gate
+        # lifecycle (who is held, who cleared it) is a property of the txn.
         return {
             "transaction": summary,
             "effects": effects,
             "conflicts": self.get_conflicts(txn_id),
+            "approvals": self.get_approvals(txn_id),
         }
 
     # --- per-effect result→inputs provenance -------------------------------
@@ -542,6 +685,313 @@ class JournalReader:
             )
         return out
 
+    def contention(self) -> dict:
+        """The isolation collision map — a GROUP-BY fold over the conflicts.
+
+        :meth:`reliability` surfaces a single ``conflict_total`` and
+        :meth:`get_conflicts` lists one transaction's conflicts. Neither answers
+        the isolation-pillar / Wedge #2 question this fold does: **where do
+        concurrent agents collide, and who loses the race?** Every recorded
+        conflict is a *lost read* — the losing side of a non-commutative race the
+        commit-time diff caught — so this counts those collisions three ways:
+
+        ``hotspots``
+            Per ``(resource, key)`` — the rows agents actually fight over,
+            ranked busiest-first. Each carries the distinct losing
+            ``transactions`` and the distinct named ``clients`` that lost a read
+            there. An unattributed (NULL-client) loss still counts toward
+            ``conflicts`` but names no agent, so it is absent from ``clients``.
+
+        ``resources``
+            Per resource — which backend is hot — ranked busiest-first, with the
+            distinct ``keys`` / ``transactions`` counts and the named ``clients``.
+
+        ``by_client``
+            Per ``client_id`` — which agent is least isolation-safe — loudest
+            loser first, the unattributed (NULL) bucket sorting last among its
+            tier so a real agent never hides behind anonymous reads. The
+            per-client conflict counts reconcile back to ``total`` (the NULL
+            bucket keeps the sum honest — nothing is silently dropped).
+
+        Like :meth:`reliability` it is a pure traversal of the journal already on
+        disk — one scan over the conflicts (LEFT-JOINed to their txn for the
+        recorded ``client_id``), folded in Python; no engine import, no
+        recomputation, no writes. ``scope.conflicts_recorded`` is ``False`` on a
+        journal that predates the conflicts table — a console can then say "this
+        journal predates conflict recording" rather than "no conflicts seen" —
+        and in that case (like the empty-table case) every collection is empty
+        and ``total`` is ``0`` rather than a crash.
+        """
+        if not self._has_conflicts:
+            return {
+                "scope": {"conflicts_recorded": False},
+                "total": 0,
+                "hotspots": [],
+                "resources": [],
+                "by_client": [],
+            }
+
+        # One scan; each row is one lost read. The LEFT JOIN keeps a conflict
+        # whose txn row is somehow absent (and so attributes it to the NULL
+        # bucket) rather than dropping it — the counts must reconcile.
+        rows = self._conn.execute(
+            "SELECT c.resource AS resource, c.key AS key, c.txn_id AS txn_id, "
+            "t.client_id AS client_id "
+            "FROM conflicts c LEFT JOIN transactions t ON t.txn_id = c.txn_id"
+        ).fetchall()
+
+        # Group three ways in a single pass. Keys group on their stored JSON
+        # string (the canonical form the engine wrote, so identical tuples
+        # collapse); the parsed list is only re-derived for output. Named-client
+        # sets exclude NULL, but the raw ``conflicts`` count never does.
+        hotspots: dict[tuple, dict] = {}
+        resources: dict[str, dict] = {}
+        by_client: dict[Any, dict] = {}
+        for r in rows:
+            resource, raw_key = r["resource"], r["key"]
+            txn_id, client_id = r["txn_id"], r["client_id"]
+
+            hs = hotspots.setdefault(
+                (resource, raw_key),
+                {"resource": resource, "raw_key": raw_key,
+                 "conflicts": 0, "txns": set(), "clients": set()},
+            )
+            hs["conflicts"] += 1
+            hs["txns"].add(txn_id)
+
+            rs = resources.setdefault(
+                resource,
+                {"resource": resource, "conflicts": 0,
+                 "keys": set(), "txns": set(), "clients": set()},
+            )
+            rs["conflicts"] += 1
+            rs["keys"].add(raw_key)
+            rs["txns"].add(txn_id)
+
+            cl = by_client.setdefault(
+                client_id,
+                {"client_id": client_id, "conflicts": 0,
+                 "resources": set(), "keys": set()},
+            )
+            cl["conflicts"] += 1
+            cl["resources"].add(resource)
+            cl["keys"].add((resource, raw_key))
+
+            if client_id is not None:
+                hs["clients"].add(client_id)
+                rs["clients"].add(client_id)
+
+        # Hotspots: conflicts desc, then resource, then key (sorted on the raw
+        # JSON string so the tiebreak is always comparable and deterministic).
+        hotspot_list = [
+            {
+                "resource": h["resource"],
+                "key": _loads(h["raw_key"], []),
+                "conflicts": h["conflicts"],
+                "transactions": sorted(h["txns"]),
+                "clients": sorted(h["clients"]),
+            }
+            for h in sorted(
+                hotspots.values(),
+                key=lambda h: (-h["conflicts"], h["resource"], h["raw_key"]),
+            )
+        ]
+        # Resources: conflicts desc, then resource.
+        resource_list = [
+            {
+                "resource": rs["resource"],
+                "conflicts": rs["conflicts"],
+                "keys": len(rs["keys"]),
+                "transactions": len(rs["txns"]),
+                "clients": sorted(rs["clients"]),
+            }
+            for rs in sorted(
+                resources.values(),
+                key=lambda rs: (-rs["conflicts"], rs["resource"]),
+            )
+        ]
+        # By client: conflicts desc; the NULL bucket sorts last within its tier
+        # (the ``is None`` flag) so a named agent never hides behind it.
+        client_list = [
+            {
+                "client_id": cl["client_id"],
+                "conflicts": cl["conflicts"],
+                "resources": len(cl["resources"]),
+                "keys": len(cl["keys"]),
+            }
+            for cl in sorted(
+                by_client.values(),
+                key=lambda cl: (
+                    -cl["conflicts"],
+                    cl["client_id"] is None,
+                    cl["client_id"] or "",
+                ),
+            )
+        ]
+
+        return {
+            "scope": {"conflicts_recorded": True},
+            "total": len(rows),
+            "hotspots": hotspot_list,
+            "resources": resource_list,
+            "by_client": client_list,
+        }
+
+    # --- over-the-wire approvals (optional table, Prong #1) ----------------
+
+    def _approval_record(self, d: dict) -> dict:
+        """Render-ready shape for one approval row, shared by both readers.
+
+        ``d`` is an approvals row LEFT-JOINed to the effect it gates, so the
+        gated effect's identity (``idx`` / ``tool`` / ``resource`` /
+        ``reversible`` / ``actor``) rides with the approval — a console renders
+        *what* is held without a second lookup. The join is LEFT so an approval
+        whose effect row is somehow absent still surfaces (tolerated, never a
+        crash). ``actor`` is carried only when the effects table has the column.
+        """
+        approved = d["status"] == "APPROVED"
+        rec = {
+            "effect_id": d["effect_id"],
+            "token": d["token"],
+            "status": d["status"],
+            # The derived at-a-glance flag + tone: a PENDING hold reads amber
+            # ("pending" — in the queue, action needed, NOT denied); an APPROVED
+            # clear reads green.
+            "approved": approved,
+            "tone": "ok" if approved else "pending",
+            "approver": d["approver"],
+            "requested_at": d["requested_at"],
+            "approved_at": d["approved_at"],
+            # the gated effect's identity (LEFT JOIN — None if the effect row is
+            # absent; tolerated)
+            "idx": d.get("idx"),
+            "tool": d.get("tool"),
+            "resource": d.get("resource"),
+            "reversible": (
+                bool(d["reversible"]) if d.get("reversible") is not None else None
+            ),
+        }
+        if self._has_actor:
+            rec["actor"] = d.get("actor")
+        return rec
+
+    def get_approvals(self, txn_id: str) -> list[dict]:
+        """Recorded over-the-wire approvals for one transaction, oldest-first.
+
+        Each row is the gate's persisted approval record — the PENDING request a
+        staged irreversible raised and, once an out-of-process ``approve(token)``
+        landed, its APPROVED resolution (the approver principal + timestamp).
+        Enriched with the gated effect's own identity by joining the effect the
+        approval is keyed to (see :meth:`_approval_record`). Empty when the
+        journal predates the approvals table or the txn never gated an
+        irreversible — both mean "nothing to show" and neither raises, exactly
+        like :meth:`get_conflicts`.
+        """
+        if not self._has_approvals:
+            return []
+        actor_col = ", e.actor AS actor" if self._has_actor else ""
+        rows = self._conn.execute(
+            "SELECT a.effect_id, a.token, a.status, a.approver, "
+            "a.requested_at, a.approved_at, "
+            "e.idx AS idx, e.tool AS tool, e.resource AS resource, "
+            "e.reversible AS reversible" + actor_col + " "
+            "FROM approvals a "
+            "LEFT JOIN effects e "
+            "ON e.txn_id = a.txn_id AND e.effect_id = a.effect_id "
+            "WHERE a.txn_id = ? "
+            "ORDER BY a.requested_at, a.effect_id",
+            (txn_id,),
+        ).fetchall()
+        return [self._approval_record(dict(r)) for r in rows]
+
+    def approvals(self) -> dict:
+        """The over-the-wire approval queue — a fold over the approvals journal.
+
+        The operational surface of "gate the irreversible": every staged
+        irreversible whose commit the gate held for an out-of-process approval,
+        split into the queue still to action and the log already cleared. A pure
+        traversal of the append-only approvals table — no live state, nothing
+        recomputed (see :data:`APPROVAL_CAVEAT`).
+
+        ``pending``
+            PENDING requests — irreversibles held at the gate, waiting on an
+            ``approve(token)`` that has not landed. The queue an operator works,
+            freshest request first. This is the action-governance sidecar's
+            core view: what is held right now and on whose behalf.
+
+        ``approved``
+            APPROVED records — the cleared log, freshest approval first: which
+            principal approved which effect and when. Carried for provenance.
+            Per the caveat, an APPROVED row proves authorisation was granted,
+            NOT that the held transaction has since resumed and committed.
+
+        ``totals``
+            ``pending`` / ``approved`` counts and the distinct ``approvers``
+            seen — the actor-axis of the gate. Zero / empty (not absent) on a
+            journal predating the approvals table, so a console always has a
+            number to show.
+
+        Each record carries its ``txn_id`` and the holding transaction's
+        ``txn_state`` / ``txn_tone`` (journal-wide, so the txn context travels
+        with the row) plus the gated effect's identity from
+        :meth:`_approval_record`.
+        """
+        empty = {
+            "scope": {"states": ["PENDING", "APPROVED"], "caveat": APPROVAL_CAVEAT},
+            "pending": [],
+            "approved": [],
+            "totals": {"pending": 0, "approved": 0, "approvers": []},
+        }
+        if not self._has_approvals:
+            return empty
+        actor_col = ", e.actor AS actor" if self._has_actor else ""
+        rows = self._conn.execute(
+            "SELECT a.txn_id AS txn_id, a.effect_id, a.token, a.status, "
+            "a.approver, a.requested_at, a.approved_at, "
+            "e.idx AS idx, e.tool AS tool, e.resource AS resource, "
+            "e.reversible AS reversible" + actor_col + ", "
+            "t.state AS txn_state "
+            "FROM approvals a "
+            "LEFT JOIN effects e "
+            "ON e.txn_id = a.txn_id AND e.effect_id = a.effect_id "
+            "LEFT JOIN transactions t ON t.txn_id = a.txn_id"
+        ).fetchall()
+        pending: list[dict] = []
+        approved: list[dict] = []
+        approvers: set[str] = set()
+        for r in rows:
+            d = dict(r)
+            rec = self._approval_record(d)
+            rec["txn_id"] = d["txn_id"]
+            state = d.get("txn_state")
+            summ = txn_summary(state) if state else {"tone": "unknown", "blurb": state}
+            rec["txn_state"] = state
+            rec["txn_tone"] = summ["tone"]
+            if rec["approved"]:
+                approved.append(rec)
+                if rec["approver"]:
+                    approvers.add(rec["approver"])
+            else:
+                pending.append(rec)
+        # Freshest on top, ties broken by effect_id for determinism. Two stable
+        # passes: secondary key (effect_id asc) first, primary key (timestamp
+        # desc) second — Python's stable sort then yields timestamp-desc,
+        # effect_id-asc. PENDING orders on requested_at, APPROVED on approved_at.
+        pending.sort(key=lambda x: x["effect_id"])
+        pending.sort(key=lambda x: x["requested_at"] or "", reverse=True)
+        approved.sort(key=lambda x: x["effect_id"])
+        approved.sort(key=lambda x: x["approved_at"] or "", reverse=True)
+        return {
+            "scope": {"states": ["PENDING", "APPROVED"], "caveat": APPROVAL_CAVEAT},
+            "pending": pending,
+            "approved": approved,
+            "totals": {
+                "pending": len(pending),
+                "approved": len(approved),
+                "approvers": sorted(approvers),
+            },
+        }
+
     # --- summary stats ------------------------------------------------------
 
     def stats(self) -> dict:
@@ -597,6 +1047,19 @@ class JournalReader:
             conflict_total = self._conn.execute(
                 "SELECT COUNT(*) FROM conflicts"
             ).fetchone()[0]
+        # Prong #1: the over-the-wire gate's headline numbers. ``pending`` is
+        # the at-a-glance count that matters for the action-governance sidecar —
+        # how many irreversibles are held right now. Zero (not absent) on a
+        # journal predating the approvals table, mirroring conflict_total.
+        approvals_pending = 0
+        approvals_total = 0
+        if self._has_approvals:
+            approvals_pending = self._conn.execute(
+                "SELECT COUNT(*) FROM approvals WHERE status = 'PENDING'"
+            ).fetchone()[0]
+            approvals_total = self._conn.execute(
+                "SELECT COUNT(*) FROM approvals"
+            ).fetchone()[0]
         return {
             "txn_total": txn_total,
             "txns_by_state": by_state,
@@ -606,6 +1069,8 @@ class JournalReader:
             "tools": tools,
             "has_verdicts": verdict_rows > 0,
             "conflict_total": conflict_total,
+            "approvals_pending": approvals_pending,
+            "approvals_total": approvals_total,
         }
 
     # --- reliability metrics (Prong #2) ------------------------------------
@@ -789,6 +1254,482 @@ class JournalReader:
             "denials": denials,
             "held_back": held_back,
             "conflict_total": conflict_total,
+        }
+
+    # --- accountability ledger (Wedge #1 — action-governance) --------------
+
+    def accountability(self, *, include_dry_run: bool = False) -> dict:
+        """A per-actor GROUP-BY fold over the journal — the governance ledger.
+
+        The reliability fold answers *how often does the system commit / fail*
+        (a tool-centric rate). The lineage fold answers *what read informed what
+        write* (a provenance chain). Neither answers the action-governance
+        question the sidecar wedge is built on: **on whose authority did each
+        action happen, and how did that principal's actions land?** This fold
+        does — a census of every effect grouped by its recorded ``actor``.
+
+        Like :meth:`reliability` it is a pure traversal of the journal already on
+        disk: one scan over the effects (joined to their txn for the dry-run
+        filter), folded in Python. No engine import, no recomputation, no writes,
+        and — crucially — it never touches the actor *data model*; it only reads
+        the column the engine already stamps. The shape:
+
+        ``scope``
+            ``include_dry_run`` — the caller's choice (``False`` by default: a
+            dry-run touched nothing, so folding its effects into "what did this
+            principal actually do?" would overstate the footprint). The effects
+            join their txn so the filter actually bites.
+
+        ``supported``
+            Whether the ``effects`` table carries an ``actor`` column at all
+            (``self._has_actor``). ``False`` on a journal written before the
+            field landed — every effect is then ``unattributed`` and ``actors``
+            is empty *because the schema predates the column*, not because no
+            principal acted. Stated so the consumer never misreads the empty list.
+
+        ``actors``
+            One record per **named** principal, ranked. Each carries: ``effects``
+            (total attributed in scope), ``txns`` (distinct transactions touched),
+            ``tools`` (sorted distinct tools driven on this authority),
+            ``reversibility`` (the reversible / irreversible split — the lead-value
+            dimension), ``by_status`` (the full effect-status histogram), and the
+            at-a-glance governance columns ``irreversible_applied`` (irreversibles
+            that FIRED and cannot be auto-undone — the blast figure), ``gated``
+            (held at the gate), ``failed`` (denied / errored), ``compensated``
+            (undone by the backward fold). Ranking: ``irreversible_applied`` desc
+            (most un-undoable blast first), then ``effects`` desc (busiest), then
+            actor name for a stable order.
+
+        ``unattributed``
+            The same record shape for every effect carrying NO declared principal
+            (``actor IS NULL``) — a real action with no accountable principal,
+            surfaced as a governance gap rather than dropped. ``None`` when every
+            counted effect names a principal. The whole journal lands here on a
+            pre-actor schema.
+
+        Unlike the reliability rates, this is a **census, not a rate**: it counts
+        in-flight (OPEN / STAGED) and gated effects too — a held irreversible is
+        exactly what governance wants to see — so there is no settled-only
+        denominator here.
+
+        ``totals``
+            A whole-scope rollup (named + unattributed combined) so the dashboard
+            has a headline without re-folding: ``actors`` (distinct named
+            principals), ``effects``, ``irreversible_applied``, ``gated``,
+            ``failed``, ``compensated``, and ``unattributed_effects``.
+        """
+        if include_dry_run:
+            txn_filter = "1=1"
+        else:
+            txn_filter = "t.dry_run = 0"
+
+        # ``actor`` is selected as a literal NULL on a pre-actor journal so the
+        # single code path below folds every effect into the unattributed bucket
+        # rather than raising on the absent column. ``_has_actor`` is a probed
+        # bool, never agent input — safe to branch the column name on it.
+        actor_col = "e.actor" if self._has_actor else "NULL"
+        rows = self._conn.execute(
+            f"SELECT {actor_col} AS actor, e.status AS status, "
+            "e.reversible AS reversible, e.tool AS tool, e.txn_id AS txn_id "
+            "FROM effects e JOIN transactions t ON t.txn_id = e.txn_id "
+            "WHERE " + txn_filter
+        ).fetchall()
+
+        def _blank(actor: str | None) -> dict:
+            return {
+                "actor": actor,
+                "effects": 0,
+                "reversibility": {"reversible": 0, "irreversible": 0},
+                "by_status": {s: 0 for s in EFFECT_STATUSES},
+                "irreversible_applied": 0,
+                "_txns": set(),
+                "_tools": set(),
+            }
+
+        buckets: dict[Any, dict] = {}
+        for r in rows:
+            actor = r["actor"]
+            b = buckets.get(actor)
+            if b is None:
+                b = buckets[actor] = _blank(actor)
+            b["effects"] += 1
+            status = r["status"]
+            # ``.get`` + assign tolerates a status a newer engine added (it lands
+            # as a fresh key) the same way reliability's effect histogram does.
+            b["by_status"][status] = b["by_status"].get(status, 0) + 1
+            if bool(r["reversible"]):
+                b["reversibility"]["reversible"] += 1
+            else:
+                b["reversibility"]["irreversible"] += 1
+                # The blast figure: irreversible AND it actually fired (APPLIED).
+                # A GATED or FAILED irreversible never took effect, so it is not
+                # un-undoable blast — only an APPLIED one is.
+                if status == "APPLIED":
+                    b["irreversible_applied"] += 1
+            b["_txns"].add(r["txn_id"])
+            b["_tools"].add(r["tool"])
+
+        def _finalise(b: dict) -> dict:
+            bs = b["by_status"]
+            return {
+                "actor": b["actor"],
+                "effects": b["effects"],
+                "txns": len(b["_txns"]),
+                "tools": sorted(b["_tools"]),
+                "reversibility": b["reversibility"],
+                "by_status": bs,
+                "irreversible_applied": b["irreversible_applied"],
+                "gated": bs.get("GATED", 0),
+                "failed": bs.get("FAILED", 0),
+                "compensated": bs.get("COMPENSATED", 0),
+            }
+
+        named = [_finalise(b) for a, b in buckets.items() if a is not None]
+        named.sort(
+            key=lambda r: (-r["irreversible_applied"], -r["effects"], r["actor"])
+        )
+        unattributed = _finalise(buckets[None]) if None in buckets else None
+
+        # Whole-scope rollup over named + unattributed — one headline, no re-fold.
+        rollup = named + ([unattributed] if unattributed else [])
+        totals = {
+            "actors": len(named),
+            "effects": sum(r["effects"] for r in rollup),
+            "irreversible_applied": sum(r["irreversible_applied"] for r in rollup),
+            "gated": sum(r["gated"] for r in rollup),
+            "failed": sum(r["failed"] for r in rollup),
+            "compensated": sum(r["compensated"] for r in rollup),
+            "unattributed_effects": unattributed["effects"] if unattributed else 0,
+        }
+
+        return {
+            "caveat": ACCOUNTABILITY_CAVEAT,
+            "scope": {"include_dry_run": include_dry_run},
+            "supported": self._has_actor,
+            "actors": named,
+            "unattributed": unattributed,
+            "totals": totals,
+        }
+
+    # --- policy ledger (the policy axis — per-rule decision census) ---------
+
+    def policy(self) -> dict:
+        """A per-rule GROUP-BY fold over the verdicts journal — the policy ledger.
+
+        :meth:`contention` folds the journal per **resource/key** (where agents
+        collide); :meth:`accountability` folds it per **actor** (on whose
+        authority). This is the third leg of the governance trio: a fold per
+        **rule** — *what is the policy actually doing across the whole journal?*
+        — the operational surface of the interception/policy axis and the
+        action-governance sidecar's tuning view (Wedge #1).
+
+        :meth:`reliability` already surfaces a ``denials`` list, but that is a
+        flat rollup of denied *reasons* — it cannot say which rule denied, how
+        often a rule that mostly allows occasionally bites, or at which phase a
+        cap fires. This generalises it: every recorded verdict (allow *and*
+        deny) grouped by the primitive that emitted it. Like the rest of the
+        reader it is a pure traversal of the journal already on disk — one scan
+        over the verdicts (LEFT-JOINed to the effect each gates, for the tool /
+        resource it governed), folded in Python; no engine import, no
+        recomputation, no writes (see :data:`POLICY_CAVEAT`). The shape:
+
+        ``supported``
+            Whether the ``verdicts`` table exists at all (``self._has_verdicts``).
+            ``False`` on a journal written before verdict persistence — every
+            collection is then empty and the phase matrix all-zero, so a console
+            can say "this journal predates verdict recording" rather than "the
+            policy denied nothing". A table that exists but is empty is
+            ``supported = True`` with zero rows (present-and-zero, like
+            :meth:`contention`'s empty case).
+
+        ``rules``
+            One record per **named** primitive ``(kind, rule_name)``, ranked.
+            Each carries ``kind`` (``'rule'`` / ``'cap'`` / ``'allowlist'``),
+            ``rule`` (the name), ``fired`` (total verdicts it emitted),
+            ``allowed`` / ``denied`` (the split), ``deny_rate`` (denied over its
+            OWN firings — not over all traffic), ``by_phase`` (firings at
+            ``stage`` vs ``commit`` — where in the bracket it sits), ``reasons``
+            (its distinct deny reasons, commonest first — empty for a rule that
+            never denied), and the governance reach ``tools`` / ``resources``
+            (sorted distinct, off the joined effect) and ``txns`` (distinct
+            transactions it touched). Ranking: ``denied`` desc (the loudest
+            denier — the governance teeth — first), then ``fired`` desc
+            (busiest), then ``kind`` then ``rule`` for a stable order.
+
+        ``unnamed``
+            The same record shape for every verdict carrying NO ``rule_name``
+            (collapsed into one bucket regardless of kind, so ``kind`` is
+            ``None``) — a decision with no attributable rule, surfaced as a
+            governance gap rather than dropped. ``None`` when every verdict names
+            a rule.
+
+        ``phases``
+            A journal-wide ``{stage, commit}`` × ``{allow, deny}`` matrix —
+            *where in the stage→commit bracket does the policy do its allowing
+            and denying?* A stage-phase denial blocked an effect before it was
+            staged; a commit-phase denial held it at the gate. Both phases are
+            always present (zeroed if unused); an unexpected phase a newer engine
+            wrote is surfaced rather than dropped.
+
+        ``totals``
+            A whole-journal rollup (named + unnamed) so the dashboard has a
+            headline without re-folding: ``rules`` (distinct named primitives),
+            ``verdicts``, ``allowed``, ``denied`` and the overall ``deny_rate``.
+
+        Like reliability's denial rollup — and unlike its rate sections — this
+        spans EVERY verdict regardless of dry-run: a dry-run's policy decisions
+        are real decisions worth surfacing.
+        """
+        empty_phases = {
+            "stage": {"allow": 0, "deny": 0},
+            "commit": {"allow": 0, "deny": 0},
+        }
+        if not self._has_verdicts:
+            return {
+                "caveat": POLICY_CAVEAT,
+                "scope": {"spans": "all_verdicts"},
+                "supported": False,
+                "rules": [],
+                "unnamed": None,
+                "phases": empty_phases,
+                "totals": {
+                    "rules": 0, "verdicts": 0, "allowed": 0, "denied": 0,
+                    "deny_rate": 0.0,
+                },
+            }
+
+        # One scan. The LEFT JOIN keeps a verdict whose effect row is somehow
+        # absent (tool/resource then NULL, excluded from the named sets) rather
+        # than dropping it — the verdict counts must stay whole.
+        rows = self._conn.execute(
+            "SELECT v.kind AS kind, v.rule_name AS rule_name, v.phase AS phase, "
+            "v.allow AS allow, v.reason AS reason, v.txn_id AS txn_id, "
+            "e.tool AS tool, e.resource AS resource "
+            "FROM verdicts v "
+            "LEFT JOIN effects e "
+            "ON e.txn_id = v.txn_id AND e.idx = v.effect_index"
+        ).fetchall()
+
+        def _blank(kind: str | None, rule: str | None) -> dict:
+            return {
+                "kind": kind, "rule": rule,
+                "fired": 0, "allowed": 0, "denied": 0,
+                "by_phase": {"stage": 0, "commit": 0},
+                "_reasons": {},           # reason -> count (denials only)
+                "_tools": set(), "_resources": set(), "_txns": set(),
+            }
+
+        buckets: dict[tuple, dict] = {}   # (kind, rule_name) -> bucket, named only
+        unnamed_acc: dict | None = None   # the single no-rule_name bucket
+        # journal-wide where-policy-bites matrix; stage/commit always present
+        phases = {
+            "stage": {"allow": 0, "deny": 0},
+            "commit": {"allow": 0, "deny": 0},
+        }
+        for r in rows:
+            kind, rule = r["kind"], r["rule_name"]
+            if rule is None:
+                if unnamed_acc is None:
+                    unnamed_acc = _blank(None, None)
+                b = unnamed_acc
+            else:
+                key = (kind, rule)
+                b = buckets.get(key)
+                if b is None:
+                    b = buckets[key] = _blank(kind, rule)
+            allow = bool(r["allow"])
+            b["fired"] += 1
+            if allow:
+                b["allowed"] += 1
+            else:
+                b["denied"] += 1
+                reason = r["reason"]
+                b["_reasons"][reason] = b["_reasons"].get(reason, 0) + 1
+            phase = r["phase"]
+            # tolerate a phase a newer engine added — it lands as a fresh key
+            # (per-rule and journal-wide) rather than being silently dropped.
+            b["by_phase"][phase] = b["by_phase"].get(phase, 0) + 1
+            phases.setdefault(phase, {"allow": 0, "deny": 0})
+            phases[phase]["allow" if allow else "deny"] += 1
+            if r["tool"] is not None:
+                b["_tools"].add(r["tool"])
+            if r["resource"] is not None:
+                b["_resources"].add(r["resource"])
+            b["_txns"].add(r["txn_id"])
+
+        def _finalise(b: dict) -> dict:
+            reasons = sorted(
+                ({"reason": k, "count": v} for k, v in b["_reasons"].items()),
+                key=lambda x: (-x["count"], str(x["reason"])),
+            )
+            return {
+                "kind": b["kind"],
+                "rule": b["rule"],
+                "fired": b["fired"],
+                "allowed": b["allowed"],
+                "denied": b["denied"],
+                "deny_rate": _rate(b["denied"], b["fired"]),
+                "by_phase": b["by_phase"],
+                "reasons": reasons,
+                "tools": sorted(b["_tools"]),
+                "resources": sorted(b["_resources"]),
+                "txns": len(b["_txns"]),
+            }
+
+        named = [_finalise(b) for b in buckets.values()]
+        # Loudest denier first (governance teeth), then busiest, then kind/name.
+        named.sort(key=lambda r: (-r["denied"], -r["fired"], r["kind"], r["rule"]))
+        unnamed = _finalise(unnamed_acc) if unnamed_acc is not None else None
+
+        rollup = named + ([unnamed] if unnamed else [])
+        total_verdicts = sum(r["fired"] for r in rollup)
+        total_denied = sum(r["denied"] for r in rollup)
+        totals = {
+            "rules": len(named),
+            "verdicts": total_verdicts,
+            "allowed": sum(r["allowed"] for r in rollup),
+            "denied": total_denied,
+            "deny_rate": _rate(total_denied, total_verdicts),
+        }
+
+        return {
+            "caveat": POLICY_CAVEAT,
+            "scope": {"spans": "all_verdicts"},
+            "supported": True,
+            "rules": named,
+            "unnamed": unnamed,
+            "phases": phases,
+            "totals": totals,
+        }
+
+    # --- recovery queue (the undo guarantee's failure mode) ----------------
+
+    def recovery(self) -> dict:
+        """The reconciliation queue: transactions that did not commit yet still
+        hold side effects the journal could not undo.
+
+        This is the read-side companion to the engine's recovery path, and the
+        most on-thesis traversal there is: the whole product promises *undo*,
+        and this surfaces every place undo did **not** complete. When a backward
+        fold can't finish — a compensator is missing or itself fails — the
+        transaction settles ``PARTIAL`` or ``STUCK`` and the effects it already
+        applied stay ``APPLIED``: live side effects stranded outside any
+        committed transaction. A pure GROUP-of-effects-by-txn fold gathers them
+        into the queue an operator has to work; nothing is recomputed from the
+        live world (see :data:`RECOVERY_CAVEAT`).
+
+        A transaction enters the queue when it is terminal but not
+        ``COMMITTED`` and either the engine flagged its unwind incomplete
+        (``PARTIAL`` / ``STUCK``) or it still carries an ``APPLIED`` effect — so
+        a clean ``ROLLED_BACK`` (everything ``COMPENSATED``) is correctly
+        absent, while a ``ROLLED_BACK`` that anomalously left an applied effect
+        is surfaced rather than hidden. Per transaction the effects split into:
+
+        ``dangling``
+            ``APPLIED`` effects inside a non-committed txn — the side effects
+            that survived the failed unwind. ``reversible=False`` marks the
+            worst case: an irreversible action with no automatic undo, needing
+            manual reconciliation. This is the list an operator acts on.
+
+        ``reversed``
+            ``COMPENSATED`` effects — the part of the unwind that *did* land.
+            Carried so the operator sees what is already clean.
+
+        ``failed``
+            ``FAILED`` effects — denied or errored, never took effect, nothing
+            to reconcile. Carried for completeness.
+
+        (``STAGED`` / ``GATED`` effects in such a txn are neither live nor
+        to-reconcile and appear in none of the three buckets, by design.)
+
+        Ordered most-recently-updated first — the freshest incident on top —
+        ties broken by ``txn_id`` for determinism. NULL/absent-column tolerant
+        like the rest of the reader: a per-effect ``actor`` is carried when the
+        column exists, omitted otherwise.
+        """
+        actor_select = ", actor" if self._has_actor else ""
+        placeholders = ", ".join("?" for _ in UNCOMMITTED_TERMINAL_STATES)
+        txn_rows = self._conn.execute(
+            "SELECT txn_id, state, created_at, updated_at, client_id, dry_run "
+            "FROM transactions "
+            f"WHERE state IN ({placeholders}) "
+            "ORDER BY updated_at DESC, txn_id",
+            UNCOMMITTED_TERMINAL_STATES,
+        ).fetchall()
+
+        queue: list[dict] = []
+        total_dangling = 0
+        total_irreversible = 0
+        for t in txn_rows:
+            td = dict(t)
+            eff_rows = self._conn.execute(
+                "SELECT idx, tool, resource, reversible, status, write_keys"
+                + actor_select
+                + " FROM effects WHERE txn_id = ? ORDER BY idx",
+                (td["txn_id"],),
+            ).fetchall()
+            dangling: list[dict] = []
+            reversed_: list[dict] = []
+            failed: list[dict] = []
+            for e in eff_rows:
+                d = dict(e)
+                entry = {
+                    "idx": d["idx"],
+                    "tool": d["tool"],
+                    "resource": d["resource"],
+                    "reversible": bool(d["reversible"]),
+                    "status": d["status"],
+                    "writes": [_lineage_key(k) for k in _loads(d["write_keys"], [])],
+                }
+                if self._has_actor:
+                    entry["actor"] = d["actor"]
+                if d["status"] == "APPLIED":
+                    dangling.append(entry)
+                elif d["status"] == "COMPENSATED":
+                    reversed_.append(entry)
+                elif d["status"] == "FAILED":
+                    failed.append(entry)
+            # A clean ROLLED_BACK (nothing stranded, engine not flagging it) has
+            # nothing to reconcile — keep it out of the queue.
+            if td["state"] not in INCOMPLETE_UNWIND_STATES and not dangling:
+                continue
+            summary = txn_summary(td["state"])
+            irreversible = sum(1 for x in dangling if not x["reversible"])
+            total_dangling += len(dangling)
+            total_irreversible += irreversible
+            queue.append(
+                {
+                    "txn_id": td["txn_id"],
+                    "state": td["state"],
+                    "tone": summary["tone"],
+                    "blurb": summary["blurb"],
+                    "created_at": td["created_at"],
+                    "updated_at": td["updated_at"],
+                    "client_id": td["client_id"],
+                    "dry_run": bool(td["dry_run"]),
+                    "dangling": dangling,
+                    "reversed": reversed_,
+                    "failed": failed,
+                    "dangling_count": len(dangling),
+                    "irreversible_dangling": irreversible,
+                }
+            )
+
+        return {
+            "scope": {
+                # The states the engine itself flags as an incomplete unwind,
+                # always queued; plus any ROLLED_BACK left holding an applied
+                # effect (the anomaly path), stated rather than implied.
+                "incomplete_unwind_states": list(INCOMPLETE_UNWIND_STATES),
+                "also_included": "rolled_back_txns_with_a_surviving_applied_effect",
+                "caveat": RECOVERY_CAVEAT,
+            },
+            "queue": queue,
+            "totals": {
+                "transactions": len(queue),
+                "dangling_effects": total_dangling,
+                "irreversible_dangling_effects": total_irreversible,
+            },
         }
 
     # --- lineage (causal read→write provenance) ----------------------------
@@ -1019,4 +1960,528 @@ class JournalReader:
             "edges": unique_edges,
             "chains": chains,
             "caveat": LINEAGE_CAVEAT,
+        }
+
+    # --- undo impact (the blast radius of reversing a transaction) ----------
+
+    def undo_impact(self, txn_id: str) -> dict | None:
+        """The blast radius of undoing one transaction, or ``None`` if unknown.
+
+        The whole product promises *undo*; this is the pre-flight check the
+        promise implies — *before* you reverse a committed transaction, what
+        depends on it? It is lineage's version-grounded ``produces`` relation
+        read in reverse, folded into an undo-safety verdict: nothing is recomputed
+        from the live world (see :data:`UNDO_IMPACT_CAVEAT`). Two hazards, both
+        provable from the journal's recorded keys and the resources' version
+        counters:
+
+        - **downstream consumers** — every effect elsewhere in the journal whose
+          recorded read observed the EXACT version this transaction's write
+          produced. Undoing this transaction reverses that value, so a *committed*
+          consumer is a standing dependency the undo retroactively invalidates.
+          In-flight (OPEN/STAGED) readers are surfaced but provisional; a read in
+          a rolled-back consumer didn't stand, so it never forces the verdict.
+        - **superseded keys** — a key this transaction wrote that a *later* live
+          (APPLIED) write, in another transaction, has since overwritten at a
+          higher version. The current value is no longer this transaction's, so
+          an undo would roll back from a value it did not write — a stale undo.
+
+        The verdict is precedence-ordered: a non-committed target has nothing
+        committed to reverse (``not-committed``); an irreversible APPLIED effect
+        is a hard floor with no compensator (``blocked-irreversible``) regardless
+        of blast; otherwise a committed consumer or a live supersession makes the
+        undo ``entangled``; a target whose outputs nobody committed-read and whose
+        keys nobody overwrote is a self-contained ``clean`` undo.
+
+        Returns a render-ready dict — ``target`` (the txn and the live versioned
+        writes an undo would reverse), ``downstream`` (consumer transactions,
+        committed-and-busiest first), ``superseded`` (keys overwritten since),
+        ``verdict`` and ``totals`` — plus the honest-scope ``caveat``. ``None``
+        when no such transaction exists (the HTTP layer renders that as 404).
+        """
+        trow = self._conn.execute(
+            "SELECT * FROM transactions WHERE txn_id = ?", (txn_id,)
+        ).fetchone()
+        if trow is None:
+            return None
+        td = dict(trow)
+        summary = txn_summary(td["state"])
+        is_committed = td["state"] == "COMMITTED"
+
+        # The target's own effects: count applied/(ir)reversible, and gather the
+        # LIVE versioned writes an undo would reverse. Only APPLIED writes produced
+        # a live value; a STAGED/GATED/FAILED write never landed and a COMPENSATED
+        # one is already undone, so neither anchors an undo.
+        terows = self._conn.execute(
+            "SELECT idx, tool, reversible, status, write_keys "
+            "FROM effects WHERE txn_id = ? ORDER BY idx",
+            (txn_id,),
+        ).fetchall()
+        target_sigs: dict[tuple, dict] = {}
+        versionless: list[dict] = []
+        applied = reversible_applied = irreversible_applied = 0
+        for e in terows:
+            d = dict(e)
+            if d["status"] != "APPLIED":
+                continue
+            applied += 1
+            if d["reversible"]:
+                reversible_applied += 1
+            else:
+                irreversible_applied += 1
+            for w in (_lineage_key(k) for k in _loads(d["write_keys"], [])):
+                if w["version"] is None:
+                    versionless.append(
+                        {"resource": w["resource"], "key": w["key"],
+                         "by_idx": d["idx"], "by_tool": d["tool"]}
+                    )
+                    continue
+                sig = (w["resource"], _freeze(w["key"]), w["version"])
+                target_sigs.setdefault(
+                    sig,
+                    {"resource": w["resource"], "key": w["key"],
+                     "version": w["version"], "by_idx": d["idx"],
+                     "by_tool": d["tool"]},
+                )
+
+        # The latest version this txn holds per key — supersession is judged
+        # against the freshest value an undo would actually restore from.
+        my_key_versions: dict[tuple, int] = {}
+        for (resource, fkey, version) in target_sigs:
+            rk = (resource, fkey)
+            if rk not in my_key_versions or version > my_key_versions[rk]:
+                my_key_versions[rk] = version
+
+        # One pass over the whole journal: collect reads that observed my exact
+        # versions (consumers) and later live writes that superseded my keys.
+        rows = self._conn.execute(
+            "SELECT txn_id, idx, tool, status, read_keys, write_keys "
+            "FROM effects ORDER BY txn_id, idx"
+        ).fetchall()
+        consumers: dict[str, list[dict]] = {}
+        superseded: dict[tuple, dict] = {}
+        for r in rows:
+            d = dict(r)
+            if d["txn_id"] == txn_id:
+                continue  # a txn reading/overwriting its own writes isn't downstream
+            for rd in (_lineage_key(k) for k in _loads(d["read_keys"], [])):
+                if rd["version"] is None:
+                    continue
+                if (rd["resource"], _freeze(rd["key"]), rd["version"]) in target_sigs:
+                    consumers.setdefault(d["txn_id"], []).append(
+                        {"resource": rd["resource"], "key": rd["key"],
+                         "version": rd["version"], "by_idx": d["idx"],
+                         "by_tool": d["tool"], "read_status": d["status"]}
+                    )
+            if d["status"] != "APPLIED":
+                continue  # only a LIVE later write supersedes; a compensated one doesn't
+            for w in (_lineage_key(k) for k in _loads(d["write_keys"], [])):
+                if w["version"] is None:
+                    continue
+                rk = (w["resource"], _freeze(w["key"]))
+                mine = my_key_versions.get(rk)
+                if mine is not None and w["version"] > mine:
+                    cur = superseded.get(rk)
+                    if cur is None or w["version"] > cur["latest_version"]:
+                        superseded[rk] = {
+                            "resource": w["resource"], "key": w["key"],
+                            "my_version": mine, "latest_version": w["version"],
+                            "by_txn": d["txn_id"], "by_idx": d["idx"],
+                            "by_tool": d["tool"],
+                        }
+
+        # Enrich each consumer with its transaction's state (is the dependency
+        # standing?), then order committed-first, busiest-first, id for ties.
+        downstream: list[dict] = []
+        for ctxn, reads in consumers.items():
+            crow = self._conn.execute(
+                "SELECT state, client_id FROM transactions WHERE txn_id = ?",
+                (ctxn,),
+            ).fetchone()
+            cstate = crow["state"] if crow else None
+            csumm = (txn_summary(cstate) if cstate
+                     else {"tone": "unknown", "blurb": "unknown"})
+            downstream.append(
+                {
+                    "txn_id": ctxn,
+                    "state": cstate,
+                    "tone": csumm["tone"],
+                    "blurb": csumm["blurb"],
+                    "client_id": crow["client_id"] if crow else None,
+                    "committed": cstate == "COMMITTED",
+                    "in_flight": cstate in ("OPEN", "STAGED"),
+                    "reads": reads,
+                    "read_count": len(reads),
+                }
+            )
+        downstream.sort(
+            key=lambda x: (not x["committed"], -x["read_count"], x["txn_id"])
+        )
+        superseded_list = sorted(
+            superseded.values(),
+            key=lambda s: (str(s["resource"]), str(s["key"]), s["latest_version"]),
+        )
+
+        committed_consumers = [d for d in downstream if d["committed"]]
+        in_flight_consumers = [d for d in downstream if d["in_flight"]]
+
+        if not is_committed:
+            label, undoable, clean = "not-committed", False, False
+            reason = (
+                f"Transaction is {td['state']}, not COMMITTED — it holds no "
+                "committed effect to reverse. Undo applies to a committed "
+                "transaction."
+            )
+        elif irreversible_applied > 0:
+            label, undoable, clean = "blocked-irreversible", False, False
+            reason = (
+                f"{irreversible_applied} irreversible effect(s) already fired "
+                "(APPLIED, no compensator) and cannot be auto-undone. Any "
+                "reversible effects could roll back, but the transaction as a "
+                "whole has no clean undo."
+            )
+        elif committed_consumers or superseded_list:
+            label, undoable, clean = "entangled", True, False
+            parts: list[str] = []
+            if committed_consumers:
+                parts.append(
+                    f"{len(committed_consumers)} committed transaction(s) read "
+                    "the exact versions this one produced — undoing it "
+                    "retroactively invalidates their inputs"
+                )
+            if superseded_list:
+                parts.append(
+                    f"{len(superseded_list)} of its keys were since overwritten "
+                    "by a later live write — undo would roll back from a value "
+                    "it did not write"
+                )
+            reason = "Undo is mechanically possible but carries a blast radius: " \
+                + "; ".join(parts) + "."
+        else:
+            label, undoable, clean = "clean", True, True
+            reason = (
+                "No committed transaction read this one's outputs and none of "
+                "its keys were since overwritten — the undo is self-contained."
+            )
+            if in_flight_consumers:
+                reason += (
+                    f" ({len(in_flight_consumers)} in-flight transaction(s) are "
+                    "reading these versions but have not committed — re-check "
+                    "before undoing.)"
+                )
+
+        return {
+            "target": {
+                "txn_id": txn_id,
+                "state": td["state"],
+                "tone": summary["tone"],
+                "blurb": summary["blurb"],
+                "client_id": td["client_id"],
+                "is_committed": is_committed,
+                "applied_effects": applied,
+                "reversible_applied": reversible_applied,
+                "irreversible_applied": irreversible_applied,
+                "writes": sorted(
+                    target_sigs.values(),
+                    key=lambda w: (str(w["resource"]), str(w["key"]), w["version"]),
+                ),
+                "versionless_writes": versionless,
+            },
+            "downstream": downstream,
+            "superseded": superseded_list,
+            "verdict": {
+                "label": label,
+                "undoable": undoable,
+                "clean": clean,
+                "reason": reason,
+            },
+            "totals": {
+                "downstream_transactions": len(downstream),
+                "committed_consumers": len(committed_consumers),
+                "in_flight_consumers": len(in_flight_consumers),
+                "downstream_reads": sum(d["read_count"] for d in downstream),
+                "superseded_keys": len(superseded_list),
+            },
+            "caveat": UNDO_IMPACT_CAVEAT,
+        }
+
+    # --- provenance (transitive upstream ancestry) --------------------------
+
+    def provenance(self, txn_id: str) -> dict | None:
+        """The chain of prior transactions that fed one transaction's inputs.
+
+        ``lineage()`` folds the journal into a flat, one-hop read→write graph
+        and ``undo_impact()`` reads one hop *forward* (who consumed a txn). This
+        is the missing direction taken to its conclusion: walk the
+        version-grounded ``produces`` relation **backward across transaction
+        boundaries**, transitively, from one anchor to its origins — the prior
+        agent actions whose writes the anchor (and its ancestors) read (Wedge
+        #3, decision provenance). ``None`` if the transaction is unknown (the
+        HTTP layer renders that as 404).
+
+        Pure traversal of the same persisted ``read_keys`` / ``write_keys`` and
+        version counters everything else folds over — nothing is recomputed
+        from the live world (see :data:`PROVENANCE_CAVEAT`). One hop is
+        version-grounded: a read observed ``(resource, key, version)``, so the
+        write whose recorded post-version is exactly that is its producer. The
+        walk is breadth-first, so each ancestor carries its **shortest** hop
+        ``depth`` (nearest cause first). Three boundaries are honest, never
+        invented:
+
+        - **cross-transaction only** — a produces hop must cross a txn boundary;
+          a read of a version this same transaction wrote is intra-txn
+          read-after-write (lineage's territory), neither an ancestor nor an
+          external input.
+        - **external_inputs** — a read whose version no in-journal write
+          produced (``unproduced``) or a versionless read (``versionless``,
+          e.g. the filesystem adapter) is where the chain leaves the journal;
+          the ancestor that consumed only such reads is an ``origin``.
+        - **dedup / cycle guard** — a shared producer is expanded exactly once
+          (at its shortest depth) however many downstream effects read it.
+
+        Returns a render-ready dict — ``target`` (the anchor and the writes it
+        produced), ``ancestors`` (writer effects upstream, depth-ascending, each
+        with the versions it ``produced`` and whether it is an ``origin``),
+        ``edges`` (``produces`` across boundaries + ``informs`` inside each
+        ancestor), ``external_inputs`` (where the walk bottomed out), ``scope``,
+        ``totals`` and the honest-scope ``caveat``.
+        """
+        trow = self._conn.execute(
+            "SELECT state, client_id FROM transactions WHERE txn_id = ?",
+            (txn_id,),
+        ).fetchone()
+
+        rows = self._conn.execute(
+            "SELECT txn_id, idx, tool, read_keys, write_keys "
+            "FROM effects ORDER BY txn_id, idx"
+        ).fetchall()
+        effects: list[dict] = []
+        for r in rows:
+            d = dict(r)
+            effects.append(
+                {
+                    "node": f"{d['txn_id']}#{d['idx']}",
+                    "txn_id": d["txn_id"],
+                    "idx": d["idx"],
+                    "tool": d["tool"],
+                    "reads": [_lineage_key(k) for k in _loads(d["read_keys"], [])],
+                    "writes": [_lineage_key(k) for k in _loads(d["write_keys"], [])],
+                }
+            )
+        node_meta = {e["node"]: e for e in effects}
+        by_txn: dict[str, list[dict]] = {}
+        for e in effects:  # already idx-ordered within each txn by the query
+            by_txn.setdefault(e["txn_id"], []).append(e)
+
+        # Unknown transaction → None (404). A txn row with no effects is still a
+        # real, well-formed (empty-trace) anchor, not a 404.
+        if trow is None and txn_id not in by_txn:
+            return None
+
+        # Producer index over the WHOLE journal: which write produced each
+        # (resource, key, version). Versionless writes can't anchor a hop.
+        producers: dict[tuple, str] = {}
+        for e in effects:
+            for w in e["writes"]:
+                if w["version"] is None:
+                    continue
+                sig = (w["resource"], _freeze(w["key"]), w["version"])
+                producers.setdefault(sig, e["node"])
+
+        # Target panel: the anchor's own writes (context for the trace) + how
+        # many reads it performed. Versionless writes ride along (version None).
+        anchor_effects = by_txn.get(txn_id, [])
+        target_writes: list[dict] = []
+        read_count = 0
+        for e in anchor_effects:
+            read_count += len(e["reads"])
+            for w in e["writes"]:
+                target_writes.append(
+                    {
+                        "resource": w["resource"],
+                        "key": w["key"],
+                        "version": w["version"],
+                        "by_idx": e["idx"],
+                        "by_tool": e["tool"],
+                    }
+                )
+        target_writes.sort(
+            key=lambda w: (
+                str(w["resource"]),
+                json.dumps(w["key"], sort_keys=True, default=str),
+                (w["version"] is None, w["version"] or 0),
+            )
+        )
+
+        # --- the breadth-first backward walk ---------------------------------
+        node_depth: dict[str, int] = {}      # ancestor writer node → shortest depth
+        has_ancestor: dict[str, bool] = {}   # writer node found a cross-txn producer
+        produced: dict[str, list[dict]] = {} # writer node → versions it produced
+        edges: list[dict] = []
+        produces_seen: set[tuple] = set()
+        informs_seen: set[tuple] = set()
+        external: list[dict] = []
+        external_seen: set[tuple] = set()
+        queued: set[str] = set()
+
+        def _expand(txn: str, max_idx: int | None, owner_node: str | None,
+                    depth: int) -> list[str]:
+            """Resolve one transaction's reads one hop back.
+
+            ``owner_node`` is the ancestor writer these reads informed (``None``
+            for the anchor, whose reads are the transaction's whole input set
+            and emit no ``informs`` edge). ``max_idx`` bounds the informing
+            reads to those at or before the owner write (co-transactional
+            happens-before); ``None`` traces every read. Producers reached cross
+            a txn boundary and become ancestors at ``depth + 1``; returns the
+            newly reached producer nodes to enqueue.
+            """
+            reached: list[str] = []
+            for e in by_txn.get(txn, []):
+                if max_idx is not None and e["idx"] > max_idx:
+                    continue
+                reader_node = e["node"]
+                # The read→write ordering inside an ancestor (honest sequence,
+                # not value-flow). Emitted once per (reader, owner) pair, never
+                # for the anchor and never as a self-loop.
+                if (
+                    owner_node is not None
+                    and reader_node != owner_node
+                    and e["reads"]
+                    and (reader_node, owner_node) not in informs_seen
+                ):
+                    informs_seen.add((reader_node, owner_node))
+                    edges.append(
+                        {
+                            "kind": "informs",
+                            "from": reader_node,
+                            "to": owner_node,
+                            "detail": (
+                                f"{e['tool']} read before "
+                                f"{node_meta[owner_node]['tool']} wrote"
+                            ),
+                        }
+                    )
+                for rd in e["reads"]:
+                    version = rd["version"]
+                    if version is None:
+                        _add_external(reader_node, rd, "versionless")
+                        continue
+                    producer = producers.get(
+                        (rd["resource"], _freeze(rd["key"]), version)
+                    )
+                    if producer is None:
+                        _add_external(reader_node, rd, "unproduced")
+                        continue
+                    if node_meta[producer]["txn_id"] == txn:
+                        # Intra-txn read-after-write — lineage's territory, a
+                        # produces hop must cross a transaction boundary.
+                        continue
+                    if owner_node is not None:
+                        has_ancestor[owner_node] = True
+                    pe_sig = (producer, reader_node, rd["resource"],
+                              _freeze(rd["key"]), version)
+                    if pe_sig not in produces_seen:
+                        produces_seen.add(pe_sig)
+                        edges.append(
+                            {
+                                "kind": "produces",
+                                "from": producer,
+                                "to": reader_node,
+                                "resource": rd["resource"],
+                                "key": rd["key"],
+                                "version": version,
+                                "detail": (
+                                    f"{node_meta[producer]['tool']} wrote "
+                                    f"{rd['resource']}:{rd['key']} v{version}, "
+                                    f"read by {e['tool']}"
+                                ),
+                            }
+                        )
+                        produced.setdefault(producer, []).append(
+                            {
+                                "resource": rd["resource"],
+                                "key": rd["key"],
+                                "version": version,
+                                "consumed_by": reader_node,
+                            }
+                        )
+                    nd = depth + 1
+                    if producer not in node_depth or nd < node_depth[producer]:
+                        node_depth[producer] = nd
+                    if producer not in queued:
+                        queued.add(producer)
+                        reached.append(producer)
+            return reached
+
+        def _add_external(reader_node: str, rd: dict, reason: str) -> None:
+            sig = (reader_node, rd["resource"], _freeze(rd["key"]),
+                   rd["version"], reason)
+            if sig in external_seen:
+                return
+            external_seen.add(sig)
+            external.append(
+                {
+                    "node": reader_node,
+                    "resource": rd["resource"],
+                    "key": rd["key"],
+                    "version": rd["version"],
+                    "reason": reason,
+                }
+            )
+
+        # Level 0 is the anchor: its full read set, no bounding write. Then a
+        # FIFO queue drains in nondecreasing depth, so the first time a producer
+        # is expanded it is at its shortest depth (a BFS shortest-path guarantee
+        # a depth-first walk would overstate through a diamond).
+        frontier = _expand(txn_id, None, None, 0)
+        while frontier:
+            nxt: list[str] = []
+            for node in frontier:
+                nxt.extend(
+                    _expand(node_meta[node]["txn_id"], node_meta[node]["idx"],
+                            node, node_depth[node])
+                )
+            frontier = nxt
+
+        ancestors: list[dict] = []
+        origin_count = 0
+        for node, depth in node_depth.items():
+            is_origin = not has_ancestor.get(node, False)
+            if is_origin:
+                origin_count += 1
+            ancestors.append(
+                {
+                    "node": node,
+                    "depth": depth,
+                    "is_origin": is_origin,
+                    "produced": produced.get(node, []),
+                }
+            )
+        ancestors.sort(key=lambda a: (a["depth"], a["node"]))
+        max_depth = max(node_depth.values(), default=0)
+
+        summary = (txn_summary(trow["state"]) if trow
+                   else {"tone": "unknown", "blurb": "unknown"})
+        return {
+            "target": {
+                "txn_id": txn_id,
+                "state": trow["state"] if trow else None,
+                "tone": summary["tone"],
+                "blurb": summary["blurb"],
+                "client_id": trow["client_id"] if trow else None,
+                "read_count": read_count,
+                "writes": target_writes,
+            },
+            "ancestors": ancestors,
+            "edges": edges,
+            "external_inputs": external,
+            "scope": {
+                "max_depth": max_depth,
+                "ancestor_count": len(ancestors),
+            },
+            "totals": {
+                "origin_ancestors": origin_count,
+            },
+            "caveat": PROVENANCE_CAVEAT,
         }

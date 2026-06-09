@@ -409,22 +409,52 @@ class SQLiteAdapter(SavepointAdapter):
 # --- result materialisation ------------------------------------------------
 
 
-def _materialise_cursor(result: Any) -> Any:
-    """Drain a live ``sqlite3.Cursor`` into journal-safe, re-iterable rows.
+# Recursion ceiling for :func:`_materialise_cursor`. Tool results are finite,
+# shallow JSON trees in practice; the cap is generous relative to any real
+# result but bounds the walk so a pathological (e.g. cyclic) structure cannot
+# blow the stack. Past the cap we pass the value through unchanged — a stray
+# cursor that deep would then be rejected loudly by the strict journal dump,
+# exactly as before this hardening (no regression, just no rescue that deep).
+_MATERIALISE_MAX_DEPTH = 64
+
+
+def _materialise_cursor(result: Any, _depth: int = 0) -> Any:
+    """Drain every live ``sqlite3.Cursor`` in ``result`` into journal-safe rows.
 
     A tool that does ``return execute_isolated(...)`` for a read hands back a
-    one-shot ``sqlite3.Cursor``. Two problems with letting that become
-    ``effect.result``: (1) a Cursor is not JSON-serialisable, so the journal
-    write would raise ``TypeError`` and take down the whole transaction; (2) a
-    cursor is consumed exactly once, so journalling it would race the agent's
-    own read. We drain it here into a plain list of rows — lossless,
-    re-iterable, and serialisable — so the natural reader pattern is safe.
+    one-shot ``sqlite3.Cursor``. Two problems with letting one reach
+    ``effect.result``: (1) a Cursor is not JSON-serialisable, so the strict
+    journal dump raises ``TypeError`` and takes down the whole transaction; (2)
+    a cursor is consumed exactly once, so journalling it would race the agent's
+    own read. We drain it into a plain list of rows — lossless, re-iterable,
+    serialisable — so the natural reader pattern is safe.
+
+    Cursors are drained wherever they appear: at the top level OR nested inside
+    a returned ``dict`` / ``list`` / ``tuple`` (e.g. ``{"rows": cur, "n": 1}``,
+    the natural rows-plus-metadata shape, or ``[cur]``). The top-level case
+    alone is not enough — a cursor one level down still chokes the journal and
+    kills the txn. This mirrors the TypeScript SDK, where ``executeIsolated``
+    returns materialised rows (``.all()``) so a DB cursor can never reach the
+    journal in the first place; here the same guarantee is enforced at the
+    result boundary.
+
     ``sqlite3.Row`` rows keep their column names (``dict``); bare tuples become
-    lists. Non-cursor results pass through untouched.
+    lists. Containers are rebuilt with the same type (``dict``/``list``/
+    ``tuple``); every other leaf passes through untouched.
     """
     if isinstance(result, sqlite3.Cursor):
         rows = result.fetchall()
         return [dict(r) if isinstance(r, sqlite3.Row) else list(r) for r in rows]
+    # Recurse only into the journal-able container types a tool might wrap a
+    # cursor in. Bounded depth so a pathological structure can't blow the stack.
+    if _depth >= _MATERIALISE_MAX_DEPTH:
+        return result
+    if isinstance(result, dict):
+        return {k: _materialise_cursor(v, _depth + 1) for k, v in result.items()}
+    if isinstance(result, list):
+        return [_materialise_cursor(v, _depth + 1) for v in result]
+    if isinstance(result, tuple):
+        return tuple(_materialise_cursor(v, _depth + 1) for v in result)
     return result
 
 

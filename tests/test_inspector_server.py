@@ -158,6 +158,46 @@ def test_api_reliability_include_dry_run_flag(server: str):
     assert incl["scope"]["include_dry_run"] is True
 
 
+# --- recovery (reconciliation queue) ---------------------------------------
+
+
+def test_api_recovery_surfaces_the_stuck_txn(server: str):
+    status, data = _get_json(server + "/api/recovery")
+    assert status == 200
+    assert set(data) >= {"scope", "queue", "totals"}
+    # Only the STUCK story needs reconciliation; its dangling effect is the
+    # irreversible send_payout, and it survives the round trip over the wire.
+    assert [q["txn_id"] for q in data["queue"]] == ["txn-stuck-payout04"]
+    entry = data["queue"][0]
+    assert [d["tool"] for d in entry["dangling"]] == ["send_payout"]
+    assert entry["dangling"][0]["reversible"] is False
+    assert data["totals"]["irreversible_dangling_effects"] == 1
+    assert "NOT a live probe" in data["scope"]["caveat"]
+
+
+# --- approvals (over-the-wire gate queue) ----------------------------------
+
+
+def test_api_approvals_surfaces_the_held_charge(server: str):
+    status, data = _get_json(server + "/api/approvals")
+    assert status == 200
+    assert set(data) >= {"scope", "pending", "approved", "totals"}
+    # The seed holds the gated charge PENDING and nothing cleared yet — it
+    # survives the round trip over the wire, enriched with its effect identity.
+    assert data["totals"] == {"pending": 1, "approved": 0, "approvers": []}
+    held = data["pending"][0]
+    assert held["tool"] == "charge_card"
+    assert held["reversible"] is False
+    assert held["status"] == "PENDING"
+    assert held["txn_id"] == "txn-gated-charge03"
+    assert "NOT that the held transaction has since resumed" in data["scope"]["caveat"]
+
+
+def test_api_timeline_carries_approvals(server: str):
+    _, data = _get_json(server + "/api/transactions/txn-gated-charge03")
+    assert [a["tool"] for a in data["approvals"]] == ["charge_card"]
+
+
 # --- lineage (action-provenance) -------------------------------------------
 
 
@@ -176,3 +216,54 @@ def test_api_lineage_txn_scoped(server: str):
     _, data = _get_json(server + "/api/lineage?txn=txn-clean-deploy01")
     assert data["scope"]["txn_id"] == "txn-clean-deploy01"
     assert {c["txn_id"] for c in data["chains"]} == {"txn-clean-deploy01"}
+
+
+# --- undo impact (blast radius of reversing a transaction) ------------------
+
+
+def test_api_undo_impact_clean_deploy(server: str):
+    status, data = _get_json(server + "/api/undo-impact/txn-clean-deploy01")
+    assert status == 200
+    assert set(data) >= {"target", "downstream", "superseded", "verdict",
+                         "totals", "caveat"}
+    # nobody committed-read releases/current v12 → a self-contained undo
+    assert data["verdict"]["label"] == "clean"
+    assert data["downstream"] == []
+    # the versionless fs manifest is surfaced as a blind spot, not dropped
+    assert data["target"]["versionless_writes"][0]["resource"] == "fs"
+    assert "blast radius" in data["caveat"].lower()
+
+
+def test_api_undo_impact_not_committed(server: str):
+    """The gated charge is STAGED — the verdict says there is nothing committed
+    to reverse rather than pretending an undo is available."""
+    _, data = _get_json(server + "/api/undo-impact/txn-gated-charge03")
+    assert data["verdict"]["label"] == "not-committed"
+    assert data["verdict"]["undoable"] is False
+
+
+def test_api_undo_impact_missing_is_404(server: str):
+    assert _status_of(server + "/api/undo-impact/txn-nope") == 404
+
+
+# --- provenance (transitive upstream ancestry) ------------------------------
+
+
+def test_api_provenance_clean_deploy(server: str):
+    status, data = _get_json(server + "/api/provenance/txn-clean-deploy01")
+    assert status == 200
+    assert set(data) >= {"target", "ancestors", "edges", "external_inputs",
+                         "scope", "totals", "caveat"}
+    # every seed read observed a version written before the journal began, so
+    # the trace bottoms out immediately in external inputs with no ancestor.
+    assert data["ancestors"] == []
+    assert any(
+        e["resource"] == "sql" and e["key"] == ["releases", "current"]
+        and e["version"] == 11 and e["reason"] == "unproduced"
+        for e in data["external_inputs"]
+    )
+    assert "transitive" in data["caveat"].lower()
+
+
+def test_api_provenance_missing_is_404(server: str):
+    assert _status_of(server + "/api/provenance/txn-nope") == 404

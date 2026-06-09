@@ -12,6 +12,7 @@
  * compatible fake if ever needed. At runtime the real driver satisfies it.
  */
 
+import Database from "better-sqlite3";
 import { activeEffect } from "../tools.js";
 import type { Effect, SnapshotHandle } from "../effects.js";
 import type { StateDiffable, ToolFn, TransactionalResourceAdapter } from "./base.js";
@@ -47,6 +48,11 @@ const ADAPTER_FOR = new WeakMap<object, SqliteAdapter>();
 export class SqliteAdapter implements TransactionalResourceAdapter, StateDiffable {
   readonly name = "sql";
   private readonly db: SqliteDatabase;
+  // A separate autocommit "meta" connection used ONLY for readVersion, opened
+  // when the main connection is backed by an on-disk file; null for :memory:
+  // (no shareable path) or a driver that can't answer `PRAGMA database_list`.
+  // Mirror of pherix.core.adapters.sql.SQLiteAdapter._meta_conn.
+  private readonly metaDb: SqliteDatabase | null;
 
   constructor(db: SqliteDatabase) {
     this.db = db;
@@ -54,6 +60,54 @@ export class SqliteAdapter implements TransactionalResourceAdapter, StateDiffabl
     // readVersion on an unknown key returns 0, not a missing-table error.
     this.db.exec(VERSIONS_TABLE_DDL);
     ADAPTER_FOR.set(db as object, this);
+    // The DDL above is committed (autocommit, pre-BEGIN), so the meta
+    // connection opened now sees `_pherix_versions` immediately.
+    this.metaDb = SqliteAdapter.openMetaConnection(db);
+  }
+
+  /**
+   * Open a committed-only "meta" connection for readVersion, mirroring Python's
+   * `_meta_conn`. During an agentTxn the main connection sits inside an open
+   * BEGIN, so its reads of `_pherix_versions` reflect its own uncommitted
+   * version bumps (and, under WAL, a stale read snapshot). The meta connection
+   * is never inside a BEGIN: its reads see the latest *committed* state, so the
+   * commit-time diff can compare committed-base-at-read against committed-base-
+   * now and (a) not flag my own read-then-write of a key as a conflict, (b)
+   * still catch a cross-connection committed write to a key I only read. Writes
+   * still go through the main connection so they roll back with the txn.
+   *
+   * Returns null for :memory: (no shareable path → single-connection by
+   * definition) and for any driver whose `PRAGMA database_list` we cannot read
+   * (e.g. a test fake) — both keep the own-write-visible main-connection path.
+   */
+  private static openMetaConnection(db: SqliteDatabase): SqliteDatabase | null {
+    const path = SqliteAdapter.derivePath(db);
+    if (path === null) return null;
+    // Autocommit (the better-sqlite3 default): the meta connection never opens
+    // a transaction, so every readVersion sees the latest committed snapshot.
+    // Like Python's, it is intentionally long-lived (one per on-disk adapter) —
+    // a non-issue in agent-runtime contexts where adapters are O(handful).
+    return new Database(path) as unknown as SqliteDatabase;
+  }
+
+  /** Path of the connection's `main` database, or null for :memory:. Mirrors
+   *  Python's `_derive_db_path`: `PRAGMA database_list` yields (seq, name, file)
+   *  rows; `file` is "" for an in-memory db. Honours only the `main` schema. */
+  private static derivePath(db: SqliteDatabase): string | null {
+    let rows: Array<{ name?: unknown; file?: unknown }>;
+    try {
+      rows = db.prepare("PRAGMA database_list").all() as Array<{ name?: unknown; file?: unknown }>;
+    } catch {
+      // A driver/fake that can't answer database_list → no committed-only path.
+      return null;
+    }
+    for (const row of rows) {
+      if (row.name === "main") {
+        const file = typeof row.file === "string" ? row.file : "";
+        return file === "" ? null : file;
+      }
+    }
+    return null;
   }
 
   /** The underlying connection, for tools that need it directly in tests. */
@@ -109,16 +163,22 @@ export class SqliteAdapter implements TransactionalResourceAdapter, StateDiffabl
   }
 
   /** Whether readVersion reflects ONLY committed state (excludes this txn's own
-   *  uncommitted writes). False for the single-connection in-process adapter:
-   *  reads see our own bumps, so the diff uses the own-write-visible branch.
-   *  The committed-only (cross-process meta-connection) path is deferred. */
+   *  uncommitted writes). True on-disk (the meta connection sits outside the
+   *  main BEGIN); false for :memory: (single connection — reads see our own
+   *  bumps, so the diff uses the own-write-visible branch). Mirror of Python's
+   *  `reads_committed_only` → `self._meta_conn is not None`. */
   readsCommittedOnly(): boolean {
-    return false;
+    return this.metaDb !== null;
   }
 
-  /** Current version of `key`. Absent row → 0 ("never written"); never null. */
+  /** Current version of `key`. Absent row → 0 ("never written"); never null.
+   *  Reads through the committed-only meta connection when on-disk — so a
+   *  cross-connection committed bump is visible at the commit-time diff and our
+   *  own uncommitted bump is not — falling back to the main connection for
+   *  :memory:, where no meta connection exists. */
   readVersion(key: unknown): number {
-    const row = this.db
+    const target = this.metaDb ?? this.db;
+    const row = target
       .prepare("SELECT version FROM _pherix_versions WHERE resource = ? AND key_json = ?")
       .get(this.name, SqliteAdapter.encodeKey(key)) as { version: number } | undefined;
     return row === undefined ? 0 : Number(row.version);

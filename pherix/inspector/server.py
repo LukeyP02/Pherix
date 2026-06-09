@@ -15,7 +15,13 @@ Routes:
 ``GET /api/transactions``       list + filter (query params below)
 ``GET /api/transactions/<id>``  one transaction's full timeline
 ``GET /api/reliability``        reliability metrics (Prong #2) over the journal
+``GET /api/contention``         isolation collision map — where agents collide (Prong #2)
+``GET /api/policy``             per-rule policy ledger — what each rule/cap/allowlist decided
+``GET /api/recovery``           reconciliation queue — txns that didn't undo cleanly
+``GET /api/approvals``          over-the-wire gate queue — held + cleared irreversibles
 ``GET /api/lineage``            causal read→write provenance (``?txn=<id>``)
+``GET /api/undo-impact/<id>``   blast radius of undoing one transaction
+``GET /api/provenance/<id>``    transitive upstream ancestry of one transaction
 ==============================  ===========================================
 
 ``/api/transactions`` accepts ``state``, ``client_id``, ``tool``, ``since``,
@@ -28,6 +34,17 @@ default; pass ``include_dry_run=1`` to fold dry-runs back in).
 ``/api/lineage`` accepts an optional ``txn`` — present scopes the focus to one
 transaction (upstream producers still resolved across the whole journal),
 absent folds the entire journal.
+
+``/api/undo-impact/<id>`` folds the blast radius of reversing one transaction —
+who committed-read the exact versions it produced and which of its keys a later
+live write has since superseded — into an undo-safety verdict. 404 if the
+transaction is unknown (same shape as ``/api/transactions/<id>``).
+
+``/api/provenance/<id>`` walks the version-grounded produces relation backward
+across transaction boundaries — the transitive chain of prior transactions
+whose writes fed this one's inputs, each ancestor at its shortest hop depth,
+the walk bottoming out in external inputs at the journal's edge. 404 if the
+transaction is unknown.
 
 The reader is shared across request threads behind a lock — SQLite reads are
 fast and the console is single-operator, so serialising them is simpler and
@@ -140,6 +157,33 @@ class InspectorHandler(BaseHTTPRequestHandler):
                     ),
                 )
                 return
+            if path == "/api/accountability":
+                q = parse_qs(parsed.query)
+                vals = q.get("include_dry_run")
+                # Same default as reliability(): dry-runs excluded unless the
+                # param is explicitly "1" — a dry-run touched nothing, so it is
+                # not part of "what did this principal actually do?".
+                include_dry_run = bool(vals) and vals[0] == "1"
+                self._json(
+                    200,
+                    self._read(
+                        self.srv.reader.accountability,
+                        include_dry_run=include_dry_run,
+                    ),
+                )
+                return
+            if path == "/api/contention":
+                self._json(200, self._read(self.srv.reader.contention))
+                return
+            if path == "/api/policy":
+                self._json(200, self._read(self.srv.reader.policy))
+                return
+            if path == "/api/recovery":
+                self._json(200, self._read(self.srv.reader.recovery))
+                return
+            if path == "/api/approvals":
+                self._json(200, self._read(self.srv.reader.approvals))
+                return
             if path == "/api/transactions":
                 self._json(200, self._list(parse_qs(parsed.query)))
                 return
@@ -147,6 +191,22 @@ class InspectorHandler(BaseHTTPRequestHandler):
                 q = parse_qs(parsed.query)
                 txn = (q.get("txn") or [None])[0]
                 self._json(200, self._read(self.srv.reader.lineage, txn))
+                return
+            if path.startswith("/api/undo-impact/"):
+                txn_id = path[len("/api/undo-impact/"):]
+                impact = self._read(self.srv.reader.undo_impact, txn_id)
+                if impact is None:
+                    self._json(404, {"error": f"no transaction {txn_id!r}"})
+                else:
+                    self._json(200, impact)
+                return
+            if path.startswith("/api/provenance/"):
+                txn_id = path[len("/api/provenance/"):]
+                prov = self._read(self.srv.reader.provenance, txn_id)
+                if prov is None:
+                    self._json(404, {"error": f"no transaction {txn_id!r}"})
+                else:
+                    self._json(200, prov)
                 return
             if path.startswith("/api/transactions/"):
                 txn_id = path[len("/api/transactions/"):]
