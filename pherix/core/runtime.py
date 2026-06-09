@@ -38,7 +38,6 @@ from pherix.core.isolation import (
     REGISTRY as ISOLATION_REGISTRY,
     Abort,
     Serialize,
-    _RetrySignal,
     check_conflicts,
 )
 from pherix.core.envelope import (

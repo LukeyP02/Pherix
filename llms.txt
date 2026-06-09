@@ -34,4 +34,4 @@ fetch, see [llms-full.txt](llms-full.txt).
 
 ## TypeScript SDK
 
-- `pherix-ts/`: 14 adapters at semantic + field-name parity with Python; a parity suite proves both engines produce structurally identical journals.
+- `pherix-ts/`: 15 adapters at semantic + field-name parity with Python; a parity suite proves both engines produce structurally identical journals.
