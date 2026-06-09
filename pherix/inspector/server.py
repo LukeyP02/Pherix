@@ -16,6 +16,7 @@ Routes:
 ``GET /api/transactions/<id>``  one transaction's full timeline
 ``GET /api/reliability``        reliability metrics (Prong #2) over the journal
 ``GET /api/contention``         isolation collision map — where agents collide (Prong #2)
+``GET /api/policy``             per-rule policy ledger — what each rule/cap/allowlist decided
 ``GET /api/recovery``           reconciliation queue — txns that didn't undo cleanly
 ``GET /api/approvals``          over-the-wire gate queue — held + cleared irreversibles
 ``GET /api/lineage``            causal read→write provenance (``?txn=<id>``)
@@ -173,6 +174,9 @@ class InspectorHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/contention":
                 self._json(200, self._read(self.srv.reader.contention))
+                return
+            if path == "/api/policy":
+                self._json(200, self._read(self.srv.reader.policy))
                 return
             if path == "/api/recovery":
                 self._json(200, self._read(self.srv.reader.recovery))

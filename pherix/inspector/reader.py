@@ -203,6 +203,29 @@ ACCOUNTABILITY_CAVEAT = (
     "included — not a rate over settled transactions (that is reliability())."
 )
 
+# The policy ledger's honest-scope statement — travels with the payload like the
+# caveats above. It is the boundary of the per-rule decision census: what folding
+# the journal's recorded verdicts by the rule that fired does and does NOT prove.
+# See JournalReader.policy.
+POLICY_CAVEAT = (
+    "Policy-decision ledger, folded from the journal's recorded per-rule "
+    "verdicts — the same rows the timeline attaches per effect, here grouped "
+    "across the whole journal by the rule that fired. Each verdict is a decision "
+    "the policy layer PERSISTED at evaluation time: which primitive fired (a "
+    "rule, a cap, or an allowlist), at the stage or the commit phase, and whether "
+    "it allowed or denied. It is NOT a re-evaluation of policy against the world "
+    "now — a denial proves the policy blocked THAT effect at THAT phase when it "
+    "ran, not that a since-changed policy would still block it. Rules are grouped "
+    "by their recorded (kind, rule_name); verdicts carrying no rule_name collapse "
+    "into a single ``unnamed`` bucket (a governance gap worth seeing — a decision "
+    "with no attributable rule), never dropped. The fold spans EVERY verdict "
+    "regardless of dry-run: a dry-run's denials are real policy decisions worth "
+    "surfacing — the same scope reliability()'s denial rollup uses. This is a "
+    "census of what the policy decided, NOT a rate over settled transactions "
+    "(that is reliability()); and ``deny_rate`` is a rule's denials over its own "
+    "firings, not over all traffic."
+)
+
 # The undo-impact caveat — travels with the payload like the others. It is the
 # boundary of the blast-radius claim: what folding the journal's version-grounded
 # read-after-write relation does and does NOT prove before you reverse a txn.
@@ -1385,6 +1408,197 @@ class JournalReader:
             "supported": self._has_actor,
             "actors": named,
             "unattributed": unattributed,
+            "totals": totals,
+        }
+
+    # --- policy ledger (the policy axis — per-rule decision census) ---------
+
+    def policy(self) -> dict:
+        """A per-rule GROUP-BY fold over the verdicts journal — the policy ledger.
+
+        :meth:`contention` folds the journal per **resource/key** (where agents
+        collide); :meth:`accountability` folds it per **actor** (on whose
+        authority). This is the third leg of the governance trio: a fold per
+        **rule** — *what is the policy actually doing across the whole journal?*
+        — the operational surface of the interception/policy axis and the
+        action-governance sidecar's tuning view (Wedge #1).
+
+        :meth:`reliability` already surfaces a ``denials`` list, but that is a
+        flat rollup of denied *reasons* — it cannot say which rule denied, how
+        often a rule that mostly allows occasionally bites, or at which phase a
+        cap fires. This generalises it: every recorded verdict (allow *and*
+        deny) grouped by the primitive that emitted it. Like the rest of the
+        reader it is a pure traversal of the journal already on disk — one scan
+        over the verdicts (LEFT-JOINed to the effect each gates, for the tool /
+        resource it governed), folded in Python; no engine import, no
+        recomputation, no writes (see :data:`POLICY_CAVEAT`). The shape:
+
+        ``supported``
+            Whether the ``verdicts`` table exists at all (``self._has_verdicts``).
+            ``False`` on a journal written before verdict persistence — every
+            collection is then empty and the phase matrix all-zero, so a console
+            can say "this journal predates verdict recording" rather than "the
+            policy denied nothing". A table that exists but is empty is
+            ``supported = True`` with zero rows (present-and-zero, like
+            :meth:`contention`'s empty case).
+
+        ``rules``
+            One record per **named** primitive ``(kind, rule_name)``, ranked.
+            Each carries ``kind`` (``'rule'`` / ``'cap'`` / ``'allowlist'``),
+            ``rule`` (the name), ``fired`` (total verdicts it emitted),
+            ``allowed`` / ``denied`` (the split), ``deny_rate`` (denied over its
+            OWN firings — not over all traffic), ``by_phase`` (firings at
+            ``stage`` vs ``commit`` — where in the bracket it sits), ``reasons``
+            (its distinct deny reasons, commonest first — empty for a rule that
+            never denied), and the governance reach ``tools`` / ``resources``
+            (sorted distinct, off the joined effect) and ``txns`` (distinct
+            transactions it touched). Ranking: ``denied`` desc (the loudest
+            denier — the governance teeth — first), then ``fired`` desc
+            (busiest), then ``kind`` then ``rule`` for a stable order.
+
+        ``unnamed``
+            The same record shape for every verdict carrying NO ``rule_name``
+            (collapsed into one bucket regardless of kind, so ``kind`` is
+            ``None``) — a decision with no attributable rule, surfaced as a
+            governance gap rather than dropped. ``None`` when every verdict names
+            a rule.
+
+        ``phases``
+            A journal-wide ``{stage, commit}`` × ``{allow, deny}`` matrix —
+            *where in the stage→commit bracket does the policy do its allowing
+            and denying?* A stage-phase denial blocked an effect before it was
+            staged; a commit-phase denial held it at the gate. Both phases are
+            always present (zeroed if unused); an unexpected phase a newer engine
+            wrote is surfaced rather than dropped.
+
+        ``totals``
+            A whole-journal rollup (named + unnamed) so the dashboard has a
+            headline without re-folding: ``rules`` (distinct named primitives),
+            ``verdicts``, ``allowed``, ``denied`` and the overall ``deny_rate``.
+
+        Like reliability's denial rollup — and unlike its rate sections — this
+        spans EVERY verdict regardless of dry-run: a dry-run's policy decisions
+        are real decisions worth surfacing.
+        """
+        empty_phases = {
+            "stage": {"allow": 0, "deny": 0},
+            "commit": {"allow": 0, "deny": 0},
+        }
+        if not self._has_verdicts:
+            return {
+                "caveat": POLICY_CAVEAT,
+                "scope": {"spans": "all_verdicts"},
+                "supported": False,
+                "rules": [],
+                "unnamed": None,
+                "phases": empty_phases,
+                "totals": {
+                    "rules": 0, "verdicts": 0, "allowed": 0, "denied": 0,
+                    "deny_rate": 0.0,
+                },
+            }
+
+        # One scan. The LEFT JOIN keeps a verdict whose effect row is somehow
+        # absent (tool/resource then NULL, excluded from the named sets) rather
+        # than dropping it — the verdict counts must stay whole.
+        rows = self._conn.execute(
+            "SELECT v.kind AS kind, v.rule_name AS rule_name, v.phase AS phase, "
+            "v.allow AS allow, v.reason AS reason, v.txn_id AS txn_id, "
+            "e.tool AS tool, e.resource AS resource "
+            "FROM verdicts v "
+            "LEFT JOIN effects e "
+            "ON e.txn_id = v.txn_id AND e.idx = v.effect_index"
+        ).fetchall()
+
+        def _blank(kind: str | None, rule: str | None) -> dict:
+            return {
+                "kind": kind, "rule": rule,
+                "fired": 0, "allowed": 0, "denied": 0,
+                "by_phase": {"stage": 0, "commit": 0},
+                "_reasons": {},           # reason -> count (denials only)
+                "_tools": set(), "_resources": set(), "_txns": set(),
+            }
+
+        buckets: dict[tuple, dict] = {}   # (kind, rule_name) -> bucket, named only
+        unnamed_acc: dict | None = None   # the single no-rule_name bucket
+        # journal-wide where-policy-bites matrix; stage/commit always present
+        phases = {
+            "stage": {"allow": 0, "deny": 0},
+            "commit": {"allow": 0, "deny": 0},
+        }
+        for r in rows:
+            kind, rule = r["kind"], r["rule_name"]
+            if rule is None:
+                if unnamed_acc is None:
+                    unnamed_acc = _blank(None, None)
+                b = unnamed_acc
+            else:
+                key = (kind, rule)
+                b = buckets.get(key)
+                if b is None:
+                    b = buckets[key] = _blank(kind, rule)
+            allow = bool(r["allow"])
+            b["fired"] += 1
+            if allow:
+                b["allowed"] += 1
+            else:
+                b["denied"] += 1
+                reason = r["reason"]
+                b["_reasons"][reason] = b["_reasons"].get(reason, 0) + 1
+            phase = r["phase"]
+            # tolerate a phase a newer engine added — it lands as a fresh key
+            # (per-rule and journal-wide) rather than being silently dropped.
+            b["by_phase"][phase] = b["by_phase"].get(phase, 0) + 1
+            phases.setdefault(phase, {"allow": 0, "deny": 0})
+            phases[phase]["allow" if allow else "deny"] += 1
+            if r["tool"] is not None:
+                b["_tools"].add(r["tool"])
+            if r["resource"] is not None:
+                b["_resources"].add(r["resource"])
+            b["_txns"].add(r["txn_id"])
+
+        def _finalise(b: dict) -> dict:
+            reasons = sorted(
+                ({"reason": k, "count": v} for k, v in b["_reasons"].items()),
+                key=lambda x: (-x["count"], str(x["reason"])),
+            )
+            return {
+                "kind": b["kind"],
+                "rule": b["rule"],
+                "fired": b["fired"],
+                "allowed": b["allowed"],
+                "denied": b["denied"],
+                "deny_rate": _rate(b["denied"], b["fired"]),
+                "by_phase": b["by_phase"],
+                "reasons": reasons,
+                "tools": sorted(b["_tools"]),
+                "resources": sorted(b["_resources"]),
+                "txns": len(b["_txns"]),
+            }
+
+        named = [_finalise(b) for b in buckets.values()]
+        # Loudest denier first (governance teeth), then busiest, then kind/name.
+        named.sort(key=lambda r: (-r["denied"], -r["fired"], r["kind"], r["rule"]))
+        unnamed = _finalise(unnamed_acc) if unnamed_acc is not None else None
+
+        rollup = named + ([unnamed] if unnamed else [])
+        total_verdicts = sum(r["fired"] for r in rollup)
+        total_denied = sum(r["denied"] for r in rollup)
+        totals = {
+            "rules": len(named),
+            "verdicts": total_verdicts,
+            "allowed": sum(r["allowed"] for r in rollup),
+            "denied": total_denied,
+            "deny_rate": _rate(total_denied, total_verdicts),
+        }
+
+        return {
+            "caveat": POLICY_CAVEAT,
+            "scope": {"spans": "all_verdicts"},
+            "supported": True,
+            "rules": named,
+            "unnamed": unnamed,
+            "phases": phases,
             "totals": totals,
         }
 
