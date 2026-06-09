@@ -20,6 +20,7 @@ Routes:
 ``GET /api/approvals``          over-the-wire gate queue — held + cleared irreversibles
 ``GET /api/lineage``            causal read→write provenance (``?txn=<id>``)
 ``GET /api/undo-impact/<id>``   blast radius of undoing one transaction
+``GET /api/provenance/<id>``    transitive upstream ancestry of one transaction
 ==============================  ===========================================
 
 ``/api/transactions`` accepts ``state``, ``client_id``, ``tool``, ``since``,
@@ -37,6 +38,12 @@ absent folds the entire journal.
 who committed-read the exact versions it produced and which of its keys a later
 live write has since superseded — into an undo-safety verdict. 404 if the
 transaction is unknown (same shape as ``/api/transactions/<id>``).
+
+``/api/provenance/<id>`` walks the version-grounded produces relation backward
+across transaction boundaries — the transitive chain of prior transactions
+whose writes fed this one's inputs, each ancestor at its shortest hop depth,
+the walk bottoming out in external inputs at the journal's edge. 404 if the
+transaction is unknown.
 
 The reader is shared across request threads behind a lock — SQLite reads are
 fast and the console is single-operator, so serialising them is simpler and
@@ -188,6 +195,14 @@ class InspectorHandler(BaseHTTPRequestHandler):
                     self._json(404, {"error": f"no transaction {txn_id!r}"})
                 else:
                     self._json(200, impact)
+                return
+            if path.startswith("/api/provenance/"):
+                txn_id = path[len("/api/provenance/"):]
+                prov = self._read(self.srv.reader.provenance, txn_id)
+                if prov is None:
+                    self._json(404, {"error": f"no transaction {txn_id!r}"})
+                else:
+                    self._json(200, prov)
                 return
             if path.startswith("/api/transactions/"):
                 txn_id = path[len("/api/transactions/"):]

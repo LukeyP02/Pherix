@@ -226,6 +226,31 @@ UNDO_IMPACT_CAVEAT = (
     "what reversing it would do at runtime."
 )
 
+# The provenance trace's honest-scope statement — travels with the payload like
+# the caveats above. It is the boundary of the transitive-ancestry claim: what
+# walking the version-grounded produces relation BACKWARD across transactions
+# does and does NOT prove. See JournalReader.provenance.
+PROVENANCE_CAVEAT = (
+    "Transitive upstream provenance, folded off the journal alone — the same "
+    "version-grounded 'produces' relation lineage() proves, walked BACKWARD "
+    "across transaction boundaries from one anchor to its origins. Each hop is "
+    "a fact the journal can prove: a read observed the EXACT version an earlier "
+    "transaction's write produced (the version counter ties reader to writer). "
+    "An 'informs' edge is the co-transactional ordering inside an ancestor — a "
+    "read preceded the write it fed in the same atomic unit — honest sequence, "
+    "NOT proven value-flow. The walk stops at the journal's edge: a read whose "
+    "version no in-journal write produced, or a versionless read (e.g. the "
+    "filesystem adapter), is surfaced under 'external_inputs' rather than "
+    "invented as an ancestor. An intra-transaction read-after-write never "
+    "crosses a boundary, so it is lineage()'s territory, never an ancestor "
+    "here. This is NOT data lineage through the agent/LLM — Pherix cannot see "
+    "that a value a tool read actually shaped a value it later wrote, only that "
+    "the journal records the read before the write — and because the relation "
+    "is per-hop, that boundary COMPOUNDS with depth: a deep ancestor is a "
+    "weaker claim than a shallow one. Full data lineage through the model is "
+    "out of scope and not claimed."
+)
+
 
 def _lineage_key(entry: Any) -> dict:
     """Normalise a persisted key triple into ``{resource, key, version}``.
@@ -1964,4 +1989,285 @@ class JournalReader:
                 "superseded_keys": len(superseded_list),
             },
             "caveat": UNDO_IMPACT_CAVEAT,
+        }
+
+    # --- provenance (transitive upstream ancestry) --------------------------
+
+    def provenance(self, txn_id: str) -> dict | None:
+        """The chain of prior transactions that fed one transaction's inputs.
+
+        ``lineage()`` folds the journal into a flat, one-hop read→write graph
+        and ``undo_impact()`` reads one hop *forward* (who consumed a txn). This
+        is the missing direction taken to its conclusion: walk the
+        version-grounded ``produces`` relation **backward across transaction
+        boundaries**, transitively, from one anchor to its origins — the prior
+        agent actions whose writes the anchor (and its ancestors) read (Wedge
+        #3, decision provenance). ``None`` if the transaction is unknown (the
+        HTTP layer renders that as 404).
+
+        Pure traversal of the same persisted ``read_keys`` / ``write_keys`` and
+        version counters everything else folds over — nothing is recomputed
+        from the live world (see :data:`PROVENANCE_CAVEAT`). One hop is
+        version-grounded: a read observed ``(resource, key, version)``, so the
+        write whose recorded post-version is exactly that is its producer. The
+        walk is breadth-first, so each ancestor carries its **shortest** hop
+        ``depth`` (nearest cause first). Three boundaries are honest, never
+        invented:
+
+        - **cross-transaction only** — a produces hop must cross a txn boundary;
+          a read of a version this same transaction wrote is intra-txn
+          read-after-write (lineage's territory), neither an ancestor nor an
+          external input.
+        - **external_inputs** — a read whose version no in-journal write
+          produced (``unproduced``) or a versionless read (``versionless``,
+          e.g. the filesystem adapter) is where the chain leaves the journal;
+          the ancestor that consumed only such reads is an ``origin``.
+        - **dedup / cycle guard** — a shared producer is expanded exactly once
+          (at its shortest depth) however many downstream effects read it.
+
+        Returns a render-ready dict — ``target`` (the anchor and the writes it
+        produced), ``ancestors`` (writer effects upstream, depth-ascending, each
+        with the versions it ``produced`` and whether it is an ``origin``),
+        ``edges`` (``produces`` across boundaries + ``informs`` inside each
+        ancestor), ``external_inputs`` (where the walk bottomed out), ``scope``,
+        ``totals`` and the honest-scope ``caveat``.
+        """
+        trow = self._conn.execute(
+            "SELECT state, client_id FROM transactions WHERE txn_id = ?",
+            (txn_id,),
+        ).fetchone()
+
+        rows = self._conn.execute(
+            "SELECT txn_id, idx, tool, read_keys, write_keys "
+            "FROM effects ORDER BY txn_id, idx"
+        ).fetchall()
+        effects: list[dict] = []
+        for r in rows:
+            d = dict(r)
+            effects.append(
+                {
+                    "node": f"{d['txn_id']}#{d['idx']}",
+                    "txn_id": d["txn_id"],
+                    "idx": d["idx"],
+                    "tool": d["tool"],
+                    "reads": [_lineage_key(k) for k in _loads(d["read_keys"], [])],
+                    "writes": [_lineage_key(k) for k in _loads(d["write_keys"], [])],
+                }
+            )
+        node_meta = {e["node"]: e for e in effects}
+        by_txn: dict[str, list[dict]] = {}
+        for e in effects:  # already idx-ordered within each txn by the query
+            by_txn.setdefault(e["txn_id"], []).append(e)
+
+        # Unknown transaction → None (404). A txn row with no effects is still a
+        # real, well-formed (empty-trace) anchor, not a 404.
+        if trow is None and txn_id not in by_txn:
+            return None
+
+        # Producer index over the WHOLE journal: which write produced each
+        # (resource, key, version). Versionless writes can't anchor a hop.
+        producers: dict[tuple, str] = {}
+        for e in effects:
+            for w in e["writes"]:
+                if w["version"] is None:
+                    continue
+                sig = (w["resource"], _freeze(w["key"]), w["version"])
+                producers.setdefault(sig, e["node"])
+
+        # Target panel: the anchor's own writes (context for the trace) + how
+        # many reads it performed. Versionless writes ride along (version None).
+        anchor_effects = by_txn.get(txn_id, [])
+        target_writes: list[dict] = []
+        read_count = 0
+        for e in anchor_effects:
+            read_count += len(e["reads"])
+            for w in e["writes"]:
+                target_writes.append(
+                    {
+                        "resource": w["resource"],
+                        "key": w["key"],
+                        "version": w["version"],
+                        "by_idx": e["idx"],
+                        "by_tool": e["tool"],
+                    }
+                )
+        target_writes.sort(
+            key=lambda w: (
+                str(w["resource"]),
+                json.dumps(w["key"], sort_keys=True, default=str),
+                (w["version"] is None, w["version"] or 0),
+            )
+        )
+
+        # --- the breadth-first backward walk ---------------------------------
+        node_depth: dict[str, int] = {}      # ancestor writer node → shortest depth
+        has_ancestor: dict[str, bool] = {}   # writer node found a cross-txn producer
+        produced: dict[str, list[dict]] = {} # writer node → versions it produced
+        edges: list[dict] = []
+        produces_seen: set[tuple] = set()
+        informs_seen: set[tuple] = set()
+        external: list[dict] = []
+        external_seen: set[tuple] = set()
+        queued: set[str] = set()
+
+        def _expand(txn: str, max_idx: int | None, owner_node: str | None,
+                    depth: int) -> list[str]:
+            """Resolve one transaction's reads one hop back.
+
+            ``owner_node`` is the ancestor writer these reads informed (``None``
+            for the anchor, whose reads are the transaction's whole input set
+            and emit no ``informs`` edge). ``max_idx`` bounds the informing
+            reads to those at or before the owner write (co-transactional
+            happens-before); ``None`` traces every read. Producers reached cross
+            a txn boundary and become ancestors at ``depth + 1``; returns the
+            newly reached producer nodes to enqueue.
+            """
+            reached: list[str] = []
+            for e in by_txn.get(txn, []):
+                if max_idx is not None and e["idx"] > max_idx:
+                    continue
+                reader_node = e["node"]
+                # The read→write ordering inside an ancestor (honest sequence,
+                # not value-flow). Emitted once per (reader, owner) pair, never
+                # for the anchor and never as a self-loop.
+                if (
+                    owner_node is not None
+                    and reader_node != owner_node
+                    and e["reads"]
+                    and (reader_node, owner_node) not in informs_seen
+                ):
+                    informs_seen.add((reader_node, owner_node))
+                    edges.append(
+                        {
+                            "kind": "informs",
+                            "from": reader_node,
+                            "to": owner_node,
+                            "detail": (
+                                f"{e['tool']} read before "
+                                f"{node_meta[owner_node]['tool']} wrote"
+                            ),
+                        }
+                    )
+                for rd in e["reads"]:
+                    version = rd["version"]
+                    if version is None:
+                        _add_external(reader_node, rd, "versionless")
+                        continue
+                    producer = producers.get(
+                        (rd["resource"], _freeze(rd["key"]), version)
+                    )
+                    if producer is None:
+                        _add_external(reader_node, rd, "unproduced")
+                        continue
+                    if node_meta[producer]["txn_id"] == txn:
+                        # Intra-txn read-after-write — lineage's territory, a
+                        # produces hop must cross a transaction boundary.
+                        continue
+                    if owner_node is not None:
+                        has_ancestor[owner_node] = True
+                    pe_sig = (producer, reader_node, rd["resource"],
+                              _freeze(rd["key"]), version)
+                    if pe_sig not in produces_seen:
+                        produces_seen.add(pe_sig)
+                        edges.append(
+                            {
+                                "kind": "produces",
+                                "from": producer,
+                                "to": reader_node,
+                                "resource": rd["resource"],
+                                "key": rd["key"],
+                                "version": version,
+                                "detail": (
+                                    f"{node_meta[producer]['tool']} wrote "
+                                    f"{rd['resource']}:{rd['key']} v{version}, "
+                                    f"read by {e['tool']}"
+                                ),
+                            }
+                        )
+                        produced.setdefault(producer, []).append(
+                            {
+                                "resource": rd["resource"],
+                                "key": rd["key"],
+                                "version": version,
+                                "consumed_by": reader_node,
+                            }
+                        )
+                    nd = depth + 1
+                    if producer not in node_depth or nd < node_depth[producer]:
+                        node_depth[producer] = nd
+                    if producer not in queued:
+                        queued.add(producer)
+                        reached.append(producer)
+            return reached
+
+        def _add_external(reader_node: str, rd: dict, reason: str) -> None:
+            sig = (reader_node, rd["resource"], _freeze(rd["key"]),
+                   rd["version"], reason)
+            if sig in external_seen:
+                return
+            external_seen.add(sig)
+            external.append(
+                {
+                    "node": reader_node,
+                    "resource": rd["resource"],
+                    "key": rd["key"],
+                    "version": rd["version"],
+                    "reason": reason,
+                }
+            )
+
+        # Level 0 is the anchor: its full read set, no bounding write. Then a
+        # FIFO queue drains in nondecreasing depth, so the first time a producer
+        # is expanded it is at its shortest depth (a BFS shortest-path guarantee
+        # a depth-first walk would overstate through a diamond).
+        frontier = _expand(txn_id, None, None, 0)
+        while frontier:
+            nxt: list[str] = []
+            for node in frontier:
+                nxt.extend(
+                    _expand(node_meta[node]["txn_id"], node_meta[node]["idx"],
+                            node, node_depth[node])
+                )
+            frontier = nxt
+
+        ancestors: list[dict] = []
+        origin_count = 0
+        for node, depth in node_depth.items():
+            is_origin = not has_ancestor.get(node, False)
+            if is_origin:
+                origin_count += 1
+            ancestors.append(
+                {
+                    "node": node,
+                    "depth": depth,
+                    "is_origin": is_origin,
+                    "produced": produced.get(node, []),
+                }
+            )
+        ancestors.sort(key=lambda a: (a["depth"], a["node"]))
+        max_depth = max(node_depth.values(), default=0)
+
+        summary = (txn_summary(trow["state"]) if trow
+                   else {"tone": "unknown", "blurb": "unknown"})
+        return {
+            "target": {
+                "txn_id": txn_id,
+                "state": trow["state"] if trow else None,
+                "tone": summary["tone"],
+                "blurb": summary["blurb"],
+                "client_id": trow["client_id"] if trow else None,
+                "read_count": read_count,
+                "writes": target_writes,
+            },
+            "ancestors": ancestors,
+            "edges": edges,
+            "external_inputs": external,
+            "scope": {
+                "max_depth": max_depth,
+                "ancestor_count": len(ancestors),
+            },
+            "totals": {
+                "origin_ancestors": origin_count,
+            },
+            "caveat": PROVENANCE_CAVEAT,
         }

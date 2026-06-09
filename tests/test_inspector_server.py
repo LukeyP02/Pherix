@@ -244,3 +244,26 @@ def test_api_undo_impact_not_committed(server: str):
 
 def test_api_undo_impact_missing_is_404(server: str):
     assert _status_of(server + "/api/undo-impact/txn-nope") == 404
+
+
+# --- provenance (transitive upstream ancestry) ------------------------------
+
+
+def test_api_provenance_clean_deploy(server: str):
+    status, data = _get_json(server + "/api/provenance/txn-clean-deploy01")
+    assert status == 200
+    assert set(data) >= {"target", "ancestors", "edges", "external_inputs",
+                         "scope", "totals", "caveat"}
+    # every seed read observed a version written before the journal began, so
+    # the trace bottoms out immediately in external inputs with no ancestor.
+    assert data["ancestors"] == []
+    assert any(
+        e["resource"] == "sql" and e["key"] == ["releases", "current"]
+        and e["version"] == 11 and e["reason"] == "unproduced"
+        for e in data["external_inputs"]
+    )
+    assert "transitive" in data["caveat"].lower()
+
+
+def test_api_provenance_missing_is_404(server: str):
+    assert _status_of(server + "/api/provenance/txn-nope") == 404
